@@ -52,6 +52,7 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
                     case "IntPtr":
                     case "UIntPtr":
                     case "Void":
+                    case "Ptr":
                         return "ptr";
                     default:
                         throw new NotSupportedException(TypeName);
@@ -89,6 +90,7 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
                     case "UInt64":
                     case "UIntPtr":
                     case "Void":
+                    case "Ptr":
                         return 8;
                     case "Int16":
                     case "UInt16":
@@ -98,7 +100,7 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
                     case "Char":
                         return 1;
                     default:
-                        throw new NotSupportedException(TypeName);
+                        throw new NotSupportedException($"{TypeName} ({Kind})");
                 }
             }
             else if (Kind == SimpleFieldKind.Array)
@@ -143,6 +145,7 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
                     case "UIntPtr":
                     case "IntPtr":
                     case "Void":
+                    case "Ptr":
                         return "Pointer";
                     default:
                         throw new NotSupportedException(TypeName);
@@ -206,7 +209,7 @@ public static class FieldSignatureDecoder
             // Pointer
             case SignatureTypeCode.Pointer:
                 DecodeType(ref blob, reader); // skip pointee
-                return new FieldInfo(SimpleFieldKind.Pointer, "ptr");
+                return new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
 
             // SZARRAY - we should probably skip structs with these
             case SignatureTypeCode.SZArray:
@@ -247,7 +250,7 @@ public static class FieldSignatureDecoder
                     else
                     {
                         // Assume a pointer if we couldn't resolve the typedef
-                        return new FieldInfo(SimpleFieldKind.Pointer, "ptr");
+                        return new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
                     }
                 }
                 else if (handle.Kind == HandleKind.TypeSpecification)
@@ -261,7 +264,7 @@ public static class FieldSignatureDecoder
 
             case SignatureTypeCode.Void:
                 // This is an opaque pointer or handle type - we'll just treat it as a pointer
-                return new FieldInfo(SimpleFieldKind.Pointer, "ptr");
+                return new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
 
             default:
                 Console.WriteLine($"Unhandled signature type code: {et}");
@@ -279,7 +282,7 @@ public static class FieldSignatureDecoder
         }
         else if (IsPseudoPrimitive(reader, tdHandle))
         {
-            return new FieldInfo(SimpleFieldKind.Pointer, "ptr");
+            return new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
         }
         else
         {
