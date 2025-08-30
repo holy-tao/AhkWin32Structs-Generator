@@ -47,7 +47,7 @@ public class Program
                 Directory.CreateDirectory(dirPath);
                 File.WriteAllText(filepath, ahkStruct.ToAhk());
 
-                Console.WriteLine($"Wrote {filepath}");
+                //Console.WriteLine($"Wrote {filepath}");
             }
             catch (Exception ex)
             {

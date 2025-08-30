@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
@@ -38,11 +40,11 @@ public class AhkStruct : IAhkEmitter
         foreach (FieldDefinitionHandle hField in typeDef.GetFields())
         {
             FieldDefinition fieldDef = mr.GetFieldDefinition(hField);
-            Member newMember = new(mr, fieldDef, apiDetails?.Fields, Size);
+            Member newMember = new(mr, fieldDef, apiDetails?.Fields, apiDocs, Size);
 
             memberList.Add(newMember);
 
-            Size += newMember.fieldInfo.Width;
+            Size += newMember.Size;
         }
 
         this.members = memberList;
@@ -72,12 +74,21 @@ public class AhkStruct : IAhkEmitter
         sb.AppendLine("{");
         sb.AppendLine($"    static sizeof => {Size}");
 
+        BodyToAhk(sb, 0);
+
+        sb.AppendLine("}");
+    }
+
+    public void BodyToAhk(StringBuilder sb, int embeddingOfset = 0)
+    {
         foreach (Member m in members)
         {
+            // TODO if member type is a struct or class, copy its values here.
+            // This currently generates incorrect layouts in this case because we
+            // assume that a struct or class must be a pointer
             sb.AppendLine();
-            m.ToAhk(sb);
+            m.ToAhk(sb, embeddingOfset);
         }
-        sb.AppendLine("}");
     }
 
     public string ToAhk()
@@ -98,7 +109,10 @@ public class AhkStruct : IAhkEmitter
         private readonly MetadataReader mr;
         private readonly FieldDefinition def;
 
+        private readonly AhkStruct? embeddedStruct;
+
         private readonly string? apiDetails;
+        private readonly Dictionary<string, ApiDetails> apiDocs;
 
         public int offset { get; private set; }
 
@@ -106,21 +120,57 @@ public class AhkStruct : IAhkEmitter
 
         public FieldInfo fieldInfo { get; private set; }
 
-        internal Member(MetadataReader mr, FieldDefinition fieldDef, Dictionary<string, string>? apiFields, int offset = 0)
+        public int Size { get; private set; }
+
+        internal Member(MetadataReader mr, FieldDefinition fieldDef, Dictionary<string, string>? apiFields,
+            Dictionary<string, ApiDetails> apiDocs, int offset = 0)
         {
             this.mr = mr;
             this.offset = offset;
+            this.apiDocs = apiDocs;
 
             def = fieldDef;
             fieldInfo = FieldSignatureDecoder.DecodeFieldType(mr, fieldDef);
 
+            if (fieldInfo.Kind == SimpleFieldKind.Struct)
+            {
+                TypeDefinition fieldTypeDef = fieldInfo.TypeDef ??
+                    throw new NullReferenceException($"Null TypeDef for Class or Struct field {Name}");
+                embeddedStruct = new(mr, fieldTypeDef, apiDocs);
+                Size = embeddedStruct.Size;
+            }
+            else
+            {
+                Size = fieldInfo.Width;
+            }
+
             apiFields?.TryGetValue(Name, out apiDetails);
+        }
+
+        public void ToAhk(StringBuilder sb, int embeddingOfset = 0)
+        {
+            switch (fieldInfo.Kind)
+            {
+                case SimpleFieldKind.Struct:
+                    embeddedStruct.BodyToAhk(sb, offset + embeddingOfset);
+                    break;
+                case SimpleFieldKind.Class:
+                case SimpleFieldKind.Primitive:
+                case SimpleFieldKind.Pointer:
+                case SimpleFieldKind.Array:
+                    ToAhkStructMember(sb, embeddingOfset);
+                    break;
+                default:
+                    throw new NotSupportedException($"Unsupported type (field {Name}): {fieldInfo.Kind}");
+            }
         }
 
         // https://www.autohotkey.com/docs/v2/lib/NumPut.htm
         // https://www.autohotkey.com/docs/v2/lib/NumGet.htm
-        public void ToAhk(StringBuilder sb)
+        public void ToAhkStructMember(StringBuilder sb, int embeddingOfset = 0)
         {
+            int memberOffset = offset + embeddingOfset;
+
             if (apiDetails != null)
             {
                 sb.AppendLine("    /**");
@@ -136,23 +186,23 @@ public class AhkStruct : IAhkEmitter
                 FieldInfo arrTypeInfo = new FieldInfo(SimpleFieldKind.Primitive, fieldInfo.TypeName);
 
                 sb.AppendLine($"    {Name}[index]{{");
-                sb.AppendLine( "         get {");
+                sb.AppendLine("         get {");
                 sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Rank})");
                 sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Rank}\", , index)");
-                sb.AppendLine($"            return NumGet(this, {offset} + (index * {arrTypeInfo.Width}), \"{arrTypeInfo.DllCallType}\")");
-                sb.AppendLine( "         }");
-                sb.AppendLine( "         set {");
+                sb.AppendLine($"            return NumGet(this, {memberOffset} + (index * {arrTypeInfo.Width}), \"{arrTypeInfo.DllCallType}\")");
+                sb.AppendLine("         }");
+                sb.AppendLine("         set {");
                 sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Rank})");
                 sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Rank}\", , index)");
-                sb.AppendLine($"            return NumPut(\"{arrTypeInfo.DllCallType}\", value, this, {offset} + (index * {arrTypeInfo.Width}))");
-                sb.AppendLine( "         }");
+                sb.AppendLine($"            return NumPut(\"{arrTypeInfo.DllCallType}\", value, this, {memberOffset} + ((index - 1) * {arrTypeInfo.Width}))");
+                sb.AppendLine("         }");
                 sb.AppendLine("}");
             }
             else
             {
                 sb.AppendLine($"    {Name} {{");
-                sb.AppendLine($"        get => NumGet(this, {offset}, \"{fieldInfo.DllCallType}\")");
-                sb.AppendLine($"        set => NumPut(\"{fieldInfo.DllCallType}\", value, this, {offset})");
+                sb.AppendLine($"        get => NumGet(this, {memberOffset}, \"{fieldInfo.DllCallType}\")");
+                sb.AppendLine($"        set => NumPut(\"{fieldInfo.DllCallType}\", value, this, {memberOffset})");
                 sb.AppendLine($"    }}");
             }
         }

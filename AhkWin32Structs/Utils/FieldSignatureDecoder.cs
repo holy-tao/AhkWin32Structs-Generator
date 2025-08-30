@@ -1,4 +1,6 @@
 using System;
+using System.ComponentModel;
+using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 
@@ -14,7 +16,7 @@ public enum SimpleFieldKind
     Other
 }
 
-public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, int Rank = 0)
+public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, int Rank = 0, TypeDefinition? TypeDef = null)
 {
     // https://www.autohotkey.com/docs/v2/lib/DllCall.htm
     public string DllCallType
@@ -53,6 +55,10 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
                     default:
                         throw new NotSupportedException(TypeName);
                 }
+            }
+            else if (Kind == SimpleFieldKind.Pointer)
+            {
+                return "ptr";
             }
             else
             {
@@ -97,6 +103,10 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
             else if (Kind == SimpleFieldKind.Array)
             {
                 return Rank * new FieldInfo(SimpleFieldKind.Primitive, TypeName, 0).Width;
+            }
+            else if (Kind == SimpleFieldKind.Pointer)
+            {
+                return 8;
             }
             else
             {
@@ -232,29 +242,45 @@ public static class FieldSignatureDecoder
                     }
                     else
                     {
-                        return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name));
+                        return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name), 0, td);
                     }
                 }
                 else if (handle.Kind == HandleKind.TypeReference)
                 {
-                    var tr = reader.GetTypeReference((TypeReferenceHandle)handle);
-                    return new FieldInfo(SimpleFieldKind.Class, reader.GetString(tr.Name));
+                    // TODO further decoding is necessary - we need to know what the reference refers to
+                    TypeDefinitionHandle? resolvedTypeDefHandle = ResolveTypeReference(reader, (TypeReferenceHandle)handle);
+                    if (resolvedTypeDefHandle != null)
+                    {
+                        var tdHandle = (TypeDefinitionHandle)resolvedTypeDefHandle;
+                        var td = reader.GetTypeDefinition(tdHandle);
+                        if (IsEnum(reader, tdHandle))
+                        {
+                            string underlying = GetEnumUnderlyingType(reader, tdHandle);
+                            return new FieldInfo(SimpleFieldKind.Primitive, underlying);
+                        }
+                        else
+                        {
+                            return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name), 0, td);
+                        }
+                    }
+                    else
+                    {
+                        // Assume a pointer if we couldn't resolve the typedef
+                        return new FieldInfo(SimpleFieldKind.Pointer, "ptr");
+                    }
                 }
                 else if (handle.Kind == HandleKind.TypeSpecification)
                 {
-                    // Handle TypeSpecification by parsing its own signature blob.
-                    // This covers cases like compiler-generated type specs that encode fixed buffers or special arrays.
                     var ts = reader.GetTypeSpecification((TypeSpecificationHandle)handle);
                     var specReader = reader.GetBlobReader(ts.Signature);
-
-                    // The TypeSpecification signature is itself a type signature (no leading FIELD header).
-                    // Recurse into DecodeType, but it expects a blob that starts at a type opcode.
-                    // Note: DecodeType's first action is to ReadByte to get a SignatureTypeCode,
-                    // so pass specReader by ref.
                     return DecodeType(ref specReader, reader);
                 }
 
                 return new FieldInfo(SimpleFieldKind.Other, "TypeSpec");
+
+            case SignatureTypeCode.Void:
+                // This is an opaque pointer or handle type - we'll just treat it as a pointer
+                return new FieldInfo(SimpleFieldKind.Pointer, "ptr");
 
             default:
                 Console.WriteLine($"Unhandled signature type code: {et}");
@@ -290,6 +316,30 @@ public static class FieldSignatureDecoder
             }
         }
         return "Int32";
+    }
+
+    private static TypeDefinitionHandle? ResolveTypeReference(MetadataReader reader, TypeReferenceHandle trHandle)
+    {
+        var tr = reader.GetTypeReference(trHandle);
+        string name = reader.GetString(tr.Name);
+        string ns = reader.GetString(tr.Namespace);
+
+        // Only resolve if it's supposed to be in this module
+        if (tr.ResolutionScope.Kind == HandleKind.ModuleDefinition)
+        {
+            foreach (var tdHandle in reader.TypeDefinitions)
+            {
+                var td = reader.GetTypeDefinition(tdHandle);
+                if (reader.StringComparer.Equals(td.Name, name) &&
+                    reader.StringComparer.Equals(td.Namespace, ns))
+                {
+                    return tdHandle;
+                }
+            }
+        }
+
+        // Type is in an external assembly
+        return null;
     }
 
     private static bool TryGetFixedBufferInfo(MetadataReader reader, FieldDefinition field, out string elementType, out int length)
