@@ -128,7 +128,21 @@ public class AhkStruct : IAhkEmitter
             // TODO handle arrays
             if (fieldInfo.Kind == SimpleFieldKind.Array)
             {
-                sb.AppendLine("TODO array " + fieldInfo.TypeName);
+                Console.WriteLine("Wrote array info");
+                FieldInfo arrTypeInfo = new FieldInfo(SimpleFieldKind.Primitive, fieldInfo.TypeName);
+
+                sb.AppendLine($"    {Name}[index]{{");
+                sb.AppendLine( "         get {");
+                sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Rank})");
+                sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Rank}\", , index)");
+                sb.AppendLine($"            return NumGet(this, {offset} + (index * {arrTypeInfo.Width}), \"{arrTypeInfo.DllCallType}\")");
+                sb.AppendLine( "         }");
+                sb.AppendLine( "         set {");
+                sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Rank})");
+                sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Rank}\", , index)");
+                sb.AppendLine($"            return NumPut(\"{arrTypeInfo.DllCallType}\", value, this, {offset} + (index * {arrTypeInfo.Width}))");
+                sb.AppendLine( "         }");
+                sb.AppendLine("}");
             }
             else
             {
