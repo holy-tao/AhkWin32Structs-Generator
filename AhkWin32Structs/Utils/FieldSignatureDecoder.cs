@@ -223,7 +223,7 @@ public static class FieldSignatureDecoder
                 int numLoBounds = blob.ReadCompressedInteger();
                 for (int i = 0; i < numLoBounds; i++) blob.ReadCompressedInteger();
 
-                return new FieldInfo(SimpleFieldKind.Array, arrElem.TypeName + $"[{rank}]");
+                return new FieldInfo(SimpleFieldKind.Array, arrElem.TypeName, rank);
 
             // ValueType or Class
             case (SignatureTypeCode)17:         //0x11 - also a TypeHandle

@@ -230,7 +230,6 @@ public class AhkStruct : IAhkEmitter
             // TODO handle arrays
             if (fieldInfo.Kind == SimpleFieldKind.Array)
             {
-                Console.WriteLine("Wrote array info");
                 FieldInfo arrTypeInfo = new FieldInfo(SimpleFieldKind.Primitive, fieldInfo.TypeName);
 
                 sb.AppendLine($"    {Name}[index]{{");
