@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
+using Microsoft.VisualBasic.FileIO;
 
 // The kind of field - for AHK we only care whether it's a primitive, pointer, or array (and its type and rank if an array)
 // We don't care about most of the specifics
@@ -233,17 +234,7 @@ public static class FieldSignatureDecoder
 
                 if (handle.Kind == HandleKind.TypeDefinition)
                 {
-                    var tdHandle = (TypeDefinitionHandle)handle;
-                    var td = reader.GetTypeDefinition(tdHandle);
-                    if (IsEnum(reader, tdHandle))
-                    {
-                        string underlying = GetEnumUnderlyingType(reader, tdHandle);
-                        return new FieldInfo(SimpleFieldKind.Primitive, underlying);
-                    }
-                    else
-                    {
-                        return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name), 0, td);
-                    }
+                    return DecodeTypeDef(reader, (TypeDefinitionHandle)handle);
                 }
                 else if (handle.Kind == HandleKind.TypeReference)
                 {
@@ -251,17 +242,7 @@ public static class FieldSignatureDecoder
                     TypeDefinitionHandle? resolvedTypeDefHandle = ResolveTypeReference(reader, (TypeReferenceHandle)handle);
                     if (resolvedTypeDefHandle != null)
                     {
-                        var tdHandle = (TypeDefinitionHandle)resolvedTypeDefHandle;
-                        var td = reader.GetTypeDefinition(tdHandle);
-                        if (IsEnum(reader, tdHandle))
-                        {
-                            string underlying = GetEnumUnderlyingType(reader, tdHandle);
-                            return new FieldInfo(SimpleFieldKind.Primitive, underlying);
-                        }
-                        else
-                        {
-                            return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name), 0, td);
-                        }
+                        return DecodeTypeDef(reader, (TypeDefinitionHandle)resolvedTypeDefHandle);
                     }
                     else
                     {
@@ -288,6 +269,24 @@ public static class FieldSignatureDecoder
         }
     }
 
+    private static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle)
+    {
+        var td = reader.GetTypeDefinition(tdHandle);
+        if (IsEnum(reader, tdHandle))
+        {
+            string underlying = GetEnumUnderlyingType(reader, tdHandle);
+            return new FieldInfo(SimpleFieldKind.Primitive, underlying);
+        }
+        else if (IsPseudoPrimitive(reader, tdHandle))
+        {
+            return new FieldInfo(SimpleFieldKind.Pointer, "ptr");
+        }
+        else
+        {
+            return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name), 0, td);
+        }
+    }
+
     private static bool IsEnum(MetadataReader reader, TypeDefinitionHandle handle)
     {
         var td = reader.GetTypeDefinition(handle);
@@ -299,6 +298,36 @@ public static class FieldSignatureDecoder
                    reader.StringComparer.Equals(tr.Name, "Enum");
         }
         return false;
+    }
+
+    // Many handle and pointer types are structs in the metadata, but we want to treat them as Pointers
+    // Treat the struct as a pointer if:
+    // 1 - It has exactly one field
+    // 2 - That field's name is "Value" - TODO may be better to check to see if it's a primitive and ignore name.
+    private static bool IsPseudoPrimitive(MetadataReader reader, TypeDefinitionHandle handle)
+    {
+        TypeDefinition td = reader.GetTypeDefinition(handle);
+        FieldDefinitionHandleCollection fields = td.GetFields();
+
+        // Must have exactly one instance field
+        int count = 0;
+        FieldDefinitionHandle singleFieldHandle = default;
+        foreach (var f in td.GetFields())
+        {
+            var fd = reader.GetFieldDefinition(f);
+            if ((fd.Attributes & FieldAttributes.Static) == 0)
+            {
+                count++;
+                singleFieldHandle = f;
+            }
+        }
+
+        if (count != 1)
+            return false;
+
+        FieldDefinition singleField = reader.GetFieldDefinition(singleFieldHandle);
+        //Console.WriteLine($"Would have decoded {reader.GetString(td.Name)}.{reader.GetString(singleField.Name)} for IsPseudoPrimitive");
+        return reader.GetString(singleField.Name) == "Value";
     }
 
     private static string GetEnumUnderlyingType(MetadataReader reader, TypeDefinitionHandle handle)
