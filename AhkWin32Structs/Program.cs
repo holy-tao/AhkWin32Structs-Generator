@@ -18,8 +18,6 @@ public class Program
 
         Dictionary<string, ApiDetails> apiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
 
-        int cnt = 0;
-
         foreach (TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
         {
             TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
@@ -27,12 +25,9 @@ public class Program
             if (typeDef.BaseType.Kind != HandleKind.TypeReference)
                 continue;
 
-            TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-            string baseTypeName = mr.GetString(baseTypeRef.Name);
-            string typeName = mr.GetString(typeDef.Name);
+            string baseTypeName = "", typeName = "";
 
-            // MultiCastDelegate means function pointer, "Apis" is the generic type for all functions
-            if (ShouldSkipType(mr, typeDef))
+            if (ShouldSkipType(mr, typeDef, out typeName, out baseTypeName))
                 continue;
 
             if (baseTypeName == "Enum")
@@ -61,21 +56,26 @@ public class Program
                 Console.Error.WriteLine(ex.StackTrace);
                 Console.WriteLine();
             }
-
-
-            if (++cnt > 50) { return; }
         }
     }
 
-    private static bool ShouldSkipType(MetadataReader mr, TypeDefinition typeDef)
+    private static bool ShouldSkipType(MetadataReader mr, TypeDefinition typeDef, out string typeName, out string baseTypeName)
     {
+        TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
+        baseTypeName = mr.GetString(baseTypeRef.Name);
+        typeName = mr.GetString(typeDef.Name);
+
         // Probably an opaque pointer or handle type. In any case, an AHK we can just use an Integer
         if (typeDef.GetFields().Count == 0)
             return true;
 
         // This is the generic name that the floating "global" functions end up in. Maybe one day I'll
         // support them
-        if (mr.GetString(typeDef.Name) == "Apis")
+        if (typeName == "Apis")
+            return true;
+
+        // MultiCastDelegate means function pointer, "Apis" is the generic type for all functions
+        if (baseTypeName == "MultiCastDelegate")
             return true;
 
         // TODO support union types
