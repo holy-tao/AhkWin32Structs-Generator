@@ -33,12 +33,10 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
                     case "Double":
                         return "double";
                     case "Int64":
-                    case "IntPtr":
                         return "int64";
                     case "UInt32":
                         return "uint";
                     case "UInt64":
-                    case "UIntPtr":
                         return "uint";
                     case "Int16":
                         return "short";
@@ -48,6 +46,10 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
                     case "SByte":
                     case "Char":
                         return "char";
+                    case "IntPtr":
+                    case "UIntPtr":
+                    case "Void":
+                        return "ptr";
                     default:
                         throw new NotSupportedException(TypeName);
                 }
@@ -79,6 +81,7 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
                     case "IntPtr":
                     case "UInt64":
                     case "UIntPtr":
+                    case "Void":
                         return 8;
                     case "Int16":
                     case "UInt16":
@@ -128,6 +131,7 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
                         return "Integer";
                     case "UIntPtr":
                     case "IntPtr":
+                    case "Void":
                         return "Pointer";
                     default:
                         throw new NotSupportedException(TypeName);
@@ -211,6 +215,8 @@ public static class FieldSignatureDecoder
                 return new FieldInfo(SimpleFieldKind.Array, arrElem.TypeName + $"[{rank}]");
 
             // ValueType or Class
+            case (SignatureTypeCode)17:         //0x11 - also a TypeHandle
+            case (SignatureTypeCode)18:         //0x12 - also a TypeHandle
             case SignatureTypeCode.TypeHandle:
                 // Type handles can be TypeDefinition, TypeReference, OR TypeSpecification (e.g. sized arrays / specs)
                 var handle = blob.ReadTypeHandle();
@@ -251,6 +257,7 @@ public static class FieldSignatureDecoder
                 return new FieldInfo(SimpleFieldKind.Other, "TypeSpec");
 
             default:
+                Console.WriteLine($"Unhandled signature type code: {et}");
                 return new FieldInfo(SimpleFieldKind.Other, et.ToString());
         }
     }
