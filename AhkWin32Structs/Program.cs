@@ -9,9 +9,11 @@ public class Program
     public static void Main(string[] args)
     {
         //TODO read in filepaths from command line or environment variables or something
-        FileStream metaDataFileStream = File.OpenRead(@"C:\Programming\AhkWin32Structs\metadata\Windows.Win32.winmd");
-        FileStream apiDocFileStream = File.OpenRead(@"C:\Programming\AhkWin32Structs\metadata\apidocs.msgpack");
+        using FileStream metaDataFileStream = File.OpenRead(@"C:\Programming\AhkWin32Structs\metadata\Windows.Win32.winmd");
+        using FileStream apiDocFileStream = File.OpenRead(@"C:\Programming\AhkWin32Structs\metadata\apidocs.msgpack");
         string ahkOutputDir = @"C:\Programming\AhkWin32Structs\ahk\";
+
+        using StreamWriter errFileStream = new(File.Create(Path.Combine(ahkOutputDir, "errors.txt")));
 
         using PEReader peReader = new(metaDataFileStream);
         MetadataReader mr = peReader.GetMetadataReader();
@@ -51,10 +53,12 @@ public class Program
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeName}:");
-                Console.Error.WriteLine(ex.Message);
-                Console.Error.WriteLine(ex.StackTrace);
-                Console.WriteLine();
+                Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeName}: {ex.Message}");
+                
+                errFileStream.WriteLine($"{ex.GetType().Name} parsing {typeName}: {ex.Message}");
+                errFileStream.WriteLine(ex.Message);
+                errFileStream.WriteLine(ex.StackTrace);
+                errFileStream.Flush();
             }
         }
     }
