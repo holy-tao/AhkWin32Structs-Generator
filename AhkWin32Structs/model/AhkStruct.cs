@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
@@ -51,13 +52,53 @@ public class AhkStruct : IAhkEmitter
         this.nestedTypes = new List<AhkStruct>();
     }
 
+    private static string NamespaceToPath(string ns)
+    {
+        // Replace dots with directory separators
+        return ns.Replace('.', Path.DirectorySeparatorChar);
+    }
+
+    private static string RelativePathBetweenNamespaces(string fromNs, string? toNs)
+    {
+        if (string.IsNullOrEmpty(toNs))
+        {
+            // Assume current directory
+            return $".{Path.DirectorySeparatorChar}";
+        }
+
+        string fromDir = NamespaceToPath(fromNs);
+        string toDir = NamespaceToPath(toNs);
+
+        string relativePath = Path.GetRelativePath(fromDir, toDir);
+        if (!relativePath.EndsWith(Path.DirectorySeparatorChar))
+            relativePath += Path.DirectorySeparatorChar;
+        return relativePath;
+    }
+
     public void ToAhk(StringBuilder sb)
     {
         // Path to Win32Struct.ahk, expecting it to be in the root of wherever we're making this class
-        string pathToBase = Namespace.Split(".").Select(val => "../").Aggregate((agg, cur) => agg + cur);
+        string pathToBase = Namespace.Split(".")
+            .Select(val => $"..{Path.DirectorySeparatorChar}")
+            .Aggregate((agg, cur) => agg + cur);
 
         sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
         sb.AppendLine($"#Include {pathToBase}Win32Struct.ahk");
+
+        // Generate #Include statements for embedded structs
+        var distinctMemberStructs = members.AsEnumerable().Where((m) => m.fieldInfo.Kind == SimpleFieldKind.Struct);
+        var importedTypes = new List<string>();
+
+        foreach (Member m in distinctMemberStructs)
+        {
+            if (importedTypes.Contains(m.fieldInfo.TypeName))
+                continue;
+
+            string sbPath = RelativePathBetweenNamespaces(Namespace, m.embeddedStruct?.Namespace);
+            sb.AppendLine($"#Include {sbPath}{m.fieldInfo.TypeName}.ahk");
+            importedTypes.Add(m.fieldInfo.TypeName);
+        }
+
         sb.AppendLine();
 
         if (apiDetails != null)
@@ -109,7 +150,7 @@ public class AhkStruct : IAhkEmitter
         private readonly MetadataReader mr;
         private readonly FieldDefinition def;
 
-        private readonly AhkStruct? embeddedStruct;
+        public readonly AhkStruct? embeddedStruct;
 
         private readonly string? apiDetails;
         private readonly Dictionary<string, ApiDetails> apiDocs;
@@ -152,7 +193,9 @@ public class AhkStruct : IAhkEmitter
             switch (fieldInfo.Kind)
             {
                 case SimpleFieldKind.Struct:
-                    embeddedStruct.BodyToAhk(sb, offset + embeddingOfset);
+                    MaybeAppendDocumentation(sb);
+                    sb.AppendLine($"    {Name} => {embeddedStruct.Name}(this.ptr + {offset})");
+                    //embeddedStruct.BodyToAhk(sb, offset + embeddingOfset);
                     break;
                 case SimpleFieldKind.Class:
                 case SimpleFieldKind.Primitive:
@@ -165,12 +208,8 @@ public class AhkStruct : IAhkEmitter
             }
         }
 
-        // https://www.autohotkey.com/docs/v2/lib/NumPut.htm
-        // https://www.autohotkey.com/docs/v2/lib/NumGet.htm
-        public void ToAhkStructMember(StringBuilder sb, int embeddingOfset = 0)
+        private void MaybeAppendDocumentation(StringBuilder sb)
         {
-            int memberOffset = offset + embeddingOfset;
-
             if (apiDetails != null)
             {
                 sb.AppendLine("    /**");
@@ -178,6 +217,15 @@ public class AhkStruct : IAhkEmitter
                 sb.AppendLine($"     * @type {{{fieldInfo.AhkType}}}");
                 sb.AppendLine("     */");
             }
+        }
+
+        // https://www.autohotkey.com/docs/v2/lib/NumPut.htm
+        // https://www.autohotkey.com/docs/v2/lib/NumGet.htm
+        public void ToAhkStructMember(StringBuilder sb, int embeddingOfset = 0)
+        {
+            int memberOffset = offset + embeddingOfset;
+
+            MaybeAppendDocumentation(sb);
 
             // TODO handle arrays
             if (fieldInfo.Kind == SimpleFieldKind.Array)
