@@ -51,7 +51,11 @@ public class AhkStruct : IAhkEmitter
 
     public void ToAhk(StringBuilder sb)
     {
+        // Path to Win32Struct.ahk, expecting it to be in the root of wherever we're making this class
+        string pathToBase = Namespace.Split(".").Select(val => "../").Aggregate((agg, cur) => agg + cur);
+
         sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
+        sb.AppendLine($"#Include {pathToBase}Win32Struct.ahk");
         sb.AppendLine();
 
         if (apiDetails != null)
