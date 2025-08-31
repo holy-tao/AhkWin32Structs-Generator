@@ -29,33 +29,27 @@ public class Program
             if (typeDef.BaseType.Kind != HandleKind.TypeReference)
                 continue;
 
-            string baseTypeName = "", typeName = "";
-
-            if (ShouldSkipType(mr, typeDef, out typeName, out baseTypeName))
+            if (ShouldSkipType(mr, typeDef, out string typeName, out string baseTypeName))
                 continue;
-
-            if (baseTypeName == "Enum")
-            {
-                //TODO
-                //Console.WriteLine($"Skipping enum: {typeName}");
-                continue;
-            }
 
             try
             {
-                AhkStruct ahkStruct = new(mr, typeDef, apiDocs);
+                IAhkEmitter? emitter = ParseType(mr, typeDef, apiDocs);
+                if (emitter == null)
+                {
+                    Console.WriteLine($">>> Skipped {baseTypeName}: {typeName}");
+                    continue;
+                }
 
-                string filepath = ahkStruct.GetDesiredFilepath(ahkOutputDir);
-                string dirPath = Path.GetDirectoryName(filepath) ?? throw new Exception($"Null directory path: {filepath}");
+                string filepath = emitter.GetDesiredFilepath(ahkOutputDir);
+                string dirPath = Path.GetDirectoryName(filepath) ?? throw new NullReferenceException($"Null directory path: {filepath}");
 
                 Directory.CreateDirectory(dirPath);
-                File.WriteAllText(filepath, ahkStruct.ToAhk());
-
-                //Console.WriteLine($"Wrote {filepath}");
+                File.WriteAllText(filepath, emitter.ToAhk());
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeName}: {ex.Message}");
+                Console.Error.WriteLine($"!!! {ex.GetType().Name} parsing {typeName}: {ex.Message}");
 
                 errFileStream.WriteLine($"{ex.GetType().Name} parsing {typeName}: {ex.Message}");
                 errFileStream.WriteLine(ex.Message);
@@ -68,6 +62,19 @@ public class Program
                 }
             }
         }
+    }
+
+    private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
+    {
+        TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
+        string baseTypeName = mr.GetString(baseTypeRef.Name);
+
+        return baseTypeName switch
+        {
+            "Enum" => new AhkEnum(mr, typeDef, apiDocs),
+            "Struct" or "ValueType" => new AhkStruct(mr, typeDef, apiDocs),
+            _ => null
+        };
     }
 
     private static bool ShouldSkipType(MetadataReader mr, TypeDefinition typeDef, out string typeName, out string baseTypeName)
@@ -84,10 +91,10 @@ public class Program
         // support them
         if (typeName == "Apis")
             return true;
-
+        
         // MultiCastDelegate means function pointer, "Apis" is the generic type for all functions
         if (baseTypeName == "MultiCastDelegate")
-             return true;
+            return true;
 
         // TODO support union types
         if (typeDef.IsNested)
