@@ -307,10 +307,13 @@ public static class FieldSignatureDecoder
 
     /// <summary>
     /// Determine whether or not the given type can be represented in AutoHotkey with a simple Integer, and thus
-    /// we can treat it as a primitive. Such types include handles (e.g. HBITMAP), NativeTypeDefs (BOOL, HRESULT, etc),
+    /// we can treat it as a primitive. Such types include handles (e.g. HWND), NativeTypeDefs (BOOL, HRESULT, etc),
     /// string pointers (LPWSTR, BSTR, etc), and function pointers and callback addresses.
+    /// 
+    /// Note: the [NativeTypedef] attribute won't work for us here because it also picks up things like RECT and POINT,
+    /// which are structs.
     /// </summary>
-    private static bool IsPseudoPrimitive(MetadataReader reader, TypeDefinitionHandle handle, [NotNullWhen(true)] out FieldInfo? fieldInfo )
+    public static bool IsPseudoPrimitive(MetadataReader reader, TypeDefinitionHandle handle, [NotNullWhen(true)] out FieldInfo? fieldInfo )
     {
         TypeDefinition td = reader.GetTypeDefinition(handle);
 
@@ -390,10 +393,7 @@ public static class FieldSignatureDecoder
 
     /// <summary>
     /// Some function pointers (notably the LPFN*PROC callbacks) are represented in the metadata as empty
-    /// structs. So, to determine whether an empty struct is a function pointer or not, we need to check the
-    /// loaded type references for any that point to the struct in question.
-    /// 
-    /// Disgusting.
+    /// structs. So when we encounter one we need to check its attributes to see if it's a function pointer
     /// </summary>
     private static bool IsUsedAsFunctionPointer(MetadataReader reader, TypeDefinitionHandle defHandle)
     {
