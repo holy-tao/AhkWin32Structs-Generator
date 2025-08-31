@@ -7,33 +7,16 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
 
-public class AhkStruct : IAhkEmitter
+public class AhkStruct : AhkType
 {
-    private readonly MetadataReader mr;
-    private readonly TypeDefinition typeDef;
-    private readonly Dictionary<string, ApiDetails> apiDocs;
-
-    private readonly ApiDetails? apiDetails;
-
-    public string Name => mr.GetString(typeDef.Name);
-
-    public string Namespace => mr.GetString(typeDef.Namespace);
-
     public int Size { get; private set; }
 
-    public IEnumerable<Member> members { get; private set; }
+    internal IEnumerable<Member> Members { get; private set; }
 
     private IEnumerable<AhkStruct> nestedTypes;
 
-    public AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
+    public AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
-        this.mr = mr;
-
-        this.typeDef = typeDef;
-        this.apiDocs = apiDocs;
-
-        apiDocs.TryGetValue(Name, out apiDetails);
-
         // Create members with offsets
         Size = 0;
         List<Member> memberList = new List<Member>();
@@ -48,7 +31,7 @@ public class AhkStruct : IAhkEmitter
             Size += newMember.Size;
         }
 
-        this.members = memberList;
+        this.Members = memberList;
         this.nestedTypes = new List<AhkStruct>();
     }
 
@@ -75,7 +58,7 @@ public class AhkStruct : IAhkEmitter
         return relativePath;
     }
 
-    public void ToAhk(StringBuilder sb)
+    public override void ToAhk(StringBuilder sb)
     {
         // Path to Win32Struct.ahk, expecting it to be in the root of wherever we're making this class
         string pathToBase = Namespace.Split(".")
@@ -86,7 +69,7 @@ public class AhkStruct : IAhkEmitter
         sb.AppendLine($"#Include {pathToBase}Win32Struct.ahk");
 
         // Generate #Include statements for embedded structs
-        var distinctMemberStructs = members.AsEnumerable().Where((m) => m.fieldInfo.Kind == SimpleFieldKind.Struct);
+        var distinctMemberStructs = Members.AsEnumerable().Where((m) => m.fieldInfo.Kind == SimpleFieldKind.Struct);
         var importedTypes = new List<string>();
 
         foreach (Member m in distinctMemberStructs)
@@ -101,15 +84,7 @@ public class AhkStruct : IAhkEmitter
 
         sb.AppendLine();
 
-        if (apiDetails != null)
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine(" * " + apiDetails.Description?.Replace("\n", "\n * "));
-            if (apiDetails.Remarks != null)
-                sb.AppendLine(" * " + apiDetails.Remarks?.Replace("\n", "\n * "));
-            sb.AppendLine($" * @See {apiDetails.HelpLink}");
-            sb.AppendLine(" */");
-        }
+        MaybeAddTypeDocumentation(sb);
         //TODO add documentation
         sb.AppendLine($"class {Name} extends Win32Struct");
         sb.AppendLine("{");
@@ -122,7 +97,7 @@ public class AhkStruct : IAhkEmitter
 
     public void BodyToAhk(StringBuilder sb, int embeddingOfset = 0)
     {
-        foreach (Member m in members)
+        foreach (Member m in Members)
         {
             // TODO if member type is a struct or class, copy its values here.
             // This currently generates incorrect layouts in this case because we
@@ -132,36 +107,23 @@ public class AhkStruct : IAhkEmitter
         }
     }
 
-    public string ToAhk()
+    internal class Member
     {
-        StringBuilder sb = new StringBuilder();
-        this.ToAhk(sb);
-        return sb.ToString();
-    }
+        internal readonly MetadataReader mr;
+        internal readonly FieldDefinition def;
 
-    public string GetDesiredFilepath(string root)
-    {
-        string namespacePath = Path.Join(Namespace.Split("."));
-        return Path.Join(root, namespacePath, $"{Name}.ahk");
-    }
+        internal readonly AhkStruct? embeddedStruct;
 
-    public class Member
-    {
-        private readonly MetadataReader mr;
-        private readonly FieldDefinition def;
+        internal readonly string? apiDetails;
+        internal readonly Dictionary<string, ApiDetails> apiDocs;
 
-        public readonly AhkStruct? embeddedStruct;
+        internal int offset { get; private set; }
 
-        private readonly string? apiDetails;
-        private readonly Dictionary<string, ApiDetails> apiDocs;
+        internal string Name => mr.GetString(def.Name);
 
-        public int offset { get; private set; }
+        internal FieldInfo fieldInfo { get; private set; }
 
-        public string Name => mr.GetString(def.Name);
-
-        public FieldInfo fieldInfo { get; private set; }
-
-        public int Size { get; private set; }
+        internal int Size { get; private set; }
 
         internal Member(MetadataReader mr, FieldDefinition fieldDef, Dictionary<string, string>? apiFields,
             Dictionary<string, ApiDetails> apiDocs, int offset = 0)
