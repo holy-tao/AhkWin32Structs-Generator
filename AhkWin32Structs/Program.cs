@@ -20,6 +20,8 @@ public class Program
 
         Dictionary<string, ApiDetails> apiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
 
+        int loops = 0;
+
         foreach (TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
         {
             TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
@@ -54,11 +56,16 @@ public class Program
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeName}: {ex.Message}");
-                
+
                 errFileStream.WriteLine($"{ex.GetType().Name} parsing {typeName}: {ex.Message}");
                 errFileStream.WriteLine(ex.Message);
                 errFileStream.WriteLine(ex.StackTrace);
-                errFileStream.Flush();
+                errFileStream.WriteLine();
+
+                if (++loops % 100 == 0)
+                {
+                    errFileStream.Flush();
+                }
             }
         }
     }
@@ -80,7 +87,7 @@ public class Program
 
         // MultiCastDelegate means function pointer, "Apis" is the generic type for all functions
         if (baseTypeName == "MultiCastDelegate")
-            return true;
+             return true;
 
         // TODO support union types
         if (typeDef.IsNested)
