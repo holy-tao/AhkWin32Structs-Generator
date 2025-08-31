@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
@@ -280,13 +281,13 @@ public static class FieldSignatureDecoder
             string underlying = GetEnumUnderlyingType(reader, tdHandle);
             return new FieldInfo(SimpleFieldKind.Primitive, underlying);
         }
-        else if (IsPseudoPrimitive(reader, tdHandle))
-        {
-            // TODO for single-value structs with primitives, use the underlying primitive type
-            return new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
-        }
         else
         {
+            if (IsPseudoPrimitive(reader, tdHandle, out FieldInfo? fieldInfo))
+            {
+                return (FieldInfo)fieldInfo;
+            }
+            
             return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name), 0, td);
         }
     }
@@ -308,43 +309,47 @@ public static class FieldSignatureDecoder
     /// Determine whether or not the given type can be represented in AutoHotkey with a simple Integer, and thus
     /// we can treat it as a primitive. Such types include handles (e.g. HBITMAP), NativeTypeDefs (BOOL, HRESULT, etc),
     /// string pointers (LPWSTR, BSTR, etc), and function pointers and callback addresses.
-    /// 
-    /// ‼️TODO for NativeTypeDefs, extract underlying primitive types. BOOLs are Int32s, but we treat them as pointer-sized right now
     /// </summary>
-    private static bool IsPseudoPrimitive(MetadataReader reader, TypeDefinitionHandle handle)
+    private static bool IsPseudoPrimitive(MetadataReader reader, TypeDefinitionHandle handle, [NotNullWhen(true)] out FieldInfo? fieldInfo )
     {
         TypeDefinition td = reader.GetTypeDefinition(handle);
 
         FieldDefinitionHandleCollection fields = td.GetFields();
 
         // If struct is empty, check to see if any function pointers point to it
-        if (fields.Count == 0)
-            return IsUsedAsFunctionPointer(reader, handle);
+        if (fields.Count == 0 && IsUsedAsFunctionPointer(reader, handle))
+        {
+            fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
+            return true;
+        }
 
         // Otherwise a pseudo-primitive must have exactly one member
-        if (fields.Count != 1)
+        if (fields.Count != 1) {
+            fieldInfo = null;
             return false;
+        } 
 
         FieldDefinitionHandle? singleFieldHandle = fields.FirstOrDefault();
         if (!singleFieldHandle.HasValue)
+        {
+            fieldInfo = null;
             return false;
+        }
 
         FieldDefinition singleField = reader.GetFieldDefinition(singleFieldHandle.Value);
-
-        string fieldName = reader.GetString(singleField.Name);
 
         var blob = reader.GetBlobReader(singleField.Signature);
         var sigTypeCode = (SignatureTypeCode)blob.ReadByte();
         if (sigTypeCode.IsPrimitive())
         {
-            // TODO extract primitive type
+            // Extract underlying primitive type
+            fieldInfo = new FieldInfo(SimpleFieldKind.Primitive, sigTypeCode.ToString());
             return true;
         }
         else if (sigTypeCode == SignatureTypeCode.IntPtr || sigTypeCode == SignatureTypeCode.UIntPtr || sigTypeCode == SignatureTypeCode.FunctionPointer)
         {
             // Some other pointer type
-            Console.WriteLine($">>> {reader.GetString(td.Name)}.{fieldName}: {Convert.ToHexString(reader.GetBlobBytes(singleField.Signature))}");
-            Console.WriteLine($">>> Misc pointer: ({sigTypeCode})");
+            fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
             return true;
         }
         else if (sigTypeCode == SignatureTypeCode.TypeHandle || sigTypeCode == (SignatureTypeCode)17 || sigTypeCode == (SignatureTypeCode)18)
@@ -358,18 +363,11 @@ public static class FieldSignatureDecoder
                 _ => null
             };
 
-            Console.WriteLine($">>> {reader.GetString(td.Name)}.{fieldName}: {Convert.ToHexString(reader.GetBlobBytes(singleField.Signature))}");
-            Console.WriteLine($">>> Other: ({sigTypeCode})");
-
             if (innerDef.HasValue)
-                return IsPseudoPrimitive(reader, innerDef.Value); // recursively unwrap
-
-            Console.WriteLine($">>> {fieldName}: No inner def for TypeHandle. Signature: {Convert.ToHexString(reader.GetBlobBytes(singleField.Signature))}");
+                return IsPseudoPrimitive(reader, innerDef.Value, out fieldInfo); // recursively unwrap
         }
 
-        Console.WriteLine($">>> {reader.GetString(td.Name)}.{fieldName}: {Convert.ToHexString(reader.GetBlobBytes(singleField.Signature))}");
-        Console.WriteLine($">>> Other: ({sigTypeCode})");
-
+        fieldInfo = null;
         return false;
     }
 
@@ -400,19 +398,7 @@ public static class FieldSignatureDecoder
     private static bool IsUsedAsFunctionPointer(MetadataReader reader, TypeDefinitionHandle defHandle)
     {
         TypeDefinition typeDef = reader.GetTypeDefinition(defHandle);
-
         return CustomAttributeDecoder.GetAllNames(reader, typeDef).Contains("UnmanagedFunctionPointerAttribute");
-
-        foreach (TypeReferenceHandle refHandle in reader.TypeReferences)
-        {
-            TypeReference typeRef = reader.GetTypeReference(refHandle);
-            if (typeRef.Name.Equals(typeDef.Name))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static TypeDefinitionHandle? ResolveTypeReference(MetadataReader reader, TypeReferenceHandle trHandle)
@@ -445,7 +431,6 @@ public static class FieldSignatureDecoder
         {
             var ca = reader.GetCustomAttribute(caHandle);
             var ctor = ca.Constructor;
-
 
             string typeNameHandle = "";
             string nsHandle = "";
