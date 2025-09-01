@@ -20,7 +20,7 @@ public class Program
 
         Dictionary<string, ApiDetails> apiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
 
-        int loops = 0;
+        int errors = 0, total = 0;
 
         foreach (TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
         {
@@ -46,6 +46,7 @@ public class Program
 
                 Directory.CreateDirectory(dirPath);
                 File.WriteAllText(filepath, emitter.ToAhk());
+                total++;
             }
             catch (Exception ex)
             {
@@ -56,12 +57,14 @@ public class Program
                 errFileStream.WriteLine(ex.StackTrace);
                 errFileStream.WriteLine();
 
-                if (++loops % 100 == 0)
+                if (++errors % 100 == 0)
                 {
                     errFileStream.Flush();
                 }
             }
         }
+
+        Console.WriteLine($"Done! Emitted {total} types");
     }
 
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
