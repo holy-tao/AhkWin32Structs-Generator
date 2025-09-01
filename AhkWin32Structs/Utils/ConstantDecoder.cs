@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Reflection.Metadata;
 
-public readonly record struct ConstantInfo(string Name, ConstantTypeCode TypeCode, object Value)
+public readonly record struct ConstantInfo(string Name, ConstantTypeCode TypeCode, object Value, FieldDefinition fieldDef)
 {
     public string ValueAsAhkLiteral => TypeCode switch
     {
@@ -39,6 +39,6 @@ public class ConstantDecoder
             _ => throw new NotSupportedException($"Unexpected enum constant type {constant.TypeCode}")
         };
 
-        return new ConstantInfo(reader.GetString(fieldDef.Name), constant.TypeCode, value);
+        return new ConstantInfo(reader.GetString(fieldDef.Name), constant.TypeCode, value, fieldDef);
     }
 }

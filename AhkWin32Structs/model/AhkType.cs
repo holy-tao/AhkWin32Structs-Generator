@@ -27,15 +27,28 @@ public abstract class AhkType : IAhkEmitter
 
     private protected void MaybeAddTypeDocumentation(StringBuilder sb)
     {
+        sb.AppendLine("/**");
+
         if (apiDetails != null)
         {
-            sb.AppendLine("/**");
             sb.AppendLine(" * " + apiDetails.Description?.Replace("\n", "\n * "));
             if (apiDetails.Remarks != null)
+            {
+                sb.AppendLine(" * @remarks");
                 sb.AppendLine(" * " + apiDetails.Remarks?.Replace("\n", "\n * "));
-            sb.AppendLine($" * @See {apiDetails.HelpLink}");
-            sb.AppendLine(" */");
+            }
+            sb.AppendLine($" * @see {apiDetails.HelpLink}");
         }
+
+        sb.AppendLine($" * @namespace {Namespace}");
+        sb.AppendLine($" * @version {mr.MetadataVersion}");
+
+        if (CustomAttributeDecoder.GetAllNames(mr, typeDef).Contains("ObsoleteAttribute"))
+        {
+            sb.AppendLine(" * @deprecated");
+        }
+
+        sb.AppendLine(" */");
     }
 
     public string GetDesiredFilepath(string root)

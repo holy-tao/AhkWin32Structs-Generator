@@ -7,6 +7,14 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
 
+[Flags]
+public enum MemberFlags {
+    None = 0,
+    Deprecated = 1,
+    Reserved = 2,
+    Alignment = 3
+};
+
 public class AhkStruct : AhkType
 {
     public int Size { get; private set; }
@@ -117,6 +125,8 @@ public class AhkStruct : AhkType
         internal readonly string? apiDetails;
         internal readonly Dictionary<string, ApiDetails> apiDocs;
 
+        internal readonly MemberFlags flags = MemberFlags.None;
+
         internal int offset { get; private set; }
 
         internal string Name => mr.GetString(def.Name);
@@ -153,6 +163,13 @@ public class AhkStruct : AhkType
                 Size = fieldInfo.Width;
             }
 
+            var attrs = CustomAttributeDecoder.GetAllNames(mr, fieldDef);
+            if (attrs.Contains("ObsoleteAttribute"))
+                flags |= MemberFlags.Deprecated;
+
+            if (attrs.Contains("ReservedAttribute"))
+                flags |= MemberFlags.Reserved;
+
             apiFields?.TryGetValue(Name, out apiDetails);
         }
 
@@ -186,23 +203,28 @@ public class AhkStruct : AhkType
                 throw new NullReferenceException($"Null embeddedStruct for struct-type field {Name}");
 
             sb.AppendLine($"    {Name}{{");
-            sb.AppendLine( "        get {");
+            sb.AppendLine("        get {");
             sb.AppendLine($"            if(!this.HasProp(\"__{Name}\"))");
             sb.AppendLine($"                this.__{Name} := {embeddedStruct.Name}(this.ptr + {offset})");
             sb.AppendLine($"            return this.__{Name}");
-            sb.AppendLine( "        }");
-            sb.AppendLine( "    }");
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
         }
 
         private void MaybeAppendDocumentation(StringBuilder sb)
         {
+            sb.AppendLine("    /**");
+
             if (apiDetails != null)
             {
-                sb.AppendLine("    /**");
                 sb.AppendLine("     * " + apiDetails.Replace("\n", "\n     * "));
-                sb.AppendLine($"     * @type {{{(fieldInfo.Kind == SimpleFieldKind.Struct ? embeddedStruct?.Name : fieldInfo.AhkType)}}}");
-                sb.AppendLine("     */");
             }
+
+            if (flags.HasFlag(MemberFlags.Deprecated))
+                sb.AppendLine("     * @deprecated");
+
+            sb.AppendLine($"     * @type {{{(fieldInfo.Kind == SimpleFieldKind.Struct ? embeddedStruct?.Name : fieldInfo.AhkType)}}}");
+            sb.AppendLine("     */");
         }
 
         // https://www.autohotkey.com/docs/v2/lib/NumPut.htm
