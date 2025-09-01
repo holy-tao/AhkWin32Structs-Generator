@@ -37,7 +37,7 @@ public class AhkEnum : AhkType
         {
             sb.AppendLine();
             MaybeAddConstDocumentation(sb, constant);
-            sb.AppendLine($"    {constant.Name} => {constant.ValueAsAhkLiteral}");
+            sb.AppendLine($"    static {constant.Name} => {constant.ValueAsAhkLiteral}");
         }
 
         sb.AppendLine("}");
