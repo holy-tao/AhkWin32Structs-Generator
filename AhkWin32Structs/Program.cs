@@ -29,7 +29,7 @@ public class Program
             if (typeDef.BaseType.Kind != HandleKind.TypeReference)
                 continue;
 
-            if (ShouldSkipType(mr, typeDef, out string typeName, out string baseTypeName))
+            if (ShouldSkipType(mr, hTypeDef, out string typeName, out string baseTypeName))
                 continue;
 
             try
@@ -62,6 +62,11 @@ public class Program
                     errFileStream.Flush();
                 }
             }
+
+            if (total % 1000 == 0)
+            {
+                Console.WriteLine($"Emitted: {total}");
+            }
         }
 
         Console.WriteLine($"Done! Emitted {total} types");
@@ -80,8 +85,9 @@ public class Program
         };
     }
 
-    private static bool ShouldSkipType(MetadataReader mr, TypeDefinition typeDef, out string typeName, out string baseTypeName)
+    private static bool ShouldSkipType(MetadataReader mr, TypeDefinitionHandle typeDefHandle, out string typeName, out string baseTypeName)
     {
+        TypeDefinition typeDef = mr.GetTypeDefinition((TypeDefinitionHandle)typeDefHandle);
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
         baseTypeName = mr.GetString(baseTypeRef.Name);
         typeName = mr.GetString(typeDef.Name);
@@ -104,6 +110,9 @@ public class Program
             return true;
 
         if (CustomAttributeDecoder.GetAllNames(mr, typeDef).Contains("AnsiAttribute"))
+            return true;
+
+        if (FieldSignatureDecoder.IsPseudoPrimitive(mr, typeDefHandle, out FieldInfo? _))
             return true;
 
         return false;
