@@ -74,7 +74,7 @@ public class AhkStruct : AhkType
 
         foreach (Member m in distinctMemberStructs)
         {
-            if (importedTypes.Contains(m.fieldInfo.TypeName))
+            if (importedTypes.Contains(m.fieldInfo.TypeName) || m.fieldInfo.Kind == SimpleFieldKind.COM)
                 continue;
 
             string sbPath = RelativePathBetweenNamespaces(Namespace, m.embeddedStruct?.Namespace);
@@ -158,23 +158,40 @@ public class AhkStruct : AhkType
 
         public void ToAhk(StringBuilder sb, int embeddingOfset = 0)
         {
+            MaybeAppendDocumentation(sb);
+
             switch (fieldInfo.Kind)
             {
                 case SimpleFieldKind.Struct:
-                    MaybeAppendDocumentation(sb);
-                    sb.AppendLine($"    {Name} => {embeddedStruct.Name}(this.ptr + {offset})");
-                    //embeddedStruct.BodyToAhk(sb, offset + embeddingOfset);
+                    ToAhkEmbeddedStruct(sb, offset + embeddingOfset);
+                    break;
+                case SimpleFieldKind.Array:
+                    ToAhkArray(sb, offset + embeddingOfset);
                     break;
                 case SimpleFieldKind.Class:
                 case SimpleFieldKind.Primitive:
                 case SimpleFieldKind.Pointer:
-                case SimpleFieldKind.Array:
                 case SimpleFieldKind.String:
-                    ToAhkStructMember(sb, embeddingOfset);
+                case SimpleFieldKind.COM:
+                    ToAhkStructMember(sb, offset + embeddingOfset);
                     break;
                 default:
                     throw new NotSupportedException($"Unsupported type (field {Name}): {fieldInfo.Kind}");
             }
+        }
+
+        private void ToAhkEmbeddedStruct(StringBuilder sb, int offset)
+        {
+            if (embeddedStruct == null)
+                throw new NullReferenceException($"Null embeddedStruct for struct-type field {Name}");
+
+            sb.AppendLine($"    {Name}{{");
+            sb.AppendLine( "        get {");
+            sb.AppendLine($"            if(!this.HasProp(\"__{Name}\"))");
+            sb.AppendLine($"                this.__{Name} := {embeddedStruct.Name}(this.ptr + {offset})");
+            sb.AppendLine($"            return this.__{Name}");
+            sb.AppendLine( "        }");
+            sb.AppendLine( "    }");
         }
 
         private void MaybeAppendDocumentation(StringBuilder sb)
@@ -183,36 +200,29 @@ public class AhkStruct : AhkType
             {
                 sb.AppendLine("    /**");
                 sb.AppendLine("     * " + apiDetails.Replace("\n", "\n     * "));
-                sb.AppendLine($"     * @type {{{fieldInfo.AhkType}}}");
+                sb.AppendLine($"     * @type {{{(fieldInfo.Kind == SimpleFieldKind.Struct ? embeddedStruct?.Name : fieldInfo.AhkType)}}}");
                 sb.AppendLine("     */");
             }
         }
 
         // https://www.autohotkey.com/docs/v2/lib/NumPut.htm
         // https://www.autohotkey.com/docs/v2/lib/NumGet.htm
-        public void ToAhkStructMember(StringBuilder sb, int embeddingOfset = 0)
+        public void ToAhkStructMember(StringBuilder sb, int offset)
         {
-            int memberOffset = offset + embeddingOfset;
-
-            MaybeAppendDocumentation(sb);
 
             // TODO handle arrays
-            if (fieldInfo.Kind == SimpleFieldKind.Array)
-            {
-                ToAhkArray(sb, memberOffset);
-            }
-            else if (fieldInfo.Kind == SimpleFieldKind.String)
+            if (fieldInfo.Kind == SimpleFieldKind.String)
             {
                 sb.AppendLine($"    {Name} {{");
-                sb.AppendLine($"        get => StrGet(this.ptr + {memberOffset}, {fieldInfo.Length - 1}, \"UTF-16\")");
-                sb.AppendLine($"        set => StrPut(value, this.ptr + {memberOffset}, {fieldInfo.Length - 1}, \"UTF-16\")");
+                sb.AppendLine($"        get => StrGet(this.ptr + {offset}, {fieldInfo.Length - 1}, \"UTF-16\")");
+                sb.AppendLine($"        set => StrPut(value, this.ptr + {offset}, {fieldInfo.Length - 1}, \"UTF-16\")");
                 sb.AppendLine($"    }}");
             }
             else
             {
                 sb.AppendLine($"    {Name} {{");
-                sb.AppendLine($"        get => NumGet(this, {memberOffset}, \"{fieldInfo.DllCallType}\")");
-                sb.AppendLine($"        set => NumPut(\"{fieldInfo.DllCallType}\", value, this, {memberOffset})");
+                sb.AppendLine($"        get => NumGet(this, {offset}, \"{fieldInfo.DllCallType}\")");
+                sb.AppendLine($"        set => NumPut(\"{fieldInfo.DllCallType}\", value, this, {offset})");
                 sb.AppendLine($"    }}");
             }
         }

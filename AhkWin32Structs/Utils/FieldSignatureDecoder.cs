@@ -5,6 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using MetadataUtils;
 using Microsoft.VisualBasic.FileIO;
@@ -19,26 +20,12 @@ public enum SimpleFieldKind
     Struct,     // an embedded struct. TypeDef contains the type of the struct itself in this case
     Class,
     Other,      // unhandled, will produce an error
+    COM,        // A pointer to a COM Interface
     String      // A string buffer for which we can use StrPut / StrGet (usually a character array)
 }
 
-public record FieldInfo
+public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, TypeDefinition? TypeDef = null, FieldInfo? ArrayType = null)
 {
-
-    public readonly SimpleFieldKind Kind;
-    public readonly string TypeName;
-    public readonly int Length;
-    public readonly TypeDefinition? TypeDef;
-    public readonly FieldInfo? ArrayType;
-
-    public FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, TypeDefinition? TypeDef = null, FieldInfo? ArrayType = null)
-    {
-        this.Kind = Kind;
-        this.TypeName = TypeName.ToLower();
-        this.Length = Length;
-        this.TypeDef = TypeDef;
-        this.ArrayType = ArrayType;
-    }
     // https://www.autohotkey.com/docs/v2/lib/DllCall.htm
     public string DllCallType
     {
@@ -46,7 +33,7 @@ public record FieldInfo
         {
             if (Kind == SimpleFieldKind.Primitive)
             {
-                switch (TypeName)
+                switch (TypeName.ToLower())
                 {
                     case "single":
                         return "float";
@@ -97,7 +84,7 @@ public record FieldInfo
         {
             if (Kind == SimpleFieldKind.Primitive)
             {
-                switch (TypeName)
+                switch (TypeName.ToLower())
                 {
                     case "single":
                     case "boolean":
@@ -149,7 +136,7 @@ public record FieldInfo
         {
             if (Kind == SimpleFieldKind.Primitive)
             {
-                switch (TypeName)
+                switch (TypeName.ToLower())
                 {
                     case "single":
                     case "double":
@@ -182,6 +169,10 @@ public record FieldInfo
             else if (Kind == SimpleFieldKind.Array)
             {
                 return $"Array<{TypeName}>";
+            }
+            else if (Kind == SimpleFieldKind.Pointer || Kind == SimpleFieldKind.COM)
+            {
+                return $"Pointer<{TypeName}>";
             }
             else
             {
@@ -229,8 +220,8 @@ public static class FieldSignatureDecoder
 
             // Pointer
             case SignatureTypeCode.Pointer:
-                DecodeType(ref blob, reader, fieldDef); // skip pointee
-                return new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
+                FieldInfo pointee = DecodeType(ref blob, reader, fieldDef); // skip pointee
+                return new FieldInfo(SimpleFieldKind.Pointer, pointee.TypeName);
 
             // SZARRAY - we should probably skip structs with these
             case SignatureTypeCode.SZArray:
@@ -260,7 +251,6 @@ public static class FieldSignatureDecoder
             case (SignatureTypeCode)17:         //0x11 - also a TypeHandle
             case (SignatureTypeCode)18:         //0x12 - also a TypeHandle
             case SignatureTypeCode.TypeHandle:
-                // Type handles can be TypeDefinition, TypeReference, OR TypeSpecification (e.g. sized arrays / specs)
                 var handle = blob.ReadTypeHandle();
 
                 if (handle.Kind == HandleKind.TypeDefinition)
@@ -269,7 +259,7 @@ public static class FieldSignatureDecoder
                 }
                 else if (handle.Kind == HandleKind.TypeReference)
                 {
-                    // TODO further decoding is necessary - we need to know what the reference refers to
+                    // We need to resolve the TypeRef
                     TypeDefinitionHandle? resolvedTypeDefHandle = ResolveTypeReference(reader, (TypeReferenceHandle)handle);
                     if (resolvedTypeDefHandle != null)
                     {
@@ -278,7 +268,7 @@ public static class FieldSignatureDecoder
                     else
                     {
                         // Assume a pointer if we couldn't resolve the typedef
-                        return new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
+                        return new FieldInfo(SimpleFieldKind.Pointer, "External Type");
                     }
                 }
                 else if (handle.Kind == HandleKind.TypeSpecification)
@@ -289,10 +279,10 @@ public static class FieldSignatureDecoder
                 }
 
                 return new FieldInfo(SimpleFieldKind.Other, "TypeSpec");
-
+            
             case SignatureTypeCode.Void:
                 // This is an opaque pointer or handle type - we'll just treat it as a pointer
-                return new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
+                return new FieldInfo(SimpleFieldKind.Pointer, "Void");
 
             default:
                 Console.WriteLine($"Unhandled signature type code: {et}");
@@ -326,18 +316,59 @@ public static class FieldSignatureDecoder
         if (IsEnum(reader, tdHandle))
         {
             string underlying = GetEnumUnderlyingType(reader, tdHandle, fieldDef);
-            // TODO I think this is producing FieldInfos with type Primitive but TypeName of the enum
             return new FieldInfo(SimpleFieldKind.Primitive, underlying);
+        }
+        else if (IsComInterface(reader, tdHandle))
+        {
+            return new FieldInfo(SimpleFieldKind.COM, reader.GetString(td.Name), 0, td);
+        }
+        else if (IsPseudoPrimitive(reader, tdHandle, out FieldInfo? fieldInfo))
+        {
+            return fieldInfo;
+        }
+
+        return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name), 0, td);
+    }
+
+    private static bool IsComInterface(MetadataReader reader, TypeDefinitionHandle handle)
+    {
+        TypeDefinition td = reader.GetTypeDefinition(handle);
+
+        // All COM interfaces have the Interface flag
+        if ((td.Attributes & TypeAttributes.ClassSemanticsMask) != TypeAttributes.Interface)
+            return false;
+
+        // Most (nearly all) COM interfaces have the [Guid] attribute
+        if (CustomAttributeDecoder.GetAllNames(reader, td).Contains("GuidAttribute"))
+            return true;
+
+        // The base interfaces do not have GUIDs
+        //string typeName = reader.GetString(td.Name);
+        //if (typeName == "IUnknown" || typeName == "IDispatch")
+        //   return true;
+
+        if (!td.BaseType.IsNil)
+        {
+            // Fallback - check to see if interface derives from IUnknown or IDispatch
+            string baseName = td.BaseType.Kind switch
+            {
+                HandleKind.TypeReference => reader.GetString(reader.GetTypeReference((TypeReferenceHandle)td.BaseType).Name),
+                HandleKind.TypeDefinition => reader.GetString(reader.GetTypeDefinition((TypeDefinitionHandle)td.BaseType).Name),
+                _ => throw new NotSupportedException($"Unknown base type while checking for COM: {td.BaseType.Kind}")
+            };
+
+            if (baseName == "IUnknown" || baseName == "IDispatch")
+                return true;
         }
         else
         {
-            if (IsPseudoPrimitive(reader, tdHandle, out FieldInfo? fieldInfo))
-            {
-                return (FieldInfo)fieldInfo;
-            }
-
-            return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name), 0, td);
+            // Fallback 2 - If BaseType is Nil and the interface is abstract, it's COM 
+            // (base interfaces like IUnknown and caller-supplied interfaces like IOleUILinkInfoW)
+            if (td.Attributes.HasFlag(TypeAttributes.Abstract))
+                return true;
         }
+
+        return false;
     }
 
     private static bool IsEnum(MetadataReader reader, TypeDefinitionHandle handle)
