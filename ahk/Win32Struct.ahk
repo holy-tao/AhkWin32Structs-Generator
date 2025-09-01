@@ -5,7 +5,7 @@
  * buffer-like object that can either be created at a specific memory location. If created
  * "new", the struct is backed by a native AutoHotkey buffer.
  */
-class Win32Struct {
+class Win32Struct extends Object{
 
     __buf := unset
 
@@ -20,6 +20,18 @@ class Win32Struct {
      * @type {Integer}
      */
     size => this.__buf.size
+
+    /**
+     * @readonly The size of the struct for packing purposes. This value may be larger than the
+     * size of the struct
+     * @type {Integer}
+     */
+    packedSize {
+        get{
+            packingSize := %this.__Class%.packingSize
+            return this.size + Mod(packingSize - Mod(this.size, packingSize), packingSize)
+        }
+    }
 
     /**
      * Initializes a new `Win32Struct` object at the given memory location. Classes extending `Struct`
