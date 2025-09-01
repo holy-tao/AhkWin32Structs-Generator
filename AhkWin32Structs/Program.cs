@@ -100,6 +100,9 @@ public class Program
         if (typeDef.IsNested)
             return true;
 
+        if (CustomAttributeDecoder.GetAllNames(mr, typeDef).Contains("AnsiAttribute"))
+            return true;
+
         return false;
     }
 
