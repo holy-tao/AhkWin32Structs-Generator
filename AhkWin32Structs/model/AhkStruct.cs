@@ -1,7 +1,9 @@
 using System.ComponentModel.DataAnnotations;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Drawing;
 using System.Linq.Expressions;
+using System.Reflection.Emit;
 using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -19,28 +21,51 @@ public class AhkStruct : AhkType
 {
     public int Size { get; private set; }
 
+    public int PackingSize { get; private set; }
+
     internal IEnumerable<Member> Members { get; private set; }
 
     private IEnumerable<AhkStruct> nestedTypes;
 
     public AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
-        // Create members with offsets
+        TypeLayout layout = typeDef.GetLayout();
+        PackingSize = layout.PackingSize != 0 ? layout.PackingSize : 8;
+
+        // Size tracks our current offset
         Size = 0;
         List<Member> memberList = new List<Member>();
+
+        int offset = 0, maxAlignment = 1;
 
         foreach (FieldDefinitionHandle hField in typeDef.GetFields())
         {
             FieldDefinition fieldDef = mr.GetFieldDefinition(hField);
-            Member newMember = new(mr, fieldDef, apiDetails?.Fields, apiDocs, Size);
+            Member newMember = new(mr, fieldDef, apiDetails?.Fields, apiDocs, offset);
 
             memberList.Add(newMember);
 
-            Size += newMember.Size;
+            int logicalFieldSize = newMember.fieldInfo.Kind switch
+            {
+                SimpleFieldKind.Array => newMember.fieldInfo.ArrayType?.Width ?? throw new NullReferenceException(),
+                SimpleFieldKind.String => 2,
+                _ => newMember.Size
+            };
+
+            int alignment = Math.Min(logicalFieldSize, PackingSize);
+            maxAlignment = Math.Max(maxAlignment, alignment);
+            int padding = (alignment - (offset % alignment)) % alignment;
+
+            offset += padding;
+            newMember.offset = offset;
+            offset += newMember.Size;
         }
 
-        this.Members = memberList;
-        this.nestedTypes = new List<AhkStruct>();
+        int tailPadding = (maxAlignment - (offset % maxAlignment)) % maxAlignment;
+        Size = offset + tailPadding;
+
+        Members = memberList;
+        nestedTypes = new List<AhkStruct>();
     }
 
     private static string NamespaceToPath(string ns)
@@ -97,6 +122,7 @@ public class AhkStruct : AhkType
         sb.AppendLine($"class {Name} extends Win32Struct");
         sb.AppendLine("{");
         sb.AppendLine($"    static sizeof => {Size}");
+        sb.AppendLine($"    static packingSize => {PackingSize}");
 
         BodyToAhk(sb, 0);
 
@@ -127,7 +153,7 @@ public class AhkStruct : AhkType
 
         internal readonly MemberFlags flags = MemberFlags.None;
 
-        internal int offset { get; private set; }
+        internal int offset;
 
         internal string Name => mr.GetString(def.Name);
 
