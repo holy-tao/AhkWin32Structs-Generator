@@ -299,9 +299,9 @@ public static class FieldSignatureDecoder
         var sig = fieldDef.DecodeSignature(new GenericSignatureTypeProvider(), null);
 #pragma warning restore CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
 
-        Match match = Regex.Match(sig, @"^(?<Namespace>\w*?.*?).?(?<TypeName>\w+)\[(?<Min>\d+)...(?<Max>\d+)]$") ??
+        Match match = Regex.Match(sig, @"^(?<Namespace>\w*?.*?).?(?<TypeName>\w+)(?<Pointer>\*?)\[(?<Min>\d+)...(?<Max>\d+)]$") ??
             throw new FormatException($"Failed to parse array signature: {sig}");
-
+        
         if (int.TryParse(match.Groups["Max"].Value, out int maxLength))
         {
             return maxLength + 1;
