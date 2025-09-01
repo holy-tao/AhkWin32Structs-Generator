@@ -7,17 +7,19 @@
  */
 class Win32Struct {
 
+    __buf := unset
+
     /**
      * @readoly Pointer to the struct's memory location.
      * @type {Integer}
      */
-    ptr := unset
+    ptr => this.__buf.ptr
 
     /**
      * @readonly The size of the struct in bytes.
      * @type {Integer}
      */
-    size := unset
+    size => this.__buf.size
 
     /**
      * Initializes a new `Win32Struct` object at the given memory location. Classes extending `Struct`
@@ -27,12 +29,13 @@ class Win32Struct {
      *      0 to use a new `Buffer`.
      */
     __New(ptr := 0){
-        this.DefineProp("ptr", { Get: (*) => ptr })
-        this.DefineProp("size", { Get: (*) => %this.__Class%.sizeof })
+        size := %this.__Class%.sizeof
 
         if(ptr == 0){
-            this.DefineProp("__buf", { Value: Buffer(this.size, 0) })
-            this.DefineProp("ptr", { Get: (*) => this.__buf.size })
+            this.__buf := Buffer(size, 0)
+        }
+        else{
+            this.__buf := {ptr: ptr, size: size}
         }
     }
 
