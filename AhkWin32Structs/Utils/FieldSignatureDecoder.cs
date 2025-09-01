@@ -127,6 +127,10 @@ public record FieldInfo
             {
                 throw new NotSupportedException("Cannot get width of array FieldInfo directly - use Rank * width of TypeDef");
             }
+            else if (Kind == SimpleFieldKind.String)
+            {
+                return Length * 2;  //2 for CHARs, assuming UTF-16
+            }
             else if (Kind == SimpleFieldKind.Pointer)
             {
                 return 8;
@@ -170,6 +174,10 @@ public record FieldInfo
                     default:
                         throw new NotSupportedException(TypeName);
                 }
+            }
+            else if (Kind == SimpleFieldKind.String)
+            {
+                return "String";
             }
             else if (Kind == SimpleFieldKind.Array)
             {
@@ -239,6 +247,14 @@ public static class FieldSignatureDecoder
                 int numLoBounds = blob.ReadCompressedInteger();
                 for (int i = 0; i < numLoBounds; i++) blob.ReadCompressedInteger();
 
+                if (arrElem.TypeName.Equals("char", StringComparison.CurrentCultureIgnoreCase) ||
+                    arrElem.TypeName.Equals("tchar", StringComparison.CurrentCultureIgnoreCase) ||
+                    arrElem.TypeName.Equals("wchar", StringComparison.CurrentCultureIgnoreCase))
+                {
+                    Console.WriteLine($">>> Detected string: {reader.GetString(fieldDef.Name)}");
+                    return new FieldInfo(SimpleFieldKind.String, arrElem.TypeName, arrLength);
+                }
+
                 return new FieldInfo(SimpleFieldKind.Array, arrElem.TypeName, arrLength, null, arrElem);
 
             // ValueType or Class
@@ -290,7 +306,10 @@ public static class FieldSignatureDecoder
     /// </summary>
     private static int GetFixedArrayLength(MetadataReader reader, FieldDefinition fieldDef)
     {
+#pragma warning disable CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
         var sig = fieldDef.DecodeSignature(new GenericSignatureTypeProvider(), null);
+#pragma warning restore CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
+
         Match match = Regex.Match(sig, @"^(?<Namespace>\w*?.*?).?(?<TypeName>\w+)\[(?<Min>\d+)...(?<Max>\d+)]$") ??
             throw new FormatException($"Failed to parse array signature: {sig}");
 

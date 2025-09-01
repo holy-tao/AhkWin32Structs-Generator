@@ -169,6 +169,7 @@ public class AhkStruct : AhkType
                 case SimpleFieldKind.Primitive:
                 case SimpleFieldKind.Pointer:
                 case SimpleFieldKind.Array:
+                case SimpleFieldKind.String:
                     ToAhkStructMember(sb, embeddingOfset);
                     break;
                 default:
@@ -198,20 +199,14 @@ public class AhkStruct : AhkType
             // TODO handle arrays
             if (fieldInfo.Kind == SimpleFieldKind.Array)
             {
-                FieldInfo arrTypeInfo = new FieldInfo(SimpleFieldKind.Primitive, fieldInfo.TypeName);
-
-                sb.AppendLine($"    {Name}[index]{{");
-                sb.AppendLine("         get {");
-                sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Length})");
-                sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Length}\", , index)");
-                sb.AppendLine($"            return NumGet(this, {memberOffset} + (index * {arrTypeInfo.Width}), \"{arrTypeInfo.DllCallType}\")");
-                sb.AppendLine("         }");
-                sb.AppendLine("         set {");
-                sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Length})");
-                sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Length}\", , index)");
-                sb.AppendLine($"            return NumPut(\"{arrTypeInfo.DllCallType}\", value, this, {memberOffset} + ((index - 1) * {arrTypeInfo.Width}))");
-                sb.AppendLine("         }");
-                sb.AppendLine("    }");
+                ToAhkArray(sb, memberOffset);
+            }
+            else if (fieldInfo.Kind == SimpleFieldKind.String)
+            {
+                sb.AppendLine($"    {Name} {{");
+                sb.AppendLine($"        get => StrGet(this.ptr + {memberOffset}, {fieldInfo.Length - 1}, \"UTF-16\")");
+                sb.AppendLine($"        set => StrPut(value, this.ptr + {memberOffset}, {fieldInfo.Length - 1}, \"UTF-16\")");
+                sb.AppendLine($"    }}");
             }
             else
             {
@@ -220,6 +215,24 @@ public class AhkStruct : AhkType
                 sb.AppendLine($"        set => NumPut(\"{fieldInfo.DllCallType}\", value, this, {memberOffset})");
                 sb.AppendLine($"    }}");
             }
+        }
+
+        private void ToAhkArray(StringBuilder sb, int offset)
+        {
+            FieldInfo arrTypeInfo = fieldInfo.ArrayType ?? throw new NullReferenceException($"Null ArrayType for {Name}");
+
+            sb.AppendLine($"    {Name}[index]{{");
+            sb.AppendLine("         get {");
+            sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Length})");
+            sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Length}\", , index)");
+            sb.AppendLine($"            return NumGet(this, {offset} + (index * {arrTypeInfo.Width}), \"{arrTypeInfo.DllCallType}\")");
+            sb.AppendLine("         }");
+            sb.AppendLine("         set {");
+            sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Length})");
+            sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Length}\", , index)");
+            sb.AppendLine($"            return NumPut(\"{arrTypeInfo.DllCallType}\", value, this, {offset} + ((index - 1) * {arrTypeInfo.Width}))");
+            sb.AppendLine("         }");
+            sb.AppendLine("    }");
         }
     }
 }
