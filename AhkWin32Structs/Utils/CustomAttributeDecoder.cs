@@ -47,6 +47,26 @@ public class CustomAttributeDecoder
         return null;
     }
 
+    public static CustomAttribute? GetAttribute(MetadataReader reader, TypeDefinition typeDef, string targetAttr)
+    {
+        foreach (var attrHandle in typeDef.GetCustomAttributes())
+        {
+            var attr = reader.GetCustomAttribute(attrHandle);
+            var ctorHandle = attr.Constructor;
+            // Get the attribute type
+            var attrTypeHandle = reader.GetMemberReference((MemberReferenceHandle)ctorHandle).Parent;
+            var attrTypeRef = reader.GetTypeReference((TypeReferenceHandle)attrTypeHandle);
+            var attrName = reader.GetString(attrTypeRef.Name);
+
+            if (attrName == targetAttr)
+            {
+                return attr;
+            }
+        }
+
+        return null;
+    }
+
     public static IEnumerable<string> GetAllNames(MetadataReader reader, TypeDefinition typeDef)
     {
         return GetAll(reader, typeDef).Select(td => reader.GetString(td.Name));

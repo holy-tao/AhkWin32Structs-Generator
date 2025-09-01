@@ -122,6 +122,7 @@ public class AhkStruct : AhkType
         sb.AppendLine($"class {Name} extends Win32Struct");
         sb.AppendLine("{");
         sb.AppendLine($"    static sizeof => {Size}");
+        sb.AppendLine();
         sb.AppendLine($"    static packingSize => {PackingSize}");
 
         BodyToAhk(sb, 0);
@@ -133,11 +134,26 @@ public class AhkStruct : AhkType
     {
         foreach (Member m in Members)
         {
-            // TODO if member type is a struct or class, copy its values here.
-            // This currently generates incorrect layouts in this case because we
-            // assume that a struct or class must be a pointer
             sb.AppendLine();
             m.ToAhk(sb, embeddingOfset);
+        }
+
+        // Check for [StructSizeField("<FIELDNAME>")] and generate a __New method if there is one
+        CustomAttribute? sizeFieldAttr = CustomAttributeDecoder.GetAttribute(mr, typeDef, "StructSizeFieldAttribute");
+        if (sizeFieldAttr.HasValue)
+        {
+            CustomAttributeValue<string> decoded = ((CustomAttribute)sizeFieldAttr).DecodeValue(new CaTypeProvider());
+            var arg = decoded.FixedArguments[0];
+
+            sb.AppendLine();
+            sb.AppendLine("    /**");
+            sb.AppendLine($"     * Initializes the struct. `{arg.Value}` must always contain the size of the struct.");
+            sb.AppendLine($"     * @param {{Integer}} ptr The location at which to create the struct, or 0 to create a new `Buffer`");
+            sb.AppendLine("     */");
+            sb.AppendLine("    __New(ptr := 0){");
+            sb.AppendLine("        super.__New(ptr)");
+            sb.AppendLine($"        this.{arg.Value} := {Size}");
+            sb.AppendLine("    }");
         }
     }
 
