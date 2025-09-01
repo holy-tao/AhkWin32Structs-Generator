@@ -8,6 +8,7 @@
  */
 class Win32Struct extends Object{
 
+;@region Properties
     __buf := unset
 
     /**
@@ -35,6 +36,9 @@ class Win32Struct extends Object{
         }
     }
 
+;@endregion Properties
+
+;@region Instance Methods
     /**
      * Initializes a new `Win32Struct` object at the given memory location. Classes extending `Struct`
      * must contain a static member called `sizeof`, which is taken to be the size of the struct.
@@ -198,6 +202,9 @@ class Win32Struct extends Object{
         return dump
     }
 
+;@endregion Instance Methods
+
+;@region Static Methods
     /**
      * Takes in a pointer or buffer-like object and retrieves its pointer and optionally its size. This method also
      * strictly validates the types of these properties. If passed a pointer, size is not changed.
@@ -229,4 +236,5 @@ class Win32Struct extends Object{
 
         throw TypeError("Expected an Integer or buffer-like Object, but got a(n) " . type(ptrOrBufferLike))
     }
+;@endregion Static Methods
 }
