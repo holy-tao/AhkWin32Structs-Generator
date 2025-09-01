@@ -1,25 +1,44 @@
 using System;
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
+using System.Text.RegularExpressions;
+using MetadataUtils;
 using Microsoft.VisualBasic.FileIO;
 
 // The kind of field - for AHK we only care whether it's a primitive, pointer, or array (and its type and rank if an array)
 // We don't care about most of the specifics
 public enum SimpleFieldKind
 {
-    Primitive,
-    Pointer,
+    Primitive,  // int, int16, uint, etc
+    Pointer,    // any pointer-sized integer (function pointers, COM interface pointers, etc)
     Array,
-    Struct,
+    Struct,     // an embedded struct. TypeDef contains the type of the struct itself in this case
     Class,
-    Other
+    Other,      // unhandled, will produce an error
+    String      // A string buffer for which we can use StrPut / StrGet (usually a character array)
 }
 
-public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, int Rank = 0, TypeDefinition? TypeDef = null)
+public record FieldInfo
 {
+
+    public readonly SimpleFieldKind Kind;
+    public readonly string TypeName;
+    public readonly int Length;
+    public readonly TypeDefinition? TypeDef;
+    public readonly FieldInfo? ArrayType;
+
+    public FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, TypeDefinition? TypeDef = null, FieldInfo? ArrayType = null)
+    {
+        this.Kind = Kind;
+        this.TypeName = TypeName.ToLower();
+        this.Length = Length;
+        this.TypeDef = TypeDef;
+        this.ArrayType = ArrayType;
+    }
     // https://www.autohotkey.com/docs/v2/lib/DllCall.htm
     public string DllCallType
     {
@@ -29,31 +48,31 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
             {
                 switch (TypeName)
                 {
-                    case "Single":
+                    case "single":
                         return "float";
-                    case "Boolean":
-                    case "Int32":
+                    case "boolean":
+                    case "int32":
                         return "int";
-                    case "Double":
+                    case "double":
                         return "double";
-                    case "Int64":
+                    case "int64":
                         return "int64";
-                    case "UInt32":
+                    case "uint32":
                         return "uint";
-                    case "UInt64":
+                    case "uint64":
                         return "uint";
-                    case "Int16":
+                    case "int16":
                         return "short";
-                    case "UInt16":
+                    case "uint16":
                         return "ushort";
-                    case "Byte":
-                    case "SByte":
-                    case "Char":
+                    case "byte":
+                    case "sbyte":
+                    case "char":
                         return "char";
-                    case "IntPtr":
-                    case "UIntPtr":
-                    case "Void":
-                    case "Ptr":
+                    case "uintptr":
+                    case "intptr":
+                    case "void":
+                    case "ptr":
                         return "ptr";
                     default:
                         throw new NotSupportedException(TypeName);
@@ -80,25 +99,25 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
             {
                 switch (TypeName)
                 {
-                    case "Single":
-                    case "Boolean":
-                    case "Int32":
-                    case "UInt32":
+                    case "single":
+                    case "boolean":
+                    case "int32":
+                    case "uint32":
                         return 4;
-                    case "Double":
-                    case "Int64":
-                    case "IntPtr":
-                    case "UInt64":
-                    case "UIntPtr":
-                    case "Void":
-                    case "Ptr":
+                    case "double":
+                    case "int64":
+                    case "intptr":
+                    case "uint64":
+                    case "uintptr":
+                    case "void":
+                    case "ptr":
                         return 8;
-                    case "Int16":
-                    case "UInt16":
+                    case "int16":
+                    case "uint16":
+                    case "char":        // Assuming UTF-16
                         return 2;
-                    case "Byte":
-                    case "SByte":
-                    case "Char":
+                    case "byte":
+                    case "sbyte":
                         return 1;
                     default:
                         throw new NotSupportedException($"{TypeName} ({Kind})");
@@ -106,7 +125,7 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
             }
             else if (Kind == SimpleFieldKind.Array)
             {
-                return Rank * new FieldInfo(SimpleFieldKind.Primitive, TypeName, 0).Width;
+                throw new NotSupportedException("Cannot get width of array FieldInfo directly - use Rank * width of TypeDef");
             }
             else if (Kind == SimpleFieldKind.Pointer)
             {
@@ -128,25 +147,25 @@ public readonly record struct FieldInfo(SimpleFieldKind Kind, string TypeName, i
             {
                 switch (TypeName)
                 {
-                    case "Single":
-                    case "Double":
+                    case "single":
+                    case "double":
                         return "Float";
-                    case "Boolean":
+                    case "boolean":
                         return "Boolean";
-                    case "Int32":
-                    case "UInt32":
-                    case "Int64":
-                    case "UInt64":
-                    case "Int16":
-                    case "UInt16":
-                    case "Byte":
-                    case "SByte":
-                    case "Char":
+                    case "int32":
+                    case "uint32":
+                    case "int64":
+                    case "uint64":
+                    case "int16":
+                    case "uint16":
+                    case "byte":
+                    case "sbyte":
+                    case "char":
                         return "Integer";
-                    case "UIntPtr":
-                    case "IntPtr":
-                    case "Void":
-                    case "Ptr":
+                    case "uintptr":
+                    case "intptr":
+                    case "void":
+                    case "ptr":
                         return "Pointer";
                     default:
                         throw new NotSupportedException(TypeName);
@@ -169,10 +188,11 @@ public static class FieldSignatureDecoder
 {
     public static FieldInfo DecodeFieldType(MetadataReader reader, FieldDefinition fieldDef)
     {
-        // Step 1: check for FixedBufferAttribute
-        if (TryGetFixedBufferInfo(reader, fieldDef, out var elemType, out var length))
+        // Step 1: check for FixedBufferAttribute - these are our fixed-length arrays
+        if (TryGetFixedBufferInfo(reader, fieldDef, out FieldInfo? fieldInfo))
         {
-            return new FieldInfo(SimpleFieldKind.Array, elemType, length);
+            Console.WriteLine(">>> Got Array from FixedBufferInfo");
+            return (FieldInfo)fieldInfo;
         }
 
         // Step 2: decode normal field signature blob
@@ -181,10 +201,10 @@ public static class FieldSignatureDecoder
         if (header != (byte)SignatureKind.Field)
             throw new BadImageFormatException("Not a field signature");
 
-        return DecodeType(ref blob, reader);
+        return DecodeType(ref blob, reader, fieldDef);
     }
 
-    private static FieldInfo DecodeType(ref BlobReader blob, MetadataReader reader)
+    private static FieldInfo DecodeType(ref BlobReader blob, MetadataReader reader, FieldDefinition fieldDef)
     {
         var et = (SignatureTypeCode)blob.ReadByte();
 
@@ -209,25 +229,29 @@ public static class FieldSignatureDecoder
 
             // Pointer
             case SignatureTypeCode.Pointer:
-                DecodeType(ref blob, reader); // skip pointee
+                DecodeType(ref blob, reader, fieldDef); // skip pointee
                 return new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
 
             // SZARRAY - we should probably skip structs with these
             case SignatureTypeCode.SZArray:
-                var elem = DecodeType(ref blob, reader);
-                return new FieldInfo(SimpleFieldKind.Array, elem.TypeName, -1);
+                throw new NotSupportedException($"{reader.GetString(fieldDef.Name)}: dynamic array");
+
+            // var elem = DecodeType(ref blob, reader, fieldDef);
+            //int length = GetFixedArrayLength(reader, fieldDef);
+            //return new FieldInfo(SimpleFieldKind.Array, elem.TypeName, length, null, elem);
 
             // ARRAY
             case SignatureTypeCode.Array:
-                var arrElem = DecodeType(ref blob, reader);
+                var arrElem = DecodeType(ref blob, reader, fieldDef);
                 int rank = blob.ReadCompressedInteger();
+                int arrLength = GetFixedArrayLength(reader, fieldDef);
 
                 int numSizes = blob.ReadCompressedInteger();
                 for (int i = 0; i < numSizes; i++) blob.ReadCompressedInteger();
                 int numLoBounds = blob.ReadCompressedInteger();
                 for (int i = 0; i < numLoBounds; i++) blob.ReadCompressedInteger();
 
-                return new FieldInfo(SimpleFieldKind.Array, arrElem.TypeName, rank);
+                return new FieldInfo(SimpleFieldKind.Array, arrElem.TypeName, arrLength, null, arrElem);
 
             // ValueType or Class
             case (SignatureTypeCode)17:         //0x11 - also a TypeHandle
@@ -238,7 +262,7 @@ public static class FieldSignatureDecoder
 
                 if (handle.Kind == HandleKind.TypeDefinition)
                 {
-                    return DecodeTypeDef(reader, (TypeDefinitionHandle)handle);
+                    return DecodeTypeDef(reader, (TypeDefinitionHandle)handle, fieldDef);
                 }
                 else if (handle.Kind == HandleKind.TypeReference)
                 {
@@ -246,7 +270,7 @@ public static class FieldSignatureDecoder
                     TypeDefinitionHandle? resolvedTypeDefHandle = ResolveTypeReference(reader, (TypeReferenceHandle)handle);
                     if (resolvedTypeDefHandle != null)
                     {
-                        return DecodeTypeDef(reader, (TypeDefinitionHandle)resolvedTypeDefHandle);
+                        return DecodeTypeDef(reader, (TypeDefinitionHandle)resolvedTypeDefHandle, fieldDef);
                     }
                     else
                     {
@@ -258,7 +282,7 @@ public static class FieldSignatureDecoder
                 {
                     var ts = reader.GetTypeSpecification((TypeSpecificationHandle)handle);
                     var specReader = reader.GetBlobReader(ts.Signature);
-                    return DecodeType(ref specReader, reader);
+                    return DecodeType(ref specReader, reader, fieldDef);
                 }
 
                 return new FieldInfo(SimpleFieldKind.Other, "TypeSpec");
@@ -273,12 +297,56 @@ public static class FieldSignatureDecoder
         }
     }
 
-    private static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle)
+    /// <summary>
+    /// Returns the fixed array length for a field
+    /// </summary>
+    private static int GetFixedArrayLength(MetadataReader reader, FieldDefinition fieldDef)
+    {
+        CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(reader, fieldDef, "NativeArrayInfoAttribute");
+
+        if (attr.HasValue)
+        {
+            /*
+            We're looking for one of:
+                CountConst - the size of the array
+                CountParamIndex - index of the struct member holding the size of the array (dynamically sized)
+                CountFieldName - name of the struct member holding the size of the array (dynamically sized)
+            We only support CountConst for the time being
+            */
+
+            CustomAttributeValue<string> decoded = attr.Value.DecodeValue(new CaTypeProvider());
+            CustomAttributeNamedArgument<string>? countConst = decoded.NamedArguments.FirstOrDefault(a => a.Name == "CountConst");
+            if (countConst != null)
+            {
+                return Convert.ToInt32(countConst.Value);
+            }
+
+            throw new NotSupportedException($"{reader.GetString(fieldDef.Name)} is dynamically sized");
+        }
+        else
+        {
+            // No luck - we need to parse the signature blob ourselves
+            // this is common for arrays of primitives
+            var sig = fieldDef.DecodeSignature(new GenericSignatureTypeProvider(), null);
+            Match match = Regex.Match(sig, @"^(?<Namespace>\w*?.*?).?(?<TypeName>\w+)\[(?<Min>\d+)...(?<Max>\d+)]$") ??
+                throw new FormatException($"Failed to parse array signature: {sig}");
+
+            if (int.TryParse(match.Groups["Max"].Value, out int maxLength))
+            {
+                return maxLength + 1;
+            }
+
+            throw new FormatException($"Failed to parse array signature: {sig}");
+        }
+    }
+
+    private static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle, FieldDefinition fieldDef)
     {
         var td = reader.GetTypeDefinition(tdHandle);
         if (IsEnum(reader, tdHandle))
         {
-            string underlying = GetEnumUnderlyingType(reader, tdHandle);
+            string underlying = GetEnumUnderlyingType(reader, tdHandle, fieldDef);
+            // TODO I think this is producing FieldInfos with type Primitive but TypeName of the enum
             return new FieldInfo(SimpleFieldKind.Primitive, underlying);
         }
         else
@@ -287,7 +355,7 @@ public static class FieldSignatureDecoder
             {
                 return (FieldInfo)fieldInfo;
             }
-            
+
             return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name), 0, td);
         }
     }
@@ -374,7 +442,7 @@ public static class FieldSignatureDecoder
         return false;
     }
 
-    private static string GetEnumUnderlyingType(MetadataReader reader, TypeDefinitionHandle handle)
+    private static string GetEnumUnderlyingType(MetadataReader reader, TypeDefinitionHandle handle, FieldDefinition fieldDef)
     {
         var td = reader.GetTypeDefinition(handle);
         foreach (var fieldHandle in td.GetFields())
@@ -384,7 +452,7 @@ public static class FieldSignatureDecoder
             {
                 var blob = reader.GetBlobReader(fd.Signature);
                 blob.ReadByte(); // skip FIELD (0x06)
-                var fi = DecodeType(ref blob, reader);
+                var fi = DecodeType(ref blob, reader, fieldDef);
                 return fi.TypeName;
             }
         }
@@ -425,7 +493,7 @@ public static class FieldSignatureDecoder
         return null;
     }
 
-    private static bool TryGetFixedBufferInfo(MetadataReader reader, FieldDefinition field, out string elementType, out int length)
+    private static bool TryGetFixedBufferInfo(MetadataReader reader, FieldDefinition field, [NotNullWhen(true)] out FieldInfo? fieldInfo)
     {
         foreach (var caHandle in field.GetCustomAttributes())
         {
@@ -462,14 +530,17 @@ public static class FieldSignatureDecoder
                 valueReader.ReadByte(); // prolog 0x00
 
                 var elemTypeHandle = (TypeReferenceHandle)valueReader.ReadTypeHandle();
-                elementType = reader.GetString(reader.GetTypeReference(elemTypeHandle).Name);
-                length = valueReader.ReadInt32();
+                TypeDefinitionHandle? elemTypeDefHandle = ResolveTypeReference(reader, elemTypeHandle);
+                var elemTypeDef = reader.GetTypeDefinition(elemTypeDefHandle.GetValueOrDefault());
+                var elementTypeName = reader.GetString(reader.GetTypeReference(elemTypeHandle).Name);
+                var length = valueReader.ReadInt32();
+
+                fieldInfo = new(SimpleFieldKind.Array, elementTypeName, length, elemTypeDef);
                 return true;
             }
         }
 
-        elementType = "";
-        length = 0;
+        fieldInfo = null;
         return false;
     }
 }

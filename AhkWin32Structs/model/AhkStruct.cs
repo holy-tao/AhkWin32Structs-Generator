@@ -142,6 +142,12 @@ public class AhkStruct : AhkType
                 embeddedStruct = new(mr, fieldTypeDef, apiDocs);
                 Size = embeddedStruct.Size;
             }
+            else if (fieldInfo.Kind == SimpleFieldKind.Array)
+            {
+                FieldInfo arrayElementType = fieldInfo.ArrayType ??
+                    throw new NullReferenceException($"Null array element for Array field {Name}");
+                Size = fieldInfo.Length * arrayElementType.Width;
+            }
             else
             {
                 Size = fieldInfo.Width;
@@ -196,16 +202,16 @@ public class AhkStruct : AhkType
 
                 sb.AppendLine($"    {Name}[index]{{");
                 sb.AppendLine("         get {");
-                sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Rank})");
-                sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Rank}\", , index)");
+                sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Length})");
+                sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Length}\", , index)");
                 sb.AppendLine($"            return NumGet(this, {memberOffset} + (index * {arrTypeInfo.Width}), \"{arrTypeInfo.DllCallType}\")");
                 sb.AppendLine("         }");
                 sb.AppendLine("         set {");
-                sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Rank})");
-                sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Rank}\", , index)");
+                sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Length})");
+                sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Length}\", , index)");
                 sb.AppendLine($"            return NumPut(\"{arrTypeInfo.DllCallType}\", value, this, {memberOffset} + ((index - 1) * {arrTypeInfo.Width}))");
                 sb.AppendLine("         }");
-                sb.AppendLine("}");
+                sb.AppendLine("    }");
             }
             else
             {
