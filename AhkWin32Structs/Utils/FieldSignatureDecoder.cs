@@ -188,14 +188,6 @@ public static class FieldSignatureDecoder
 {
     public static FieldInfo DecodeFieldType(MetadataReader reader, FieldDefinition fieldDef)
     {
-        // Step 1: check for FixedBufferAttribute - these are our fixed-length arrays
-        if (TryGetFixedBufferInfo(reader, fieldDef, out FieldInfo? fieldInfo))
-        {
-            Console.WriteLine(">>> Got Array from FixedBufferInfo");
-            return (FieldInfo)fieldInfo;
-        }
-
-        // Step 2: decode normal field signature blob
         var blob = reader.GetBlobReader(fieldDef.Signature);
         byte header = blob.ReadByte();
         if (header != (byte)SignatureKind.Field)
@@ -235,10 +227,6 @@ public static class FieldSignatureDecoder
             // SZARRAY - we should probably skip structs with these
             case SignatureTypeCode.SZArray:
                 throw new NotSupportedException($"{reader.GetString(fieldDef.Name)}: dynamic array");
-
-            // var elem = DecodeType(ref blob, reader, fieldDef);
-            //int length = GetFixedArrayLength(reader, fieldDef);
-            //return new FieldInfo(SimpleFieldKind.Array, elem.TypeName, length, null, elem);
 
             // ARRAY
             case SignatureTypeCode.Array:
@@ -302,42 +290,16 @@ public static class FieldSignatureDecoder
     /// </summary>
     private static int GetFixedArrayLength(MetadataReader reader, FieldDefinition fieldDef)
     {
-        CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(reader, fieldDef, "NativeArrayInfoAttribute");
-
-        if (attr.HasValue)
-        {
-            /*
-            We're looking for one of:
-                CountConst - the size of the array
-                CountParamIndex - index of the struct member holding the size of the array (dynamically sized)
-                CountFieldName - name of the struct member holding the size of the array (dynamically sized)
-            We only support CountConst for the time being
-            */
-
-            CustomAttributeValue<string> decoded = attr.Value.DecodeValue(new CaTypeProvider());
-            CustomAttributeNamedArgument<string>? countConst = decoded.NamedArguments.FirstOrDefault(a => a.Name == "CountConst");
-            if (countConst != null)
-            {
-                return Convert.ToInt32(countConst.Value);
-            }
-
-            throw new NotSupportedException($"{reader.GetString(fieldDef.Name)} is dynamically sized");
-        }
-        else
-        {
-            // No luck - we need to parse the signature blob ourselves
-            // this is common for arrays of primitives
-            var sig = fieldDef.DecodeSignature(new GenericSignatureTypeProvider(), null);
-            Match match = Regex.Match(sig, @"^(?<Namespace>\w*?.*?).?(?<TypeName>\w+)\[(?<Min>\d+)...(?<Max>\d+)]$") ??
-                throw new FormatException($"Failed to parse array signature: {sig}");
-
-            if (int.TryParse(match.Groups["Max"].Value, out int maxLength))
-            {
-                return maxLength + 1;
-            }
-
+        var sig = fieldDef.DecodeSignature(new GenericSignatureTypeProvider(), null);
+        Match match = Regex.Match(sig, @"^(?<Namespace>\w*?.*?).?(?<TypeName>\w+)\[(?<Min>\d+)...(?<Max>\d+)]$") ??
             throw new FormatException($"Failed to parse array signature: {sig}");
+
+        if (int.TryParse(match.Groups["Max"].Value, out int maxLength))
+        {
+            return maxLength + 1;
         }
+
+        throw new FormatException($"Failed to parse array signature: {sig}");
     }
 
     private static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle, FieldDefinition fieldDef)
@@ -491,56 +453,5 @@ public static class FieldSignatureDecoder
 
         // Type is in an external assembly
         return null;
-    }
-
-    private static bool TryGetFixedBufferInfo(MetadataReader reader, FieldDefinition field, [NotNullWhen(true)] out FieldInfo? fieldInfo)
-    {
-        foreach (var caHandle in field.GetCustomAttributes())
-        {
-            var ca = reader.GetCustomAttribute(caHandle);
-            var ctor = ca.Constructor;
-
-            string typeNameHandle = "";
-            string nsHandle = "";
-
-            if (ctor.Kind == HandleKind.MemberReference)
-            {
-                var mr = reader.GetMemberReference((MemberReferenceHandle)ctor);
-                if (mr.Parent.Kind == HandleKind.TypeReference)
-                {
-                    var tr = reader.GetTypeReference((TypeReferenceHandle)mr.Parent);
-                    nsHandle = reader.GetString(tr.Namespace);
-                    typeNameHandle = reader.GetString(tr.Name);
-                }
-            }
-            else if (ctor.Kind == HandleKind.MethodDefinition)
-            {
-                var md = reader.GetMethodDefinition((MethodDefinitionHandle)ctor);
-                var td = reader.GetTypeDefinition(md.GetDeclaringType());
-                nsHandle = reader.GetString(td.Namespace);
-                typeNameHandle = reader.GetString(td.Name);
-            }
-
-            //Console.WriteLine(nsHandle + "::" + typeNameHandle);
-
-            if (nsHandle == "System.Runtime.CompilerServices" && typeNameHandle == "FixedBufferAttribute")
-            {
-                var valueReader = reader.GetBlobReader(ca.Value);
-                valueReader.ReadByte(); // prolog 0x01
-                valueReader.ReadByte(); // prolog 0x00
-
-                var elemTypeHandle = (TypeReferenceHandle)valueReader.ReadTypeHandle();
-                TypeDefinitionHandle? elemTypeDefHandle = ResolveTypeReference(reader, elemTypeHandle);
-                var elemTypeDef = reader.GetTypeDefinition(elemTypeDefHandle.GetValueOrDefault());
-                var elementTypeName = reader.GetString(reader.GetTypeReference(elemTypeHandle).Name);
-                var length = valueReader.ReadInt32();
-
-                fieldInfo = new(SimpleFieldKind.Array, elementTypeName, length, elemTypeDef);
-                return true;
-            }
-        }
-
-        fieldInfo = null;
-        return false;
     }
 }
