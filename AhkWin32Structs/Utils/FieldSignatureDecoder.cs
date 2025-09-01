@@ -251,7 +251,6 @@ public static class FieldSignatureDecoder
                     arrElem.TypeName.Equals("tchar", StringComparison.CurrentCultureIgnoreCase) ||
                     arrElem.TypeName.Equals("wchar", StringComparison.CurrentCultureIgnoreCase))
                 {
-                    Console.WriteLine($">>> Detected string: {reader.GetString(fieldDef.Name)}");
                     return new FieldInfo(SimpleFieldKind.String, arrElem.TypeName, arrLength);
                 }
 
