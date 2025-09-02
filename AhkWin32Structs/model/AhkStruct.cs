@@ -75,8 +75,6 @@ public class AhkStruct : AhkType
         {
             Size = memberList.Max(Comparer<Member>.Create((m1, m2) => m2.Size - m1.Size))?.Size ??
                 throw new NullReferenceException("Union type has no members");
-
-            
         }
 
         PackingSize = Math.Min(PackingSize, maxAlignment);
@@ -140,10 +138,9 @@ public class AhkStruct : AhkType
         sb.AppendLine($"#Include {pathToBase}Win32Struct.ahk");
 
         // Generate #Include statements for embedded structs
-        var distinctMemberStructs = Members.AsEnumerable().Where((m) => m.fieldInfo.Kind == SimpleFieldKind.Struct);
         var importedTypes = new List<string>();
 
-        foreach (Member m in distinctMemberStructs)
+        foreach (Member m in Members.Where((m) => m.embeddedStruct != null))
         {
             if (importedTypes.Contains(m.fieldInfo.TypeName) || m.fieldInfo.Kind == SimpleFieldKind.COM)
                 continue;
@@ -262,6 +259,9 @@ public class AhkStruct : AhkType
                 FieldInfo arrayElementType = fieldInfo.ArrayType ??
                     throw new NullReferenceException($"Null array element for Array field {Name}");
                 Size = fieldInfo.Length * arrayElementType.Width;
+
+                if (arrayElementType.TypeDef != null)
+                    embeddedStruct = new(mr, (TypeDefinition)arrayElementType.TypeDef, apiDocs);
             }
             else
             {
@@ -374,6 +374,18 @@ public class AhkStruct : AhkType
         {
             FieldInfo arrTypeInfo = fieldInfo.ArrayType ?? throw new NullReferenceException($"Null ArrayType for {Name}");
 
+            string ahkElementType = arrTypeInfo.Kind == SimpleFieldKind.Primitive ? "Primitive" : arrTypeInfo.TypeName;
+            string dllCallType = arrTypeInfo.Kind == SimpleFieldKind.Primitive ? arrTypeInfo.DllCallType : "";
+
+            sb.AppendLine($"    {Name}{{");
+            sb.AppendLine("        get {");
+            sb.AppendLine($"            if(!this.HasProp(\"__{Name}ProxyArray\"))");
+            sb.AppendLine($"                this.__{Name}ProxyArray := Win32FixedArray(this.ptr + {offset}, {arrTypeInfo.Width}, {ahkElementType}, \"{dllCallType}\")");
+            sb.AppendLine($"            return this.__{Name}ProxyArray");
+            sb.AppendLine("        }");
+            sb.AppendLine("    }");
+
+            /*
             sb.AppendLine($"    {Name}[index]{{");
             sb.AppendLine("         get {");
             sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Length})");
@@ -386,6 +398,7 @@ public class AhkStruct : AhkType
             sb.AppendLine($"            return NumPut(\"{arrTypeInfo.DllCallType}\", value, this, {offset} + ((index - 1) * {arrTypeInfo.Width}))");
             sb.AppendLine("         }");
             sb.AppendLine("    }");
+            */
         }
     }
 }

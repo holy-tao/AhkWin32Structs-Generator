@@ -245,7 +245,7 @@ public static class FieldSignatureDecoder
                     return new FieldInfo(SimpleFieldKind.String, arrElem.TypeName, arrLength);
                 }
 
-                return new FieldInfo(SimpleFieldKind.Array, arrElem.TypeName, arrLength, null, arrElem);
+                return new FieldInfo(SimpleFieldKind.Array, arrElem.TypeName, arrLength, arrElem.TypeDef, arrElem);
 
             // ValueType or Class
             case (SignatureTypeCode)17:         //0x11 - also a TypeHandle
