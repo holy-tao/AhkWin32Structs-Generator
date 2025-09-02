@@ -134,6 +134,9 @@ public class AhkStruct : AhkType
     {
         foreach (Member m in Members)
         {
+            if (m.flags.HasFlag(MemberFlags.Reserved) || m.flags.HasFlag(MemberFlags.Alignment))
+                continue;
+            
             sb.AppendLine();
             m.ToAhk(sb, embeddingOfset);
         }
@@ -211,6 +214,9 @@ public class AhkStruct : AhkType
 
             if (attrs.Contains("ReservedAttribute"))
                 flags |= MemberFlags.Reserved;
+
+            if (Name.StartsWith("___MISSING_ALIGNMENT__"))
+                flags |= MemberFlags.Alignment;
 
             apiFields?.TryGetValue(Name, out apiDetails);
         }
