@@ -10,11 +10,14 @@ using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
 
 [Flags]
-public enum MemberFlags {
+public enum MemberFlags
+{
     None = 0,
     Deprecated = 1,
     Reserved = 2,
-    Alignment = 3
+    Alignment = 3,
+    Union = 4,
+    EmbeddedAnonymous = 5
 };
 
 public class AhkStruct : AhkType
@@ -23,12 +26,18 @@ public class AhkStruct : AhkType
 
     public int PackingSize { get; private set; }
 
+    public bool IsUnion { get; private set; }
+
     internal IEnumerable<Member> Members { get; private set; }
 
-    private IEnumerable<AhkStruct> nestedTypes;
+    private IEnumerable<AhkStruct> NestedTypes;
 
     public AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
+        // Union and embedded anonymous struct types don't get tail padding
+        IsUnion = Name.EndsWith("_e__Union");
+        bool align = !(IsUnion || Name.EndsWith("_e__Struct"));
+        
         TypeLayout layout = typeDef.GetLayout();
         PackingSize = layout.PackingSize != 0 ? layout.PackingSize : 8;
 
@@ -57,15 +66,25 @@ public class AhkStruct : AhkType
             int padding = (alignment - (offset % alignment)) % alignment;
 
             offset += padding;
-            newMember.offset = offset;
+            newMember.offset = IsUnion? 0 : offset;
             offset += newMember.Size;
         }
 
+        Size = offset;
+        if (IsUnion)
+        {
+            Size = memberList.Max(Comparer<Member>.Create((m1, m2) => m2.Size - m1.Size))?.Size ??
+                throw new NullReferenceException("Union type has no members");
+
+            
+        }
+
+        PackingSize = Math.Min(PackingSize, maxAlignment);
         int tailPadding = (maxAlignment - (offset % maxAlignment)) % maxAlignment;
-        Size = offset + tailPadding;
+        Size += tailPadding;
 
         Members = memberList;
-        nestedTypes = new List<AhkStruct>();
+        NestedTypes = typeDef.GetNestedTypes().Select(handle => new AhkStruct(mr, mr.GetTypeDefinition(handle), apiDocs));
     }
 
     private static string NamespaceToPath(string ns)
@@ -91,7 +110,26 @@ public class AhkStruct : AhkType
         return relativePath;
     }
 
-    public override void ToAhk(StringBuilder sb)
+    public override void ToAhk(StringBuilder sb) => ToAhk(sb, true, []);
+
+    internal void ToAhk(StringBuilder sb, bool headers, List<Member> emittedMembers)
+    {
+        if (headers)
+            HeadersToAhk(sb);
+
+        MaybeAddTypeDocumentation(sb);
+        sb.AppendLine($"class {Name} extends Win32Struct");
+        sb.AppendLine("{");
+        sb.AppendLine($"    static sizeof => {Size}");
+        sb.AppendLine();
+        sb.AppendLine($"    static packingSize => {PackingSize}");
+
+        BodyToAhk(sb, 0, emittedMembers);
+
+        sb.AppendLine("}");
+    }
+
+    private void HeadersToAhk(StringBuilder sb)
     {
         // Path to Win32Struct.ahk, expecting it to be in the root of wherever we're making this class
         string pathToBase = Namespace.Split(".")
@@ -110,54 +148,71 @@ public class AhkStruct : AhkType
             if (importedTypes.Contains(m.fieldInfo.TypeName) || m.fieldInfo.Kind == SimpleFieldKind.COM)
                 continue;
 
+            if (m.flags.HasFlag(MemberFlags.Union) || m.flags.HasFlag(MemberFlags.EmbeddedAnonymous))
+                continue;
+
             string sbPath = RelativePathBetweenNamespaces(Namespace, m.embeddedStruct?.Namespace);
             sb.AppendLine($"#Include {sbPath}{m.fieldInfo.TypeName}.ahk");
             importedTypes.Add(m.fieldInfo.TypeName);
         }
 
         sb.AppendLine();
-
-        MaybeAddTypeDocumentation(sb);
-        //TODO add documentation
-        sb.AppendLine($"class {Name} extends Win32Struct");
-        sb.AppendLine("{");
-        sb.AppendLine($"    static sizeof => {Size}");
-        sb.AppendLine();
-        sb.AppendLine($"    static packingSize => {PackingSize}");
-
-        BodyToAhk(sb, 0);
-
-        sb.AppendLine("}");
     }
 
-    public void BodyToAhk(StringBuilder sb, int embeddingOfset = 0)
+    internal void BodyToAhk(StringBuilder sb, int embeddingOfset, List<Member> emittedMembers)
     {
+        var mLogEqComparer = EqualityComparer<Member>.Create((left, right) => left?.Name == right?.Name && left?.offset == right?.offset);
+        var mNameComarer = EqualityComparer<Member>.Create((left, right) => left?.Name.Equals(right?.Name, StringComparison.CurrentCultureIgnoreCase) ?? false);
+
         foreach (Member m in Members)
         {
             if (m.flags.HasFlag(MemberFlags.Reserved) || m.flags.HasFlag(MemberFlags.Alignment))
                 continue;
-            
+
+            if (m.flags.HasFlag(MemberFlags.Union) || m.flags.HasFlag(MemberFlags.EmbeddedAnonymous))
+            {
+                AhkStruct nested = NestedTypes.FirstOrDefault(s => s.Name == m.fieldInfo.TypeName) ??
+                    throw new NullReferenceException($"{Name} has no nested type named {m.fieldInfo.TypeName}");
+
+                nested.BodyToAhk(sb, m.offset + embeddingOfset, emittedMembers);
+                continue;
+            }
+
+            // Skip duplicate members - this is mostly necessary for processing unions
+            if (emittedMembers.Contains(m, mLogEqComparer))
+                continue;
+
+            int suffix = 0;
+            while (emittedMembers.Contains(m, mNameComarer))
+            {
+                m.Name += ++suffix;
+            }
+
             sb.AppendLine();
             m.ToAhk(sb, embeddingOfset);
+            emittedMembers.Add(m);
         }
 
         // Check for [StructSizeField("<FIELDNAME>")] and generate a __New method if there is one
         CustomAttribute? sizeFieldAttr = CustomAttributeDecoder.GetAttribute(mr, typeDef, "StructSizeFieldAttribute");
         if (sizeFieldAttr.HasValue)
-        {
-            CustomAttributeValue<string> decoded = ((CustomAttribute)sizeFieldAttr).DecodeValue(new CaTypeProvider());
-            var arg = decoded.FixedArguments[0];
+            GenerateAhkNew(sb, sizeFieldAttr.Value);
+    }
 
-            sb.AppendLine();
-            sb.AppendLine("    /**");
-            sb.AppendLine($"     * Initializes the struct. `{arg.Value}` must always contain the size of the struct.");
-            sb.AppendLine($"     * @param {{Integer}} ptr The location at which to create the struct, or 0 to create a new `Buffer`");
-            sb.AppendLine("     */");
-            sb.AppendLine("    __New(ptr := 0){");
-            sb.AppendLine("        super.__New(ptr)");
-            sb.AppendLine($"        this.{arg.Value} := {Size}");
-            sb.AppendLine("    }");
-        }
+    private void GenerateAhkNew(StringBuilder sb, CustomAttribute sizeFieldAttr)
+    {
+        CustomAttributeValue<string> decoded = sizeFieldAttr.DecodeValue(new CaTypeProvider());
+        var arg = decoded.FixedArguments[0];
+
+        sb.AppendLine();
+        sb.AppendLine("    /**");
+        sb.AppendLine($"     * Initializes the struct. `{arg.Value}` must always contain the size of the struct.");
+        sb.AppendLine($"     * @param {{Integer}} ptr The location at which to create the struct, or 0 to create a new `Buffer`");
+        sb.AppendLine("     */");
+        sb.AppendLine("    __New(ptr := 0){");
+        sb.AppendLine("        super.__New(ptr)");
+        sb.AppendLine($"        this.{arg.Value} := {Size}");
+        sb.AppendLine("    }");
     }
 
     internal class Member
@@ -174,7 +229,7 @@ public class AhkStruct : AhkType
 
         internal int offset;
 
-        internal string Name => mr.GetString(def.Name);
+        internal string Name;
 
         internal FieldInfo fieldInfo { get; private set; }
 
@@ -188,7 +243,10 @@ public class AhkStruct : AhkType
             this.apiDocs = apiDocs;
 
             def = fieldDef;
+            Name = mr.GetString(def.Name);
+
             fieldInfo = FieldSignatureDecoder.DecodeFieldType(mr, fieldDef);
+            flags = GetFlags();
 
             if (fieldInfo.Kind == SimpleFieldKind.Struct)
             {
@@ -208,7 +266,14 @@ public class AhkStruct : AhkType
                 Size = fieldInfo.Width;
             }
 
-            var attrs = CustomAttributeDecoder.GetAllNames(mr, fieldDef);
+            apiFields?.TryGetValue(Name, out apiDetails);
+        }
+
+        private MemberFlags GetFlags()
+        {
+            MemberFlags flags = MemberFlags.None;
+
+            var attrs = CustomAttributeDecoder.GetAllNames(mr, def);
             if (attrs.Contains("ObsoleteAttribute"))
                 flags |= MemberFlags.Deprecated;
 
@@ -218,7 +283,13 @@ public class AhkStruct : AhkType
             if (Name.StartsWith("___MISSING_ALIGNMENT__"))
                 flags |= MemberFlags.Alignment;
 
-            apiFields?.TryGetValue(Name, out apiDetails);
+            if (fieldInfo.TypeName.EndsWith("_e__Union"))
+                flags |= MemberFlags.Union;
+
+            if (fieldInfo.TypeName.EndsWith("_e__Struct"))
+                flags |= MemberFlags.EmbeddedAnonymous;
+
+            return flags;
         }
 
         public void ToAhk(StringBuilder sb, int embeddingOfset = 0)

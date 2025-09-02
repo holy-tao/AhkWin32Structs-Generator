@@ -268,7 +268,8 @@ public static class FieldSignatureDecoder
                     else
                     {
                         // Assume a pointer if we couldn't resolve the typedef
-                        return new FieldInfo(SimpleFieldKind.Pointer, "External Type");
+                        TypeReference td = reader.GetTypeReference((TypeReferenceHandle)handle);
+                        return new FieldInfo(SimpleFieldKind.Pointer, reader.GetString(td.Name));
                     }
                 }
                 else if (handle.Kind == HandleKind.TypeSpecification)
@@ -301,7 +302,7 @@ public static class FieldSignatureDecoder
 
         Match match = Regex.Match(sig, @"^(?<Namespace>\w*?.*?).?(?<TypeName>\w+)(?<Pointer>\*?)\[(?<Min>\d+)...(?<Max>\d+)]$") ??
             throw new FormatException($"Failed to parse array signature: {sig}");
-        
+
         if (int.TryParse(match.Groups["Max"].Value, out int maxLength))
         {
             return maxLength + 1;
@@ -486,21 +487,45 @@ public static class FieldSignatureDecoder
         string name = reader.GetString(tr.Name);
         string ns = reader.GetString(tr.Namespace);
 
-        // Only resolve if it's supposed to be in this module
-        if (tr.ResolutionScope.Kind == HandleKind.ModuleDefinition)
+        switch (tr.ResolutionScope.Kind)
         {
-            foreach (var tdHandle in reader.TypeDefinitions)
-            {
-                var td = reader.GetTypeDefinition(tdHandle);
-                if (reader.StringComparer.Equals(td.Name, name) &&
-                    reader.StringComparer.Equals(td.Namespace, ns))
+            case HandleKind.ModuleDefinition:
+                // type is in this module
+                foreach (var tdHandle in reader.TypeDefinitions)
                 {
-                    return tdHandle;
+                    var td = reader.GetTypeDefinition(tdHandle);
+                    if (reader.StringComparer.Equals(td.Name, name) && reader.StringComparer.Equals(td.Namespace, ns))
+                    {
+                        return tdHandle;
+                    }
                 }
-            }
+                break;
+
+            case HandleKind.TypeReference:
+                // nested type - resolve parent and then check its nested types
+                var parentHandle = (TypeReferenceHandle)tr.ResolutionScope;
+                var parentTdHandle = ResolveTypeReference(reader, parentHandle);
+                if (parentTdHandle != null)
+                {
+                    var parentTd = reader.GetTypeDefinition(parentTdHandle.Value);
+                    foreach (var nestedHandle in parentTd.GetNestedTypes())
+                    {
+                        var nestedTd = reader.GetTypeDefinition(nestedHandle);
+                        if (reader.StringComparer.Equals(nestedTd.Name, name))
+                            return nestedHandle;
+                    }
+                }
+                break;
+
+            case HandleKind.AssemblyReference:
+                // external type — not in this module
+                return null;
+
+            case HandleKind.ModuleReference:
+                // type in another module of same assembly
+                return null;
         }
 
-        // Type is in an external assembly
         return null;
     }
 }
