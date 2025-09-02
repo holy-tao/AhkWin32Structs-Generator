@@ -1,0 +1,81 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\Programming\\AhkWin32Structs\\AhkWin32Structs\\AhkWin32Structs.csproj": {}
+  },
+  "projects": {
+    "C:\\Programming\\AhkWin32Structs\\AhkWin32Structs\\AhkWin32Structs.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Programming\\AhkWin32Structs\\AhkWin32Structs\\AhkWin32Structs.csproj",
+        "projectName": "AhkWin32Structs",
+        "projectPath": "C:\\Programming\\AhkWin32Structs\\AhkWin32Structs\\AhkWin32Structs.csproj",
+        "packagesPath": "C:\\Users\\taorc\\.nuget\\packages\\",
+        "outputPath": "C:\\Programming\\AhkWin32Structs\\AhkWin32Structs\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\taorc\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net9.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net9.0": {
+            "targetAlias": "net9.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.300"
+      },
+      "frameworks": {
+        "net9.0": {
+          "targetAlias": "net9.0",
+          "dependencies": {
+            "MessagePack": {
+              "target": "Package",
+              "version": "[3.1.4, )"
+            },
+            "Microsoft.Windows.SDK.Win32Docs": {
+              "target": "Package",
+              "version": "[0.1.42-alpha, )"
+            },
+            "Microsoft.Windows.SDK.Win32Metadata": {
+              "target": "Package",
+              "version": "[63.0.31-preview, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.303/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}
