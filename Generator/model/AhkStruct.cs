@@ -40,7 +40,7 @@ public partial class AhkStruct : AhkType
         // Generate #Include statements for embedded structs
         var importedTypes = new List<string>();
 
-        foreach (Member m in Members.Where((m) => m.embeddedStruct != null))
+        foreach (Member m in GetAllMembersRecursive().Where((m) => m.embeddedStruct != null))
         {
             if (importedTypes.Contains(m.fieldInfo.TypeName) || m.fieldInfo.Kind == SimpleFieldKind.COM)
                 continue;
@@ -54,6 +54,22 @@ public partial class AhkStruct : AhkType
         }
 
         sb.AppendLine();
+    }
+
+    // Get all members of the struct, including members of child structs and duplicate declarations
+    internal IEnumerable<Member> GetAllMembersRecursive()
+    {
+        List<Member> flatMembers = [];
+        foreach (Member m in Members)
+        {
+            flatMembers.Add(m);
+            if (m.embeddedStruct != null)
+            {
+                flatMembers.AddRange(m.embeddedStruct.GetAllMembersRecursive());
+            }
+        }
+
+        return flatMembers;
     }
 
     internal void BodyToAhk(StringBuilder sb, int embeddingOfset, List<Member> emittedMembers)
