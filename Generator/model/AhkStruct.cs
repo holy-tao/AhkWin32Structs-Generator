@@ -1,13 +1,6 @@
-using System.ComponentModel.DataAnnotations;
-using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
-using System.Drawing;
-using System.Linq.Expressions;
-using System.Reflection.Emit;
-using System.Reflection.Metadata;
-using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
+using System.Reflection.Metadata;
 
 [Flags]
 public enum MemberFlags
@@ -20,93 +13,13 @@ public enum MemberFlags
     EmbeddedAnonymous = 5
 };
 
-public class AhkStruct : AhkType
+public partial class AhkStruct : AhkType
 {
     public int Size { get; private set; }
 
     public int PackingSize { get; private set; }
 
     public bool IsUnion { get; private set; }
-
-    internal IEnumerable<Member> Members { get; private set; }
-
-    private IEnumerable<AhkStruct> NestedTypes;
-
-    public AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
-    {
-        // Union and embedded anonymous struct types don't get tail padding
-        IsUnion = Name.EndsWith("_e__Union");
-        bool align = !(IsUnion || Name.EndsWith("_e__Struct"));
-        
-        TypeLayout layout = typeDef.GetLayout();
-        PackingSize = layout.PackingSize != 0 ? layout.PackingSize : 8;
-
-        // Size tracks our current offset
-        Size = 0;
-        List<Member> memberList = new List<Member>();
-
-        int offset = 0, maxAlignment = 1;
-
-        foreach (FieldDefinitionHandle hField in typeDef.GetFields())
-        {
-            FieldDefinition fieldDef = mr.GetFieldDefinition(hField);
-            Member newMember = new(mr, fieldDef, apiDetails?.Fields, apiDocs, offset);
-
-            memberList.Add(newMember);
-
-            int logicalFieldSize = newMember.fieldInfo.Kind switch
-            {
-                SimpleFieldKind.Array => newMember.fieldInfo.ArrayType?.Width ?? throw new NullReferenceException(),
-                SimpleFieldKind.String => 2,
-                _ => newMember.Size
-            };
-
-            int alignment = Math.Min(logicalFieldSize, PackingSize);
-            maxAlignment = Math.Max(maxAlignment, alignment);
-            int padding = (alignment - (offset % alignment)) % alignment;
-
-            offset += padding;
-            newMember.offset = IsUnion? 0 : offset;
-            offset += newMember.Size;
-        }
-
-        Size = offset;
-        if (IsUnion)
-        {
-            Size = memberList.Max(Comparer<Member>.Create((m1, m2) => m2.Size - m1.Size))?.Size ??
-                throw new NullReferenceException("Union type has no members");
-        }
-
-        PackingSize = Math.Min(PackingSize, maxAlignment);
-        int tailPadding = (maxAlignment - (offset % maxAlignment)) % maxAlignment;
-        Size += tailPadding;
-
-        Members = memberList;
-        NestedTypes = typeDef.GetNestedTypes().Select(handle => new AhkStruct(mr, mr.GetTypeDefinition(handle), apiDocs));
-    }
-
-    private static string NamespaceToPath(string ns)
-    {
-        // Replace dots with directory separators
-        return ns.Replace('.', Path.DirectorySeparatorChar);
-    }
-
-    private static string RelativePathBetweenNamespaces(string fromNs, string? toNs)
-    {
-        if (string.IsNullOrEmpty(toNs))
-        {
-            // Assume current directory
-            return $".{Path.DirectorySeparatorChar}";
-        }
-
-        string fromDir = NamespaceToPath(fromNs);
-        string toDir = NamespaceToPath(toNs);
-
-        string relativePath = Path.GetRelativePath(fromDir, toDir);
-        if (!relativePath.EndsWith(Path.DirectorySeparatorChar))
-            relativePath += Path.DirectorySeparatorChar;
-        return relativePath;
-    }
 
     public override void ToAhk(StringBuilder sb) => ToAhk(sb, true, []);
 
@@ -251,7 +164,7 @@ public class AhkStruct : AhkType
             {
                 TypeDefinition fieldTypeDef = fieldInfo.TypeDef ??
                     throw new NullReferenceException($"Null TypeDef for Class or Struct field {Name}");
-                embeddedStruct = new(mr, fieldTypeDef, apiDocs);
+                embeddedStruct = AhkStruct.Get(mr, fieldTypeDef, apiDocs);
                 Size = embeddedStruct.Size;
             }
             else if (fieldInfo.Kind == SimpleFieldKind.Array)
@@ -261,7 +174,7 @@ public class AhkStruct : AhkType
                 Size = fieldInfo.Length * arrayElementType.Width;
 
                 if (arrayElementType.TypeDef != null)
-                    embeddedStruct = new(mr, (TypeDefinition)arrayElementType.TypeDef, apiDocs);
+                    embeddedStruct = AhkStruct.Get(mr, (TypeDefinition)arrayElementType.TypeDef, apiDocs);
             }
             else
             {

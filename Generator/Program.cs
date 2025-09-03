@@ -3,11 +3,15 @@ using MessagePack;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Text;
+using System.Diagnostics;
 
 public class Program
 {
     public static void Main(string[] args)
     {
+        Stopwatch stopwatch = new();
+        stopwatch.Start();
+
         //TODO read in filepaths from command line or environment variables or something
         using FileStream metaDataFileStream = File.OpenRead(@"C:\Programming\AhkWin32Structs\metadata\Windows.Win32.winmd");
         using FileStream apiDocFileStream = File.OpenRead(@"C:\Programming\AhkWin32Structs\metadata\apidocs.msgpack");
@@ -69,7 +73,7 @@ public class Program
             }
         }
 
-        Console.WriteLine($"Done! Emitted {total} types");
+        Console.WriteLine($"Done! Emitted {total} types in {stopwatch.Elapsed.TotalSeconds} seconds");
     }
 
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
@@ -80,7 +84,7 @@ public class Program
         return baseTypeName switch
         {
             "Enum" => new AhkEnum(mr, typeDef, apiDocs),
-            "Struct" or "ValueType" => new AhkStruct(mr, typeDef, apiDocs),
+            "Struct" or "ValueType" => AhkStruct.Get(mr, typeDef, apiDocs),
             _ => null
         };
     }
@@ -100,7 +104,7 @@ public class Program
         // support them
         if (typeName == "Apis")
             return true;
-        
+
         // MultiCastDelegate means function pointer, "Apis" is the generic type for all functions
         if (baseTypeName == "MultiCastDelegate")
             return true;
