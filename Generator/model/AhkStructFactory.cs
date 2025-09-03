@@ -12,10 +12,11 @@ public partial class AhkStruct : AhkType
         if (ahkStruct == null)
         {
             ahkStruct = new AhkStruct(reader, typeDef, apiDocs);
-            LoadedStructs.Add(fqn, ahkStruct);
+            if(!ahkStruct.Anonymous)
+                LoadedStructs.Add(fqn, ahkStruct);
         }
 
-        return (AhkStruct)ahkStruct;
+        return ahkStruct;
     }
 
     public static AhkStruct? Get(string fqn)
@@ -27,8 +28,6 @@ public partial class AhkStruct : AhkType
     internal IEnumerable<Member> Members { get; private set; }
 
     private IEnumerable<AhkStruct> NestedTypes;
-
-    private MemberFlags flags;
 
     private AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {

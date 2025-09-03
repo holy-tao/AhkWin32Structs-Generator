@@ -89,7 +89,7 @@ public abstract class AhkType : IAhkEmitter
         if (typeName.EndsWith("_e__Union"))
             flags |= MemberFlags.Union;
 
-        if (typeName.EndsWith("_e__Struct"))
+        if (typeName.EndsWith("_e__Struct") || typeName.StartsWith("_Anonymous"))
             flags |= MemberFlags.Anonymous;
 
         return flags;
