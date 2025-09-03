@@ -14,11 +14,9 @@ public abstract class AhkType : IAhkEmitter
 
     public string Namespace => mr.GetString(typeDef.Namespace);
 
-    private readonly MemberFlags flags;
+    protected readonly MemberFlags flags;
 
     public bool Deprecated => flags.HasFlag(MemberFlags.Deprecated);
-
-    public bool IsUnion => flags.HasFlag(MemberFlags.Union);
 
     public bool Anonymous => flags.HasFlag(MemberFlags.Anonymous);
 
@@ -68,7 +66,7 @@ public abstract class AhkType : IAhkEmitter
         return Path.Join(root, namespacePath, $"{Name}.ahk");
     }
 
-    private MemberFlags GetFlags()
+    protected virtual MemberFlags GetFlags()
     {
         MemberFlags flags = MemberFlags.None;
 

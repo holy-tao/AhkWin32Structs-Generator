@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
 using System.Reflection.Metadata;
+using System.Runtime.InteropServices;
 
 public partial class AhkStruct : AhkType
 {
@@ -9,6 +10,8 @@ public partial class AhkStruct : AhkType
     public int PackingSize { get; private set; }
 
     public override void ToAhk(StringBuilder sb) => ToAhk(sb, true, []);
+
+    public bool IsUnion => flags.HasFlag(MemberFlags.Union) || Layout == LayoutKind.Explicit;
 
     internal void ToAhk(StringBuilder sb, bool headers, List<Member> emittedMembers)
     {
@@ -45,7 +48,7 @@ public partial class AhkStruct : AhkType
             if (importedTypes.Contains(m.fieldInfo.TypeName) || m.fieldInfo.Kind == SimpleFieldKind.COM)
                 continue;
 
-            if (m.flags.HasFlag(MemberFlags.Union) || m.flags.HasFlag(MemberFlags.Anonymous))
+            if (m.IsNested)
                 continue;
 
             string sbPath = RelativePathBetweenNamespaces(Namespace, m.embeddedStruct?.Namespace);
@@ -82,7 +85,7 @@ public partial class AhkStruct : AhkType
             if (m.flags.HasFlag(MemberFlags.Reserved) || m.flags.HasFlag(MemberFlags.Alignment))
                 continue;
 
-            if (m.flags.HasFlag(MemberFlags.Union) || m.flags.HasFlag(MemberFlags.Anonymous))
+            if (m.IsNested)
             {
                 AhkStruct nested = NestedTypes.FirstOrDefault(s => s.Name == m.fieldInfo.TypeName) ??
                     throw new NullReferenceException($"{Name} has no nested type named {m.fieldInfo.TypeName}");
@@ -152,6 +155,9 @@ public partial class AhkStruct : AhkType
 
         internal int Size { get; private set; }
 
+        // flags.HasFlag(MemberFlags.Union) || flags.HasFlag(MemberFlags.Anonymous) || 
+        internal bool IsNested => embeddedStruct?.typeDef.IsNested ?? false;
+
         internal Member(AhkStruct parent, MetadataReader mr, FieldDefinition fieldDef, Dictionary<string, string>? apiFields,
             Dictionary<string, ApiDetails> apiDocs, int offset = 0)
         {
@@ -164,7 +170,6 @@ public partial class AhkStruct : AhkType
             Name = mr.GetString(def.Name);
 
             fieldInfo = FieldSignatureDecoder.DecodeFieldType(mr, fieldDef);
-            flags = GetFlags();
 
             if (fieldInfo.Kind == SimpleFieldKind.Struct)
             {
@@ -192,6 +197,7 @@ public partial class AhkStruct : AhkType
                 Size = fieldInfo.Width;
             }
 
+            flags = GetFlags();
             apiFields?.TryGetValue(Name, out apiDetails);
         }
 
@@ -209,7 +215,7 @@ public partial class AhkStruct : AhkType
             if (Name.StartsWith("___MISSING_ALIGNMENT__"))
                 flags |= MemberFlags.Alignment;
 
-            if (fieldInfo.TypeName.EndsWith("_e__Union"))
+            if (fieldInfo.TypeName.EndsWith("_e__Union") || (embeddedStruct?.IsUnion ?? false))
                 flags |= MemberFlags.Union;
 
             if (fieldInfo.TypeName.EndsWith("_e__Struct"))

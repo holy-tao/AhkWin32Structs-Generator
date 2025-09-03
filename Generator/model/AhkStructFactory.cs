@@ -1,4 +1,7 @@
+using System.Reflection;
 using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
+using System.Runtime.InteropServices;
 using Microsoft.Windows.SDK.Win32Docs;
 
 public partial class AhkStruct : AhkType
@@ -27,16 +30,17 @@ public partial class AhkStruct : AhkType
 
     internal IEnumerable<Member> Members { get; private set; }
 
-    private IEnumerable<AhkStruct> NestedTypes;
+    private readonly IEnumerable<AhkStruct> NestedTypes;
+
+    private readonly LayoutKind Layout;
 
     private AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
         // Union and embedded anonymous struct types don't get tail padding
         bool align = !(IsUnion || Anonymous);
 
-        TypeLayout layout = typeDef.GetLayout();
-        int defaultPackingSize = IsUnicode ? 8 : 4;
-        PackingSize = layout.PackingSize != 0 ? layout.PackingSize : defaultPackingSize;
+        PackingSize = EstimatePackingSize();
+        Layout = GetLayoutKind();
 
         // Size tracks our current offset
         Size = 0;
@@ -63,7 +67,7 @@ public partial class AhkStruct : AhkType
             int padding = (alignment - (offset % alignment)) % alignment;
 
             offset += padding;
-            newMember.offset = IsUnion ? 0 : offset;
+            newMember.offset = Layout == LayoutKind.Explicit? fieldDef.GetOffset() : offset;
             offset += newMember.Size;
         }
 
@@ -80,6 +84,25 @@ public partial class AhkStruct : AhkType
 
         Members = memberList;
         NestedTypes = typeDef.GetNestedTypes().Select(handle => new AhkStruct(mr, mr.GetTypeDefinition(handle), apiDocs));
+    }
+
+    private int EstimatePackingSize()
+    {
+        TypeLayout layout = typeDef.GetLayout();
+        int defaultPackingSize = IsUnicode ? 8 : 4;
+        return layout.PackingSize != 0 ? layout.PackingSize : defaultPackingSize;
+    }
+
+    private LayoutKind GetLayoutKind()
+    {
+        var attr = typeDef.Attributes & TypeAttributes.LayoutMask;
+        return attr switch
+        {
+            TypeAttributes.SequentialLayout => LayoutKind.Sequential,
+            TypeAttributes.ExplicitLayout => LayoutKind.Explicit,
+            TypeAttributes.AutoLayout => LayoutKind.Auto,
+            _ => throw new NotSupportedException($"Unknown Type Layout attribute: {attr}")
+        };
     }
 
     private static string NamespaceToPath(string ns)
