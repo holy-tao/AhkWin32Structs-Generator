@@ -112,8 +112,8 @@ public class Program
         if (typeDef.IsNested)
             return true;
 
-        // Some non-ANSI structs reference ANSI structs and there's no way to know which...
-        // So they're just broken lol
+        // ANSI types still not fully supported - need to convert ptr sizes to A_PtrSize
+        // and switch to calculating offsets
         if (CustomAttributeDecoder.GetAllNames(mr, typeDef).Contains("AnsiAttribute"))
             return true;
 

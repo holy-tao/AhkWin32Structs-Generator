@@ -36,7 +36,8 @@ public partial class AhkStruct : AhkType
         bool align = !(IsUnion || Anonymous);
 
         TypeLayout layout = typeDef.GetLayout();
-        PackingSize = layout.PackingSize != 0 ? layout.PackingSize : 8;
+        int defaultPackingSize = IsUnicode ? 8 : 4;
+        PackingSize = layout.PackingSize != 0 ? layout.PackingSize : defaultPackingSize;
 
         // Size tracks our current offset
         Size = 0;
@@ -47,7 +48,7 @@ public partial class AhkStruct : AhkType
         foreach (FieldDefinitionHandle hField in typeDef.GetFields())
         {
             FieldDefinition fieldDef = mr.GetFieldDefinition(hField);
-            Member newMember = new(mr, fieldDef, apiDetails?.Fields, apiDocs, offset);
+            Member newMember = new(this, mr, fieldDef, apiDetails?.Fields, apiDocs, offset);
 
             memberList.Add(newMember);
 

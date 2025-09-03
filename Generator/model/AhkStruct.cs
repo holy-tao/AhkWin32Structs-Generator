@@ -121,6 +121,8 @@ public partial class AhkStruct : AhkType
 
         internal readonly AhkStruct? embeddedStruct;
 
+        internal readonly AhkStruct parent;
+
         internal readonly string? apiDetails;
         internal readonly Dictionary<string, ApiDetails> apiDocs;
 
@@ -134,9 +136,10 @@ public partial class AhkStruct : AhkType
 
         internal int Size { get; private set; }
 
-        internal Member(MetadataReader mr, FieldDefinition fieldDef, Dictionary<string, string>? apiFields,
+        internal Member(AhkStruct parent, MetadataReader mr, FieldDefinition fieldDef, Dictionary<string, string>? apiFields,
             Dictionary<string, ApiDetails> apiDocs, int offset = 0)
         {
+            this.parent = parent;
             this.mr = mr;
             this.offset = offset;
             this.apiDocs = apiDocs;
@@ -162,6 +165,11 @@ public partial class AhkStruct : AhkType
 
                 if (arrayElementType.TypeDef != null)
                     embeddedStruct = AhkStruct.Get(mr, (TypeDefinition)arrayElementType.TypeDef, apiDocs);
+            }
+            else if (fieldInfo.Kind == SimpleFieldKind.String)
+            {
+                // Default string width assumes unicode
+                Size = fieldInfo.Width / (parent.IsAnsi ? 2 : 1);
             }
             else
             {
@@ -252,13 +260,14 @@ public partial class AhkStruct : AhkType
         // https://www.autohotkey.com/docs/v2/lib/NumGet.htm
         public void ToAhkStructMember(StringBuilder sb, int offset)
         {
-
             // TODO handle arrays
             if (fieldInfo.Kind == SimpleFieldKind.String)
             {
+                string encoding = parent.IsUnicode ? "UTF-16" : "CP0";
+
                 sb.AppendLine($"    {Name} {{");
-                sb.AppendLine($"        get => StrGet(this.ptr + {offset}, {fieldInfo.Length - 1}, \"UTF-16\")");
-                sb.AppendLine($"        set => StrPut(value, this.ptr + {offset}, {fieldInfo.Length - 1}, \"UTF-16\")");
+                sb.AppendLine($"        get => StrGet(this.ptr + {offset}, {fieldInfo.Length - 1}, \"{encoding}\")");
+                sb.AppendLine($"        set => StrPut(value, this.ptr + {offset}, {fieldInfo.Length - 1}, \"{encoding}\")");
                 sb.AppendLine($"    }}");
             }
             else
@@ -284,21 +293,6 @@ public partial class AhkStruct : AhkType
             sb.AppendLine($"            return this.__{Name}ProxyArray");
             sb.AppendLine("        }");
             sb.AppendLine("    }");
-
-            /*
-            sb.AppendLine($"    {Name}[index]{{");
-            sb.AppendLine("         get {");
-            sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Length})");
-            sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Length}\", , index)");
-            sb.AppendLine($"            return NumGet(this, {offset} + (index * {arrTypeInfo.Width}), \"{arrTypeInfo.DllCallType}\")");
-            sb.AppendLine("         }");
-            sb.AppendLine("         set {");
-            sb.AppendLine($"            if(index < 1 || index > {fieldInfo.Length})");
-            sb.AppendLine($"                throw IndexError(\"Index out of range for array of fixed length {fieldInfo.Length}\", , index)");
-            sb.AppendLine($"            return NumPut(\"{arrTypeInfo.DllCallType}\", value, this, {offset} + ((index - 1) * {arrTypeInfo.Width}))");
-            sb.AppendLine("         }");
-            sb.AppendLine("    }");
-            */
         }
     }
 }
