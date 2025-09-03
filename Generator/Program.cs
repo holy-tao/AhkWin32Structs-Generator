@@ -33,6 +33,7 @@ public class Program
             if (typeDef.BaseType.Kind != HandleKind.TypeReference)
                 continue;
 
+            string typeNamespace = mr.GetString(typeDef.Namespace);
             if (ShouldSkipType(mr, hTypeDef, out string typeName, out string baseTypeName))
                 continue;
 
@@ -54,9 +55,9 @@ public class Program
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"!!! {ex.GetType().Name} parsing {typeName}: {ex.Message}");
+                Console.Error.WriteLine($"!!! {ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
 
-                errFileStream.WriteLine($"{ex.GetType().Name} parsing {typeName}: {ex.Message}");
+                errFileStream.WriteLine($"{ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
                 errFileStream.WriteLine(ex.Message);
                 errFileStream.WriteLine(ex.StackTrace);
                 errFileStream.WriteLine();
