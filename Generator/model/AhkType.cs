@@ -14,11 +14,24 @@ public abstract class AhkType : IAhkEmitter
 
     public string Namespace => mr.GetString(typeDef.Namespace);
 
+    private readonly MemberFlags flags;
+
+    public bool Deprecated => flags.HasFlag(MemberFlags.Deprecated);
+
+    public bool IsUnion => flags.HasFlag(MemberFlags.Union);
+
+    public bool Anonymous => flags.HasFlag(MemberFlags.Anonymous);
+
+    public bool IsAnsi => flags.HasFlag(MemberFlags.Ansi);
+    public bool IsUnicode => flags.HasFlag(MemberFlags.Unicode);
+
     public AhkType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
     {
         this.mr = mr;
         this.typeDef = typeDef;
         this.apiDocs = apiDocs;
+
+        flags = GetFlags();
 
         apiDocs.TryGetValue(Name, out apiDetails);
     }
@@ -43,10 +56,8 @@ public abstract class AhkType : IAhkEmitter
         sb.AppendLine($" * @namespace {Namespace}");
         sb.AppendLine($" * @version {mr.MetadataVersion}");
 
-        if (CustomAttributeDecoder.GetAllNames(mr, typeDef).Contains("ObsoleteAttribute"))
-        {
+        if (Deprecated)
             sb.AppendLine(" * @deprecated");
-        }
 
         sb.AppendLine(" */");
     }
@@ -55,5 +66,32 @@ public abstract class AhkType : IAhkEmitter
     {
         string namespacePath = Path.Join(Namespace.Split("."));
         return Path.Join(root, namespacePath, $"{Name}.ahk");
+    }
+
+    private MemberFlags GetFlags()
+    {
+        MemberFlags flags = MemberFlags.None;
+
+        foreach (string attrName in CustomAttributeDecoder.GetAllNames(mr, typeDef))
+        {
+            flags |= attrName switch
+            {
+                "ObsoleteAttribute" => MemberFlags.Deprecated,
+                "ReservedAttribute" => MemberFlags.Reserved,
+                "AnsiAttribute" => MemberFlags.Ansi,
+                "UnicodeAttribute" => MemberFlags.Unicode,
+                _ => 0
+            };
+        }
+
+        string typeName = mr.GetString(typeDef.Name);
+
+        if (typeName.EndsWith("_e__Union"))
+            flags |= MemberFlags.Union;
+
+        if (typeName.EndsWith("_e__Struct"))
+            flags |= MemberFlags.Anonymous;
+
+        return flags;
     }
 }

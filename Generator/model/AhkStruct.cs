@@ -2,24 +2,11 @@ using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
 using System.Reflection.Metadata;
 
-[Flags]
-public enum MemberFlags
-{
-    None = 0,
-    Deprecated = 1,
-    Reserved = 2,
-    Alignment = 3,
-    Union = 4,
-    EmbeddedAnonymous = 5
-};
-
 public partial class AhkStruct : AhkType
 {
     public int Size { get; private set; }
 
     public int PackingSize { get; private set; }
-
-    public bool IsUnion { get; private set; }
 
     public override void ToAhk(StringBuilder sb) => ToAhk(sb, true, []);
 
@@ -58,7 +45,7 @@ public partial class AhkStruct : AhkType
             if (importedTypes.Contains(m.fieldInfo.TypeName) || m.fieldInfo.Kind == SimpleFieldKind.COM)
                 continue;
 
-            if (m.flags.HasFlag(MemberFlags.Union) || m.flags.HasFlag(MemberFlags.EmbeddedAnonymous))
+            if (m.flags.HasFlag(MemberFlags.Union) || m.flags.HasFlag(MemberFlags.Anonymous))
                 continue;
 
             string sbPath = RelativePathBetweenNamespaces(Namespace, m.embeddedStruct?.Namespace);
@@ -79,7 +66,7 @@ public partial class AhkStruct : AhkType
             if (m.flags.HasFlag(MemberFlags.Reserved) || m.flags.HasFlag(MemberFlags.Alignment))
                 continue;
 
-            if (m.flags.HasFlag(MemberFlags.Union) || m.flags.HasFlag(MemberFlags.EmbeddedAnonymous))
+            if (m.flags.HasFlag(MemberFlags.Union) || m.flags.HasFlag(MemberFlags.Anonymous))
             {
                 AhkStruct nested = NestedTypes.FirstOrDefault(s => s.Name == m.fieldInfo.TypeName) ??
                     throw new NullReferenceException($"{Name} has no nested type named {m.fieldInfo.TypeName}");
@@ -202,7 +189,7 @@ public partial class AhkStruct : AhkType
                 flags |= MemberFlags.Union;
 
             if (fieldInfo.TypeName.EndsWith("_e__Struct"))
-                flags |= MemberFlags.EmbeddedAnonymous;
+                flags |= MemberFlags.Anonymous;
 
             return flags;
         }

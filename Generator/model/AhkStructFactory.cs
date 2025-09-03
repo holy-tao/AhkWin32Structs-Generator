@@ -20,8 +20,7 @@ public partial class AhkStruct : AhkType
 
     public static AhkStruct? Get(string fqn)
     {
-        AhkStruct? foundStruct = null;
-        LoadedStructs.TryGetValue(fqn, out foundStruct);
+        LoadedStructs.TryGetValue(fqn, out AhkStruct? foundStruct);
         return foundStruct;
     }
 
@@ -29,11 +28,12 @@ public partial class AhkStruct : AhkType
 
     private IEnumerable<AhkStruct> NestedTypes;
 
+    private MemberFlags flags;
+
     private AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
         // Union and embedded anonymous struct types don't get tail padding
-        IsUnion = Name.EndsWith("_e__Union");
-        bool align = !(IsUnion || Name.EndsWith("_e__Struct"));
+        bool align = !(IsUnion || Anonymous);
 
         TypeLayout layout = typeDef.GetLayout();
         PackingSize = layout.PackingSize != 0 ? layout.PackingSize : 8;
