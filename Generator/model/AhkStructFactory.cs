@@ -10,16 +10,19 @@ public partial class AhkStruct : AhkType
 
     public static AhkStruct Get(MetadataReader reader, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
     {
+        return new AhkStruct(reader, typeDef, apiDocs);
+        /*
         string fqn = reader.GetString(typeDef.Namespace) + "." + reader.GetString(typeDef.Name);
         AhkStruct? ahkStruct = Get(fqn);
         if (ahkStruct == null)
         {
-            ahkStruct = new AhkStruct(reader, typeDef, apiDocs);
-            if(!ahkStruct.Anonymous)
-                LoadedStructs.Add(fqn, ahkStruct);
+            ahkStruct = 
+            //if(!ahkStruct.Anonymous)
+                //LoadedStructs.Add(fqn, ahkStruct);
         }
 
         return ahkStruct;
+        */
     }
 
     public static AhkStruct? Get(string fqn)
