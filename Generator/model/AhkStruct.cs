@@ -30,6 +30,7 @@ public partial class AhkStruct : AhkType
         sb.AppendLine("}");
     }
 
+    // Devices.BiometricFramework.WINBIO_ASYNC_RESULT not importing e.g. WINBIO_IDENTITY or WINBIO_PROTECTION POLICY
     private void HeadersToAhk(StringBuilder sb)
     {
         // Path to Win32Struct.ahk, expecting it to be in the root of wherever we're making this class
@@ -43,12 +44,12 @@ public partial class AhkStruct : AhkType
         // Generate #Include statements for embedded structs
         var importedTypes = new List<string>();
 
-        foreach (Member m in GetAllMembersRecursive().Where((m) => m.embeddedStruct != null))
+        foreach (Member m in GetAllNonNestedMembers().Where((m) => m.embeddedStruct != null))
         {
             if (importedTypes.Contains(m.fieldInfo.TypeName) || m.fieldInfo.Kind == SimpleFieldKind.COM)
                 continue;
 
-            if (m.IsNested)
+            if (m.flags.HasFlag(MemberFlags.Anonymous) || (m.flags.HasFlag(MemberFlags.Union) && m.IsNested))
                 continue;
 
             string sbPath = RelativePathBetweenNamespaces(Namespace, m.embeddedStruct?.Namespace);
@@ -59,17 +60,21 @@ public partial class AhkStruct : AhkType
         sb.AppendLine();
     }
 
-    // Get all members of the struct, including members of child structs and duplicate declarations
-    internal IEnumerable<Member> GetAllMembersRecursive()
+    // Get all members of the struct for which we should generate #Include statements,
+    // including members of child structs and duplicate declarations
+    internal IEnumerable<Member> GetAllNonNestedMembers()
     {
         List<Member> flatMembers = [];
         foreach (Member m in Members)
         {
-            flatMembers.Add(m);
-            if (m.embeddedStruct != null)
+            if (m.flags.HasFlag(MemberFlags.Union))
             {
-                flatMembers.AddRange(m.embeddedStruct.GetAllMembersRecursive());
+                if (m.embeddedStruct != null)
+                {
+                    flatMembers.AddRange(m.embeddedStruct.GetAllNonNestedMembers());
+                }
             }
+            flatMembers.Add(m);   
         }
 
         return flatMembers;
@@ -218,7 +223,7 @@ public partial class AhkStruct : AhkType
             if (fieldInfo.TypeName.EndsWith("_e__Union") || (embeddedStruct?.IsUnion ?? false))
                 flags |= MemberFlags.Union;
 
-            if (fieldInfo.TypeName.EndsWith("_e__Struct"))
+            if (fieldInfo.TypeName.EndsWith("_e__Struct") || fieldInfo.TypeName.StartsWith("_Anonymous") || (embeddedStruct?.Anonymous ?? false))
                 flags |= MemberFlags.Anonymous;
 
             return flags;
