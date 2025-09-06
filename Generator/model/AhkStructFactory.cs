@@ -70,7 +70,7 @@ public partial class AhkStruct : AhkType
             int padding = (alignment - (offset % alignment)) % alignment;
 
             offset += padding;
-            newMember.offset = Layout == LayoutKind.Explicit? fieldDef.GetOffset() : offset;
+            newMember.offset = Layout == LayoutKind.Explicit ? fieldDef.GetOffset() : offset;
             offset += newMember.Size;
         }
 
