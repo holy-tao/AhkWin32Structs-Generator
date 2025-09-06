@@ -65,9 +65,9 @@ public static class FieldSignatureDecoder
                 int numLoBounds = blob.ReadCompressedInteger();
                 for (int i = 0; i < numLoBounds; i++) blob.ReadCompressedInteger();
 
-                if (arrElem.TypeName.Equals("char", StringComparison.CurrentCultureIgnoreCase) ||
-                    arrElem.TypeName.Equals("tchar", StringComparison.CurrentCultureIgnoreCase) ||
-                    arrElem.TypeName.Equals("wchar", StringComparison.CurrentCultureIgnoreCase))
+                if (arrElem.TypeName.ToLower().Equals("char", StringComparison.CurrentCultureIgnoreCase) ||
+                    arrElem.TypeName.ToLower().Equals("tchar", StringComparison.CurrentCultureIgnoreCase) ||
+                    arrElem.TypeName.ToLower().Equals("wchar", StringComparison.CurrentCultureIgnoreCase))
                 {
                     return new FieldInfo(SimpleFieldKind.String, arrElem.TypeName, arrLength);
                 }
@@ -249,7 +249,10 @@ public static class FieldSignatureDecoder
         FieldDefinition singleField = reader.GetFieldDefinition(singleFieldHandle.Value);
 
         var blob = reader.GetBlobReader(singleField.Signature);
-        var sigTypeCode = (SignatureTypeCode)blob.ReadByte();
+        var _ = blob.ReadSignatureHeader();
+        SkipCustomModsAndPinned(ref blob);
+        var sigTypeCode = blob.ReadSignatureTypeCode();
+
         if (sigTypeCode.IsPrimitive())
         {
             // Extract underlying primitive type
@@ -279,6 +282,31 @@ public static class FieldSignatureDecoder
 
         fieldInfo = null;
         return false;
+    }
+
+    // Skip the optional / required / pinned flags for fields
+    private static void SkipCustomModsAndPinned(ref BlobReader b)
+    {
+        while (b.RemainingBytes > 0)
+        {
+            byte marker = b.ReadByte();
+
+            switch (marker)
+            {
+                case 0x1F: // cmod_reqd
+                case 0x20: // cmod_opt
+                    b.ReadCompressedInteger(); // skip the TypeDefOrRef coded index
+                    continue;
+
+                case 0x45: // pinned
+                    continue;
+
+                default:
+                    // Not a modifier - back up
+                    b.Offset -= 1;
+                    return;
+            }
+        }
     }
 
     private static string GetEnumUnderlyingType(MetadataReader reader, TypeDefinitionHandle handle, FieldDefinition fieldDef)
