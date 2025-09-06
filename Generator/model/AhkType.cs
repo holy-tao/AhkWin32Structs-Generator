@@ -42,11 +42,11 @@ public abstract class AhkType : IAhkEmitter
 
         if (apiDetails != null)
         {
-            sb.AppendLine(" * " + apiDetails.Description?.Replace("\n", "\n * "));
+            sb.AppendLine(" * " + EscapeDocs(apiDetails.Description));
             if (apiDetails.Remarks != null)
             {
                 sb.AppendLine(" * @remarks");
-                sb.AppendLine(" * " + apiDetails.Remarks?.Replace("\n", "\n * "));
+                sb.AppendLine(" * " + EscapeDocs(apiDetails.Remarks));
             }
             sb.AppendLine($" * @see {apiDetails.HelpLink}");
         }
@@ -58,6 +58,15 @@ public abstract class AhkType : IAhkEmitter
             sb.AppendLine(" * @deprecated");
 
         sb.AppendLine(" */");
+    }
+
+    protected static string? EscapeDocs(string? docString, string? indent = " ")
+    {
+        // Remove comments from documentation and add asterisks to newlines
+        return docString?
+            .Replace("/*", "//")
+            .Replace("*/", "")
+            .Replace("\n", $"\n{indent} * ");
     }
 
     public string GetDesiredFilepath(string root)

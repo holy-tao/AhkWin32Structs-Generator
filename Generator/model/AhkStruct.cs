@@ -273,7 +273,7 @@ public partial class AhkStruct : AhkType
 
             if (apiDetails != null)
             {
-                sb.AppendLine("     * " + apiDetails.Replace("\n", "\n     * "));
+                sb.AppendLine("     * " + EscapeDocs(apiDetails, "    "));
             }
 
             if (flags.HasFlag(MemberFlags.Deprecated))
