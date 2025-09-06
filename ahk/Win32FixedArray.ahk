@@ -176,7 +176,7 @@ class Win32FixedArray {
 
         elementWidth := this.elementType == Primitive? 
             Win32FixedArray.DllCallTypeWidths[this.dllCallType] :
-            this.elementType.sizeof
+            this.elementType.packedSize
         offset := (index - 1) * (elementWidth)
         return offset
     }
