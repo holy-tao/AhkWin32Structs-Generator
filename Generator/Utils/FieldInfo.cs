@@ -2,6 +2,8 @@ using System.Reflection.Metadata;
 
 public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, TypeDefinition? TypeDef = null, FieldInfo? ArrayType = null)
 {
+    public static int POINTER_SIZE = 8;
+
     // https://www.autohotkey.com/docs/v2/lib/DllCall.htm
     public string DllCallType
     {
@@ -54,55 +56,52 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         }
     }
 
-    public int Width
+    public int GetWidth(bool ansi)
     {
-        get
+        if (Kind == SimpleFieldKind.Primitive)
         {
-            if (Kind == SimpleFieldKind.Primitive)
+            switch (TypeName.ToLower())
             {
-                switch (TypeName.ToLower())
-                {
-                    case "single":
-                    case "boolean":
-                    case "int32":
-                    case "uint32":
-                        return 4;
-                    case "double":
-                    case "int64":
-                    case "intptr":
-                    case "uint64":
-                    case "uintptr":
-                    case "void":
-                    case "ptr":
-                        return 8;
-                    case "int16":
-                    case "uint16":
-                    case "char":        // Assuming UTF-16
-                        return 2;
-                    case "byte":
-                    case "sbyte":
-                        return 1;
-                    default:
-                        throw new NotSupportedException($"{TypeName} ({Kind})");
-                }
+                case "single":
+                case "boolean":
+                case "int32":
+                case "uint32":
+                    return 4;
+                case "double":
+                case "int64":
+                case "intptr":
+                case "uint64":
+                case "uintptr":
+                case "void":
+                case "ptr":
+                    return 8;
+                case "int16":
+                case "uint16":
+                case "char":        // Assuming UTF-16
+                    return 2;
+                case "byte":
+                case "sbyte":
+                    return 1;
+                default:
+                    throw new NotSupportedException($"{TypeName} ({Kind})");
             }
-            else if (Kind == SimpleFieldKind.Array)
-            {
-                throw new NotSupportedException("Cannot get width of array FieldInfo directly - use Rank * width of TypeDef");
-            }
-            else if (Kind == SimpleFieldKind.String)
-            {
-                return Length * 2;  //2 for CHARs, assuming UTF-16
-            }
-            else if (Kind == SimpleFieldKind.Pointer)
-            {
-                return 8;
-            }
-            else
-            {
-                // Else assume pointer
-                return 8;
-            }
+        }
+        else if (Kind == SimpleFieldKind.Array)
+        {
+            throw new NotSupportedException("Cannot get width of array FieldInfo directly - use Rank * width of TypeDef");
+        }
+        else if (Kind == SimpleFieldKind.String)
+        {
+            return Length * (ansi? 1 : 2);  //2 for CHARs, assuming UTF-16
+        }
+        else if (Kind == SimpleFieldKind.Pointer)
+        {
+            return 8;
+        }
+        else
+        {
+            // Else assume pointer
+            return 8;
         }
     }
     

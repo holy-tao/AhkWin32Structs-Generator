@@ -74,7 +74,7 @@ public class Program
             }
         }
 
-        Console.WriteLine($"Done! Emitted {total} types in {stopwatch.Elapsed.TotalSeconds} seconds");
+        Console.WriteLine($"Done! Emitted {total} files in {stopwatch.Elapsed.TotalSeconds} seconds");
     }
 
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
@@ -111,11 +111,6 @@ public class Program
             return true;
 
         if (typeDef.IsNested)
-            return true;
-
-        // ANSI types still not fully supported - need to convert ptr sizes to A_PtrSize
-        // and switch to calculating offsets
-        if (CustomAttributeDecoder.GetAllNames(mr, typeDef).Contains("AnsiAttribute"))
             return true;
 
         if (FieldSignatureDecoder.IsPseudoPrimitive(mr, typeDefHandle, out FieldInfo? _))

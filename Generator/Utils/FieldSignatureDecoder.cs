@@ -65,9 +65,12 @@ public static class FieldSignatureDecoder
                 int numLoBounds = blob.ReadCompressedInteger();
                 for (int i = 0; i < numLoBounds; i++) blob.ReadCompressedInteger();
 
-                if (arrElem.TypeName.ToLower().Equals("char", StringComparison.CurrentCultureIgnoreCase) ||
-                    arrElem.TypeName.ToLower().Equals("tchar", StringComparison.CurrentCultureIgnoreCase) ||
-                    arrElem.TypeName.ToLower().Equals("wchar", StringComparison.CurrentCultureIgnoreCase))
+                string tName = arrElem.TypeName.ToLower();
+
+                // We need a carve-out here for the CHAR struct, which is internally an sbyte
+
+                if (tName == "char" || tName == "tchar" || tName == "wchar" ||
+                    (tName == "sbyte" && arrElem.TypeDef != null && reader.GetString(arrElem.TypeDef.Value.Name) == "CHAR"))
                 {
                     return new FieldInfo(SimpleFieldKind.String, arrElem.TypeName, arrLength);
                 }
@@ -256,13 +259,13 @@ public static class FieldSignatureDecoder
         if (sigTypeCode.IsPrimitive())
         {
             // Extract underlying primitive type
-            fieldInfo = new FieldInfo(SimpleFieldKind.Primitive, sigTypeCode.ToString());
+            fieldInfo = new FieldInfo(SimpleFieldKind.Primitive, sigTypeCode.ToString(), 0, td);
             return true;
         }
         else if (sigTypeCode == SignatureTypeCode.IntPtr || sigTypeCode == SignatureTypeCode.UIntPtr || sigTypeCode == SignatureTypeCode.FunctionPointer)
         {
             // Some other pointer type
-            fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
+            fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, "Ptr", 0, td);
             return true;
         }
         else if (sigTypeCode == SignatureTypeCode.TypeHandle || sigTypeCode == (SignatureTypeCode)17 || sigTypeCode == (SignatureTypeCode)18)

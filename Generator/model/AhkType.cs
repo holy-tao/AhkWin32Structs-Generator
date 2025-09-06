@@ -20,7 +20,7 @@ public abstract class AhkType : IAhkEmitter
 
     public bool Anonymous => flags.HasFlag(MemberFlags.Anonymous);
 
-    public bool IsAnsi => flags.HasFlag(MemberFlags.Ansi);
+    public bool IsAnsi => flags.HasFlag(MemberFlags.Ansi);    //Some types have both flags!?
     public bool IsUnicode => flags.HasFlag(MemberFlags.Unicode);
 
     public AhkType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
@@ -53,6 +53,11 @@ public abstract class AhkType : IAhkEmitter
 
         sb.AppendLine($" * @namespace {Namespace}");
         sb.AppendLine($" * @version {mr.MetadataVersion}");
+
+        if (IsAnsi)
+            sb.AppendLine(" * @chartype ANSI");
+        if(IsUnicode)
+            sb.AppendLine(" * @chartype Unicode");
 
         if (Deprecated)
             sb.AppendLine(" * @deprecated");

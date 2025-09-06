@@ -60,8 +60,8 @@ public partial class AhkStruct : AhkType
 
             int logicalFieldSize = newMember.fieldInfo.Kind switch
             {
-                SimpleFieldKind.Array => newMember.fieldInfo.ArrayType?.Width ?? throw new NullReferenceException(),
-                SimpleFieldKind.String => 2,
+                SimpleFieldKind.Array => newMember.fieldInfo.ArrayType?.GetWidth(IsAnsi) ?? throw new NullReferenceException(),
+                SimpleFieldKind.String => IsAnsi? 1 : 2,
                 _ => newMember.Size
             };
 
@@ -92,8 +92,7 @@ public partial class AhkStruct : AhkType
     private int EstimatePackingSize()
     {
         TypeLayout layout = typeDef.GetLayout();
-        int defaultPackingSize = IsUnicode ? 8 : 4;
-        return layout.PackingSize != 0 ? layout.PackingSize : defaultPackingSize;
+        return layout.PackingSize != 0 ? layout.PackingSize : 8;
     }
 
     private LayoutKind GetLayoutKind()

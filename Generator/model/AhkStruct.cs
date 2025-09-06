@@ -11,7 +11,7 @@ public partial class AhkStruct : AhkType
 
     public override void ToAhk(StringBuilder sb) => ToAhk(sb, true, []);
 
-    public bool IsUnion => flags.HasFlag(MemberFlags.Union) || Layout == LayoutKind.Explicit;
+    public bool IsUnion => flags.HasFlag(MemberFlags.Union);
 
     internal void ToAhk(StringBuilder sb, bool headers, List<Member> emittedMembers)
     {
@@ -187,19 +187,14 @@ public partial class AhkStruct : AhkType
             {
                 FieldInfo arrayElementType = fieldInfo.ArrayType ??
                     throw new NullReferenceException($"Null array element for Array field {Name}");
-                Size = fieldInfo.Length * arrayElementType.Width;
+                Size = fieldInfo.Length * arrayElementType.GetWidth(parent.IsAnsi);
 
                 if (arrayElementType.TypeDef != null)
                     embeddedStruct = AhkStruct.Get(mr, (TypeDefinition)arrayElementType.TypeDef, apiDocs);
             }
-            else if (fieldInfo.Kind == SimpleFieldKind.String)
-            {
-                // Default string width assumes unicode
-                Size = fieldInfo.Width / (parent.IsAnsi ? 2 : 1);
-            }
             else
             {
-                Size = fieldInfo.Width;
+                Size = fieldInfo.GetWidth(parent.IsAnsi);
             }
 
             flags = GetFlags();
@@ -290,7 +285,7 @@ public partial class AhkStruct : AhkType
             // TODO handle arrays
             if (fieldInfo.Kind == SimpleFieldKind.String)
             {
-                string encoding = parent.IsUnicode ? "UTF-16" : "CP0";
+                string encoding = parent.IsAnsi? "UTF-8" : "UTF-16";
 
                 sb.AppendLine($"    {Name} {{");
                 sb.AppendLine($"        get => StrGet(this.ptr + {offset}, {fieldInfo.Length - 1}, \"{encoding}\")");
@@ -316,7 +311,7 @@ public partial class AhkStruct : AhkType
             sb.AppendLine($"    {Name}{{");
             sb.AppendLine("        get {");
             sb.AppendLine($"            if(!this.HasProp(\"__{Name}ProxyArray\"))");
-            sb.AppendLine($"                this.__{Name}ProxyArray := Win32FixedArray(this.ptr + {offset}, {arrTypeInfo.Width}, {ahkElementType}, \"{dllCallType}\")");
+            sb.AppendLine($"                this.__{Name}ProxyArray := Win32FixedArray(this.ptr + {offset}, {arrTypeInfo.GetWidth(parent.IsAnsi)}, {ahkElementType}, \"{dllCallType}\")");
             sb.AppendLine($"            return this.__{Name}ProxyArray");
             sb.AppendLine("        }");
             sb.AppendLine("    }");
