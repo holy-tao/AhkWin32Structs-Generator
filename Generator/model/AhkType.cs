@@ -55,9 +55,9 @@ public abstract class AhkType : IAhkEmitter
         sb.AppendLine($" * @version {mr.MetadataVersion}");
 
         if (IsAnsi)
-            sb.AppendLine(" * @chartype ANSI");
+            sb.AppendLine(" * @charset ANSI");
         if(IsUnicode)
-            sb.AppendLine(" * @chartype Unicode");
+            sb.AppendLine(" * @charset Unicode");
 
         if (Deprecated)
             sb.AppendLine(" * @deprecated");
