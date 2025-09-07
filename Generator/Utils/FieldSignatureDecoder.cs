@@ -262,7 +262,8 @@ public static class FieldSignatureDecoder
             fieldInfo = new FieldInfo(SimpleFieldKind.Primitive, sigTypeCode.ToString(), 0, td);
             return true;
         }
-        else if (sigTypeCode == SignatureTypeCode.IntPtr || sigTypeCode == SignatureTypeCode.UIntPtr || sigTypeCode == SignatureTypeCode.FunctionPointer)
+        else if (sigTypeCode == SignatureTypeCode.Pointer || sigTypeCode == SignatureTypeCode.IntPtr ||
+            sigTypeCode == SignatureTypeCode.UIntPtr || sigTypeCode == SignatureTypeCode.FunctionPointer)
         {
             // Some other pointer type
             fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, "Ptr", 0, td);
