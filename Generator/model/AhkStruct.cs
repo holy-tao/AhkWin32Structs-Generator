@@ -309,8 +309,17 @@ public partial class AhkStruct : AhkType
         {
             FieldInfo arrTypeInfo = fieldInfo.ArrayType ?? throw new NullReferenceException($"Null ArrayType for {Name}");
 
-            string ahkElementType = arrTypeInfo.Kind == SimpleFieldKind.Primitive ? "Primitive" : arrTypeInfo.TypeName;
-            string dllCallType = arrTypeInfo.Kind == SimpleFieldKind.Primitive ? arrTypeInfo.DllCallType : "";
+            string ahkElementType = arrTypeInfo.Kind switch
+            {
+                SimpleFieldKind.Primitive or SimpleFieldKind.Pointer => "Primitive",
+                _ => arrTypeInfo.TypeName
+            };
+            string dllCallType= arrTypeInfo.Kind switch
+            {
+                SimpleFieldKind.Primitive => arrTypeInfo.DllCallType,
+                SimpleFieldKind.Pointer => "ptr",
+                _ => ""
+            };
 
             sb.AppendLine($"    {Name}{{");
             sb.AppendLine("        get {");
