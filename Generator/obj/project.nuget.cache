@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "dgSpecHash": "kR/g088BlOw=",
+  "success": true,
+  "projectFilePath": "C:\\Programming\\AhkWin32Structs\\AhkWin32Structs\\AhkWin32Structs.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\taorc\\.nuget\\packages\\messagepack\\3.1.4\\messagepack.3.1.4.nupkg.sha512",
+    "C:\\Users\\taorc\\.nuget\\packages\\messagepack.annotations\\3.1.4\\messagepack.annotations.3.1.4.nupkg.sha512",
+    "C:\\Users\\taorc\\.nuget\\packages\\messagepackanalyzer\\3.1.4\\messagepackanalyzer.3.1.4.nupkg.sha512",
+    "C:\\Users\\taorc\\.nuget\\packages\\microsoft.net.stringtools\\17.11.4\\microsoft.net.stringtools.17.11.4.nupkg.sha512",
+    "C:\\Users\\taorc\\.nuget\\packages\\microsoft.windows.sdk.win32docs\\0.1.42-alpha\\microsoft.windows.sdk.win32docs.0.1.42-alpha.nupkg.sha512",
+    "C:\\Users\\taorc\\.nuget\\packages\\microsoft.windows.sdk.win32metadata\\63.0.31-preview\\microsoft.windows.sdk.win32metadata.63.0.31-preview.nupkg.sha512"
+  ],
+  "logs": []
+}

@@ -1,0 +1,15 @@
+{
+    "configurations": [
+    {
+        "name": "Validate Generated AutoHotkey Syntax",
+        "type": "PowerShell",
+        "request": "launch",
+        "script": "${workspaceFolder}/Validator/ValidateAhk.ps1",
+        "args": [
+                "-AhkExePath", "\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe\"",
+                "-Directory", "\"${workspaceFolder}\\ahk\\Windows\"",
+            ],
+        "cwd": "${cwd}"
+    }
+    ]
+}
