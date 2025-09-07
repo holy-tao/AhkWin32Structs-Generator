@@ -52,6 +52,12 @@ public partial class AhkStruct : AhkType
             if (m.flags.HasFlag(MemberFlags.Anonymous) || (m.flags.HasFlag(MemberFlags.Union) && m.IsNested))
                 continue;
 
+            if (m.fieldInfo.Kind == SimpleFieldKind.Array && m.fieldInfo.ArrayType?.Kind != SimpleFieldKind.Struct)
+                continue;
+
+            if (m.fieldInfo.TypeDef?.IsNested ?? false)
+                continue;
+
             string sbPath = RelativePathBetweenNamespaces(Namespace, m.embeddedStruct?.Namespace);
             sb.AppendLine($"#Include {sbPath}{m.fieldInfo.TypeName}.ahk");
             importedTypes.Add(m.fieldInfo.TypeName);
@@ -67,14 +73,12 @@ public partial class AhkStruct : AhkType
         List<Member> flatMembers = [];
         foreach (Member m in Members)
         {
-            if (m.flags.HasFlag(MemberFlags.Union))
+            if (m.embeddedStruct != null)
             {
-                if (m.embeddedStruct != null)
-                {
-                    flatMembers.AddRange(m.embeddedStruct.GetAllNonNestedMembers());
-                }
+                flatMembers.AddRange(m.embeddedStruct.GetAllNonNestedMembers());
             }
-            flatMembers.Add(m);   
+            
+            flatMembers.Add(m);
         }
 
         return flatMembers;
@@ -92,10 +96,10 @@ public partial class AhkStruct : AhkType
 
             if (m.IsNested)
             {
-                AhkStruct nested = NestedTypes.FirstOrDefault(s => s.Name == m.fieldInfo.TypeName) ??
-                    throw new NullReferenceException($"{Name} has no nested type named {m.fieldInfo.TypeName}");
+                if(m.embeddedStruct == null)
+                    throw new NullReferenceException($"{Name}.{m.Name} has no nested type information");
 
-                nested.BodyToAhk(sb, m.offset + embeddingOfset, emittedMembers);
+                m.embeddedStruct.BodyToAhk(sb, m.offset + embeddingOfset, emittedMembers);
                 continue;
             }
 

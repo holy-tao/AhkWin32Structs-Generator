@@ -33,8 +33,6 @@ public partial class AhkStruct : AhkType
 
     internal IEnumerable<Member> Members { get; private set; }
 
-    private readonly IEnumerable<AhkStruct> NestedTypes;
-
     private readonly LayoutKind Layout;
 
     private AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
@@ -86,7 +84,6 @@ public partial class AhkStruct : AhkType
         Size += tailPadding;
 
         Members = memberList;
-        NestedTypes = typeDef.GetNestedTypes().Select(handle => new AhkStruct(mr, mr.GetTypeDefinition(handle), apiDocs));
     }
 
     private int EstimatePackingSize()
