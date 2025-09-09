@@ -324,7 +324,7 @@ public partial class AhkStruct : AhkType
             sb.AppendLine($"    {Name}{{");
             sb.AppendLine("        get {");
             sb.AppendLine($"            if(!this.HasProp(\"__{Name}ProxyArray\"))");
-            sb.AppendLine($"                this.__{Name}ProxyArray := Win32FixedArray(this.ptr + {offset}, {arrTypeInfo.GetWidth(parent.IsAnsi)}, {ahkElementType}, \"{dllCallType}\")");
+            sb.AppendLine($"                this.__{Name}ProxyArray := Win32FixedArray(this.ptr + {offset}, {fieldInfo.Length}, {ahkElementType}, \"{dllCallType}\")");
             sb.AppendLine($"            return this.__{Name}ProxyArray");
             sb.AppendLine("        }");
             sb.AppendLine("    }");
