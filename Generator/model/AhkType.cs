@@ -65,6 +65,26 @@ public abstract class AhkType : IAhkEmitter
         sb.AppendLine(" */");
     }
 
+    private protected void MaybeAddConstDocumentation(StringBuilder sb, ConstantInfo constant)
+    {
+        string? fieldDescription = null;
+        apiDetails?.Fields.TryGetValue(constant.Name, out fieldDescription);
+
+        sb.AppendLine("    /**");
+
+        if (fieldDescription != null)
+        {
+            sb.AppendLine("     * " + fieldDescription.Replace("\n", "\n * "));
+        }
+
+        var attrs = CustomAttributeDecoder.GetAllNames(mr, constant.fieldDef);
+        if (attrs.Contains("ObsoleteAttribute"))
+            sb.AppendLine($"     * @deprecated");
+
+        sb.AppendLine($"     * @type {constant.Ahktype}");
+        sb.AppendLine("     */");
+    }
+
     protected static string? EscapeDocs(string? docString, string? indent = " ")
     {
         // Remove comments from documentation and add asterisks to newlines

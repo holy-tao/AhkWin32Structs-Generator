@@ -24,7 +24,7 @@ public class Program
 
         Dictionary<string, ApiDetails> apiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
 
-        int errors = 0, total = 0;
+        int total = 0;
 
         foreach (TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
         {
@@ -62,10 +62,7 @@ public class Program
                 errFileStream.WriteLine(ex.StackTrace);
                 errFileStream.WriteLine();
 
-                if (++errors % 100 == 0)
-                {
-                    errFileStream.Flush();
-                }
+                errFileStream.Flush();
             }
 
             if (total % 1000 == 0)
@@ -80,7 +77,14 @@ public class Program
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
     {
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
+        string typeName = mr.GetString(typeDef.Name);
         string baseTypeName = mr.GetString(baseTypeRef.Name);
+
+        if (typeName == "Apis")
+        {
+            // This is the generic type that global functions and constants wind up in
+            return new AhkApiType(mr, typeDef, apiDocs);
+        }
 
         return baseTypeName switch
         {
@@ -101,12 +105,7 @@ public class Program
         if (typeDef.GetFields().Count == 0)
             return true;
 
-        // This is the generic name that the floating "global" functions end up in. Maybe one day I'll
-        // support them
-        if (typeName == "Apis")
-            return true;
-
-        // MultiCastDelegate means function pointer, "Apis" is the generic type for all functions
+        // MultiCastDelegate means function pointer
         if (baseTypeName == "MultiCastDelegate")
             return true;
 

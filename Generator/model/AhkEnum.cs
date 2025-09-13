@@ -42,24 +42,4 @@ public class AhkEnum : AhkType
 
         sb.AppendLine("}");
     }
-
-    private void MaybeAddConstDocumentation(StringBuilder sb, ConstantInfo constant)
-    {
-        string? fieldDescription = null;
-        apiDetails?.Fields.TryGetValue(constant.Name, out fieldDescription);
-
-        sb.AppendLine("    /**");
-
-        if (fieldDescription != null)
-        {
-            sb.AppendLine("     * " + fieldDescription.Replace("\n", "\n * "));
-        }
-
-        var attrs = CustomAttributeDecoder.GetAllNames(mr, constant.fieldDef);
-        if (attrs.Contains("ObsoleteAttribute"))
-            sb.AppendLine($"     * @deprecated");
-
-        sb.AppendLine($"     * @type {{Integer ({constant.TypeCode})}}");
-        sb.AppendLine("     */");
-    }
 }
