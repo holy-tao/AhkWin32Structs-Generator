@@ -15,7 +15,7 @@ public readonly record struct ConstantInfo(string Name, ConstantTypeCode TypeCod
 
     public string Ahktype => TypeCode switch
     {
-        ConstantTypeCode.Single => "String",
+        ConstantTypeCode.String => "String",
         _ => $"Integer ({TypeCode})"
     };
 }

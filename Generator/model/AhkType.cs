@@ -81,7 +81,7 @@ public abstract class AhkType : IAhkEmitter
         if (attrs.Contains("ObsoleteAttribute"))
             sb.AppendLine($"     * @deprecated");
 
-        sb.AppendLine($"     * @type {constant.Ahktype}");
+        sb.AppendLine($"     * @type {{{constant.Ahktype}}}");
         sb.AppendLine("     */");
     }
 
