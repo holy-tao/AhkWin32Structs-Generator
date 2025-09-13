@@ -1,3 +1,6 @@
 ahk/*/*
+ahk/errors.txt
+ahk/version.ini
 Generator/bin/*
 Generator/obj/Debug/*
+Generator/obj/*
