@@ -19,112 +19,13 @@ public static class FieldSignatureDecoder
         if (header != (byte)SignatureKind.Field)
             throw new BadImageFormatException("Not a field signature");
 
-        return DecodeType(ref blob, reader, fieldDef);
+        return fieldDef.DecodeSignature(new FieldSignatureProvider(reader), null);
     }
-
-    private static FieldInfo DecodeType(ref BlobReader blob, MetadataReader reader, FieldDefinition fieldDef)
-    {
-        var et = (SignatureTypeCode)blob.ReadByte();
-
-        switch (et)
-        {
-            // Primitives
-            case SignatureTypeCode.Boolean:
-            case SignatureTypeCode.Char:
-            case SignatureTypeCode.SByte:
-            case SignatureTypeCode.Byte:
-            case SignatureTypeCode.Int16:
-            case SignatureTypeCode.UInt16:
-            case SignatureTypeCode.Int32:
-            case SignatureTypeCode.UInt32:
-            case SignatureTypeCode.Int64:
-            case SignatureTypeCode.UInt64:
-            case SignatureTypeCode.Single:
-            case SignatureTypeCode.Double:
-            case SignatureTypeCode.IntPtr:
-            case SignatureTypeCode.UIntPtr:
-                return new FieldInfo(SimpleFieldKind.Primitive, et.ToString());
-
-            // Pointer
-            case SignatureTypeCode.Pointer:
-                FieldInfo pointee = DecodeType(ref blob, reader, fieldDef); // skip pointee
-                return new FieldInfo(SimpleFieldKind.Pointer, pointee.TypeName);
-
-            // SZARRAY - we should probably skip structs with these
-            case SignatureTypeCode.SZArray:
-                throw new NotSupportedException($"{reader.GetString(fieldDef.Name)}: dynamic array");
-
-            // ARRAY
-            case SignatureTypeCode.Array:
-                var arrElem = DecodeType(ref blob, reader, fieldDef);
-                int rank = blob.ReadCompressedInteger();
-                int arrLength = GetFixedArrayLength(reader, fieldDef);
-
-                int numSizes = blob.ReadCompressedInteger();
-                for (int i = 0; i < numSizes; i++) blob.ReadCompressedInteger();
-                int numLoBounds = blob.ReadCompressedInteger();
-                for (int i = 0; i < numLoBounds; i++) blob.ReadCompressedInteger();
-
-                string tName = arrElem.TypeName.ToLower();
-
-                // We need a carve-out here for the CHAR struct, which is internally an sbyte
-
-                if (tName == "char" || tName == "tchar" || tName == "wchar" ||
-                    (tName == "sbyte" && arrElem.TypeDef != null && reader.GetString(arrElem.TypeDef.Value.Name) == "CHAR"))
-                {
-                    return new FieldInfo(SimpleFieldKind.String, arrElem.TypeName, arrLength);
-                }
-
-                return new FieldInfo(SimpleFieldKind.Array, arrElem.TypeName, arrLength, arrElem.TypeDef, arrElem);
-
-            // ValueType or Class
-            case (SignatureTypeCode)17:         //0x11 - also a TypeHandle
-            case (SignatureTypeCode)18:         //0x12 - also a TypeHandle
-            case SignatureTypeCode.TypeHandle:
-                var handle = blob.ReadTypeHandle();
-
-                if (handle.Kind == HandleKind.TypeDefinition)
-                {
-                    return DecodeTypeDef(reader, (TypeDefinitionHandle)handle, fieldDef);
-                }
-                else if (handle.Kind == HandleKind.TypeReference)
-                {
-                    // We need to resolve the TypeRef
-                    TypeDefinitionHandle? resolvedTypeDefHandle = ResolveTypeReference(reader, (TypeReferenceHandle)handle);
-                    if (resolvedTypeDefHandle != null)
-                    {
-                        return DecodeTypeDef(reader, (TypeDefinitionHandle)resolvedTypeDefHandle, fieldDef);
-                    }
-                    else
-                    {
-                        // Assume a pointer if we couldn't resolve the typedef
-                        TypeReference td = reader.GetTypeReference((TypeReferenceHandle)handle);
-                        return new FieldInfo(SimpleFieldKind.Pointer, reader.GetString(td.Name));
-                    }
-                }
-                else if (handle.Kind == HandleKind.TypeSpecification)
-                {
-                    var ts = reader.GetTypeSpecification((TypeSpecificationHandle)handle);
-                    var specReader = reader.GetBlobReader(ts.Signature);
-                    return DecodeType(ref specReader, reader, fieldDef);
-                }
-
-                return new FieldInfo(SimpleFieldKind.Other, "TypeSpec");
-            
-            case SignatureTypeCode.Void:
-                // This is an opaque pointer or handle type - we'll just treat it as a pointer
-                return new FieldInfo(SimpleFieldKind.Pointer, "Void");
-
-            default:
-                Console.WriteLine($"Unhandled signature type code: {et}");
-                return new FieldInfo(SimpleFieldKind.Other, et.ToString());
-        }
-    }
-
+    
     /// <summary>
     /// Returns the fixed array length for a field
     /// </summary>
-    private static int GetFixedArrayLength(MetadataReader reader, FieldDefinition fieldDef)
+    public static int GetFixedArrayLength(MetadataReader reader, FieldDefinition fieldDef)
     {
 #pragma warning disable CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
         var sig = fieldDef.DecodeSignature(new GenericSignatureTypeProvider(), null);
@@ -141,12 +42,12 @@ public static class FieldSignatureDecoder
         throw new FormatException($"Failed to parse array signature: {sig}");
     }
 
-    private static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle, FieldDefinition fieldDef)
+    public static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle)
     {
         var td = reader.GetTypeDefinition(tdHandle);
         if (IsEnum(reader, tdHandle))
         {
-            string underlying = GetEnumUnderlyingType(reader, tdHandle, fieldDef);
+            string underlying = GetEnumUnderlyingType(reader, tdHandle);
             return new FieldInfo(SimpleFieldKind.Primitive, underlying);
         }
         else if (IsComInterface(reader, tdHandle))
@@ -161,7 +62,7 @@ public static class FieldSignatureDecoder
         return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name), 0, td);
     }
 
-    private static bool IsComInterface(MetadataReader reader, TypeDefinitionHandle handle)
+    public static bool IsComInterface(MetadataReader reader, TypeDefinitionHandle handle)
     {
         TypeDefinition td = reader.GetTypeDefinition(handle);
 
@@ -202,7 +103,7 @@ public static class FieldSignatureDecoder
         return false;
     }
 
-    private static bool IsEnum(MetadataReader reader, TypeDefinitionHandle handle)
+    public static bool IsEnum(MetadataReader reader, TypeDefinitionHandle handle)
     {
         var td = reader.GetTypeDefinition(handle);
         var baseHandle = td.BaseType;
@@ -313,7 +214,7 @@ public static class FieldSignatureDecoder
         }
     }
 
-    private static string GetEnumUnderlyingType(MetadataReader reader, TypeDefinitionHandle handle, FieldDefinition fieldDef)
+    public static string GetEnumUnderlyingType(MetadataReader reader, TypeDefinitionHandle handle)
     {
         var td = reader.GetTypeDefinition(handle);
         foreach (var fieldHandle in td.GetFields())
@@ -321,10 +222,7 @@ public static class FieldSignatureDecoder
             var fd = reader.GetFieldDefinition(fieldHandle);
             if (reader.StringComparer.Equals(fd.Name, "value__"))
             {
-                var blob = reader.GetBlobReader(fd.Signature);
-                blob.ReadByte(); // skip FIELD (0x06)
-                var fi = DecodeType(ref blob, reader, fieldDef);
-                return fi.TypeName;
+                return fd.DecodeSignature(new FieldSignatureProvider(reader), null).TypeName;
             }
         }
         return "Int32";
@@ -334,13 +232,13 @@ public static class FieldSignatureDecoder
     /// Some function pointers (notably the LPFN*PROC callbacks) are represented in the metadata as empty
     /// structs. So when we encounter one we need to check its attributes to see if it's a function pointer
     /// </summary>
-    private static bool IsUsedAsFunctionPointer(MetadataReader reader, TypeDefinitionHandle defHandle)
+    public static bool IsUsedAsFunctionPointer(MetadataReader reader, TypeDefinitionHandle defHandle)
     {
         TypeDefinition typeDef = reader.GetTypeDefinition(defHandle);
         return CustomAttributeDecoder.GetAllNames(reader, typeDef).Contains("UnmanagedFunctionPointerAttribute");
     }
 
-    private static TypeDefinitionHandle? ResolveTypeReference(MetadataReader reader, TypeReferenceHandle trHandle)
+    public static TypeDefinitionHandle? ResolveTypeReference(MetadataReader reader, TypeReferenceHandle trHandle)
     {
         var tr = reader.GetTypeReference(trHandle);
         string name = reader.GetString(tr.Name);
