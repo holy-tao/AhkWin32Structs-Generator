@@ -1,14 +1,6 @@
-using System;
-using System.ComponentModel;
-using System.ComponentModel.DataAnnotations;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Metadata;
-using System.Reflection.Metadata.Ecma335;
-using System.Runtime.InteropServices;
-using System.Text.RegularExpressions;
-using MetadataUtils;
-using Microsoft.VisualBasic.FileIO;
 
 public static class FieldSignatureDecoder
 {
@@ -20,26 +12,6 @@ public static class FieldSignatureDecoder
             throw new BadImageFormatException("Not a field signature");
 
         return fieldDef.DecodeSignature(new FieldSignatureProvider(reader), null);
-    }
-    
-    /// <summary>
-    /// Returns the fixed array length for a field
-    /// </summary>
-    public static int GetFixedArrayLength(MetadataReader reader, FieldDefinition fieldDef)
-    {
-#pragma warning disable CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
-        var sig = fieldDef.DecodeSignature(new GenericSignatureTypeProvider(), null);
-#pragma warning restore CS8620 // Argument cannot be used for parameter due to differences in the nullability of reference types.
-
-        Match match = Regex.Match(sig, @"^(?<Namespace>\w*?.*?).?(?<TypeName>\w+)(?<Pointer>\*?)\[(?<Min>\d+)...(?<Max>\d+)]$") ??
-            throw new FormatException($"Failed to parse array signature: {sig}");
-
-        if (int.TryParse(match.Groups["Max"].Value, out int maxLength))
-        {
-            return maxLength + 1;
-        }
-
-        throw new FormatException($"Failed to parse array signature: {sig}");
     }
 
     public static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle)
@@ -127,13 +99,14 @@ public static class FieldSignatureDecoder
     public static bool IsPseudoPrimitive(MetadataReader reader, TypeDefinitionHandle handle, [NotNullWhen(true)] out FieldInfo? fieldInfo )
     {
         TypeDefinition td = reader.GetTypeDefinition(handle);
+        string typeName = reader.GetString(reader.GetTypeDefinition(handle).Name);
 
         FieldDefinitionHandleCollection fields = td.GetFields();
 
         // If struct is empty, check to see if any function pointers point to it
         if (fields.Count == 0 && IsUsedAsFunctionPointer(reader, handle))
         {
-            fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, "Ptr");
+            fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, typeName);
             return true;
         }
 
@@ -167,7 +140,7 @@ public static class FieldSignatureDecoder
             sigTypeCode == SignatureTypeCode.UIntPtr || sigTypeCode == SignatureTypeCode.FunctionPointer)
         {
             // Some other pointer type
-            fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, "Ptr", 0, td);
+            fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td);
             return true;
         }
         else if (sigTypeCode == SignatureTypeCode.TypeHandle || sigTypeCode == (SignatureTypeCode)17 || sigTypeCode == (SignatureTypeCode)18)

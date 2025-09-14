@@ -9,12 +9,12 @@ using System.Reflection;
 /// </summary>
 class AhkApiType : AhkType
 {
-    List<ConstantInfo> constants;
+    List<ConstantInfo> constants = [];
+    List<AhkMethod> methods = [];
 
     public AhkApiType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
         // Constants
-        constants = new List<ConstantInfo>();
         foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
         {
             FieldDefinition fieldDef = mr.GetFieldDefinition(fieldDefHandle);
@@ -37,8 +37,10 @@ class AhkApiType : AhkType
             }
         }
 
-        // TODO methods
-
+        methods = typeDef.GetMethods()
+            .Select(handle => new AhkMethod(mr, mr.GetMethodDefinition(handle), apiDocs))
+            .DistinctBy(method => method.Name)
+            .ToList();
     }
 
     public override void ToAhk(StringBuilder sb)
@@ -51,27 +53,66 @@ class AhkApiType : AhkType
         sb.AppendLine();
 
         AppendConstants(sb);
+        sb.AppendLine();
+        AppendMethods(sb);
 
         sb.AppendLine("}");
     }
 
     private void AppendConstants(StringBuilder sb)
     {
-        sb.Append(";@region Constants");
+        sb.AppendLine(";@region Constants");
 
         foreach (ConstantInfo constant in constants)
         {
             sb.AppendLine();
             MaybeAddConstDocumentation(sb, constant);
-            sb.AppendLine($"    static {constant.Name} => {constant.ValueAsAhkLiteral}");
+            sb.AppendLine($"    static {constant.Name} => {AhkEscape(constant.ValueAsAhkLiteral)}");
         }
 
         sb.AppendLine(";@endregion Constants");
+    }
+
+    private void AppendMethods(StringBuilder sb)
+    {
+        sb.AppendLine(";@region Methods");
+
+        foreach (AhkMethod method in methods)
+        {
+            method.ToAhk(sb);
+            sb.AppendLine();
+        }
+
+        sb.AppendLine(";@endregion Methods");
     }
 
     private string GetName()
     {
         // We don't want the name to just be "Apis"
         return Namespace.Split(".").Last();
+    }
+
+    private static string AhkEscape(string val)
+    {
+        StringBuilder sb = new();
+
+        foreach (char c in val)
+        {
+            if (char.IsControl(c))
+            {
+                sb.Append($"\\u{((int)c).ToString("x4")}");
+                continue;
+            }
+
+            sb.Append(c switch
+            {
+                '\n' => "`n",
+                '\t' => "`t",
+                '\r' => "`r",
+                _ => c
+            });
+        }
+
+        return sb.ToString();
     }
 }

@@ -85,7 +85,7 @@ public abstract class AhkType : IAhkEmitter
         sb.AppendLine("     */");
     }
 
-    protected static string? EscapeDocs(string? docString, string? indent = " ")
+    public static string? EscapeDocs(string? docString, string? indent = " ")
     {
         // Remove comments from documentation and add asterisks to newlines
         return docString?
