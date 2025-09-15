@@ -1,0 +1,3 @@
+[submodule "AhkWin32projection"]
+	path = AhkWin32projection
+	url = git@github.com:holy-tao/AhkWin32Projection.git

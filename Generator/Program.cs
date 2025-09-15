@@ -15,7 +15,7 @@ public class Program
         //TODO read in filepaths from command line or environment variables or something
         using FileStream metaDataFileStream = File.OpenRead(@"C:\Programming\AhkWin32Structs\metadata\Windows.Win32.winmd");
         using FileStream apiDocFileStream = File.OpenRead(@"C:\Programming\AhkWin32Structs\metadata\apidocs.msgpack");
-        string ahkOutputDir = @"C:\Programming\AhkWin32Structs\ahk\";
+        string ahkOutputDir = @"C:\Programming\AhkWin32Structs\AhkWin32projection\";
 
         using StreamWriter errFileStream = new(File.Create(Path.Combine(ahkOutputDir, "errors.txt")));
 
