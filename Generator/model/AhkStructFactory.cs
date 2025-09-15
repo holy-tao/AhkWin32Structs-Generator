@@ -89,7 +89,12 @@ public partial class AhkStruct : AhkType
     private int EstimatePackingSize()
     {
         TypeLayout layout = typeDef.GetLayout();
-        return layout.PackingSize != 0 ? layout.PackingSize : 8;
+        if (typeDef.Attributes.HasFlag(TypeAttributes.ExplicitLayout) && layout.PackingSize != 0)
+        {
+            return layout.PackingSize;
+        }
+
+        return 8;
     }
 
     private LayoutKind GetLayoutKind()
