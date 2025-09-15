@@ -47,7 +47,8 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
         int len = shape.Rank == 1 && shape.Sizes.ToList().Count == 1 ? shape.Sizes[0] : 0;
 
         string elemName = elementType.TypeName.ToLowerInvariant();
-        if (elemName is "char" or "tchar" or "wchar")
+        if (elemName is "char" or "tchar" or "wchar" ||
+            (elemName == "sbyte" && elementType.TypeDef != null && _reader.GetString(elementType.TypeDef.Value.Name) == "CHAR"))
         {
             return new(SimpleFieldKind.String, elementType.TypeName, len, elementType.TypeDef, elementType);
         }
