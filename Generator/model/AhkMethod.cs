@@ -52,6 +52,17 @@ class AhkMethod
             sb.AppendLine();
         }
 
+        List<AhkParameter> stringParams = [.. parameters[1..]
+            .Where(p => p.FieldInfo.Kind == SimpleFieldKind.Pointer && p.FieldInfo.TypeName is "PSTR" or "PWSTR" && !p.Reserved)];
+        if (stringParams.Count > 0)
+        {
+            foreach (AhkParameter param in stringParams)
+            {
+                sb.AppendLine($"        {param.Name} := {param.Name} is String? StrPtr({param.Name}) : {param.Name}");
+            }
+            sb.AppendLine();
+        }
+
         if (SetsLastError)
         {
             sb.AppendLine($"        A_LastError := 0");
