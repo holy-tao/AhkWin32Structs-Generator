@@ -22,7 +22,7 @@ class AhkMethod
 
     public string DLLName => mr.GetString(mr.GetModuleReference(import.Module).Name);
 
-    public bool HasReturnValue => parameters[0].FieldInfo.TypeName != "Void";
+    public bool HasReturnValue => !(parameters[0].FieldInfo.Kind == SimpleFieldKind.Primitive && parameters[0].FieldInfo.TypeName == "Void");
 
     private readonly List<AhkParameter> parameters = [];
 
@@ -182,7 +182,7 @@ class AhkMethod
             sb.AppendLine();
         }
 
-        if (parameters[0].FieldInfo.TypeName != "Void")
+        if (HasReturnValue)
         {
             sb.AppendLine($"     * @returns {{{parameters[0].FieldInfo.AhkType}}} {AhkType.EscapeDocs(apiDetails?.ReturnValue, "    ")}");
         }
