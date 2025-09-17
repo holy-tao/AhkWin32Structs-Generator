@@ -58,7 +58,7 @@ public partial class AhkStruct : AhkType
 
             int logicalFieldSize = newMember.fieldInfo.Kind switch
             {
-                SimpleFieldKind.Array => newMember.fieldInfo.ArrayType?.GetWidth(IsAnsi) ?? throw new NullReferenceException(),
+                SimpleFieldKind.Array => newMember.fieldInfo.UnderlyingType?.GetWidth(IsAnsi) ?? throw new NullReferenceException(),
                 SimpleFieldKind.String => IsAnsi? 1 : 2,
                 _ => newMember.Size
             };

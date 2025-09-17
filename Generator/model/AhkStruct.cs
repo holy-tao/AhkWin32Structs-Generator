@@ -52,7 +52,7 @@ public partial class AhkStruct : AhkType
             if (m.flags.HasFlag(MemberFlags.Anonymous) || (m.flags.HasFlag(MemberFlags.Union) && m.IsNested))
                 continue;
 
-            if (m.fieldInfo.Kind == SimpleFieldKind.Array && m.fieldInfo.ArrayType?.Kind != SimpleFieldKind.Struct)
+            if (m.fieldInfo.Kind == SimpleFieldKind.Array && m.fieldInfo.UnderlyingType?.Kind != SimpleFieldKind.Struct)
                 continue;
 
             if (m.fieldInfo.TypeDef?.IsNested ?? false)
@@ -189,7 +189,7 @@ public partial class AhkStruct : AhkType
             }
             else if (fieldInfo.Kind == SimpleFieldKind.Array)
             {
-                FieldInfo arrayElementType = fieldInfo.ArrayType ??
+                FieldInfo arrayElementType = fieldInfo.UnderlyingType ??
                     throw new NullReferenceException($"Null array element for Array field {Name}");
                 Size = fieldInfo.Length * arrayElementType.GetWidth(parent.IsAnsi);
 
@@ -307,7 +307,7 @@ public partial class AhkStruct : AhkType
 
         private void ToAhkArray(StringBuilder sb, int offset)
         {
-            FieldInfo arrTypeInfo = fieldInfo.ArrayType ?? throw new NullReferenceException($"Null ArrayType for {Name}");
+            FieldInfo arrTypeInfo = fieldInfo.UnderlyingType ?? throw new NullReferenceException($"Null ArrayType for {Name}");
 
             string ahkElementType = arrTypeInfo.Kind switch
             {

@@ -136,10 +136,20 @@ public static class FieldSignatureDecoder
             fieldInfo = new FieldInfo(SimpleFieldKind.Primitive, sigTypeCode.ToString(), 0, td);
             return true;
         }
-        else if (sigTypeCode == SignatureTypeCode.Pointer || sigTypeCode == SignatureTypeCode.IntPtr ||
-            sigTypeCode == SignatureTypeCode.UIntPtr || sigTypeCode == SignatureTypeCode.FunctionPointer)
+        else if (sigTypeCode == SignatureTypeCode.Pointer)
         {
             // Some other pointer type
+            var underlyingTypeCode = blob.ReadSignatureTypeCode();
+            fieldInfo = new FieldInfo(
+                SimpleFieldKind.Pointer,
+                underlyingTypeCode.ToString(),
+                0,
+                td,
+                new FieldInfo(SimpleFieldKind.Primitive, underlyingTypeCode.ToString()));
+            return true;
+        }
+        else if (sigTypeCode == SignatureTypeCode.FunctionPointer)
+        {
             fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td);
             return true;
         }

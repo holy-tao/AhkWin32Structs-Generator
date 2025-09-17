@@ -57,7 +57,7 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
     }
 
     public FieldInfo GetPointerType(FieldInfo elementType)
-        => new(SimpleFieldKind.Pointer, elementType.TypeName);
+        => new(SimpleFieldKind.Pointer, elementType.TypeName, 0, null, elementType);
 
     public FieldInfo GetByReferenceType(FieldInfo elementType)
         => new(SimpleFieldKind.Pointer, elementType.TypeName);

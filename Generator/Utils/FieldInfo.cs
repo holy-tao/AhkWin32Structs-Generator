@@ -1,6 +1,6 @@
 using System.Reflection.Metadata;
 
-public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, TypeDefinition? TypeDef = null, FieldInfo? ArrayType = null)
+public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, TypeDefinition? TypeDef = null, FieldInfo? UnderlyingType = null)
 {
     public static int POINTER_SIZE = 8;
 
@@ -38,6 +38,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                     case "intptr":
                     case "void":
                     case "ptr":
+                    case "typehandle":
                         return "ptr";
                     default:
                         throw new NotSupportedException(TypeName);

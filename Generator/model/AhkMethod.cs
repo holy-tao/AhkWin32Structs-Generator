@@ -53,7 +53,7 @@ class AhkMethod
         }
 
         List<AhkParameter> stringParams = [.. parameters[1..]
-            .Where(p => p.FieldInfo.Kind == SimpleFieldKind.Pointer && p.FieldInfo.TypeName is "PSTR" or "PWSTR" && !p.Reserved)];
+            .Where(p => p.FieldInfo.Kind == SimpleFieldKind.Pointer && p.FieldInfo.TypeName == "Char" && !p.Reserved)];
         if (stringParams.Count > 0)
         {
             foreach (AhkParameter param in stringParams)
