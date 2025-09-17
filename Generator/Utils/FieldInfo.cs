@@ -4,61 +4,65 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
 {
     public static int POINTER_SIZE = 8;
 
-    // https://www.autohotkey.com/docs/v2/lib/DllCall.htm
-    public string DllCallType
+    // 
+    /// <summary>
+    /// Get the DllCall type of the field. See: <see cref="https://www.autohotkey.com/docs/v2/lib/DllCall.htm"/>
+    /// </summary>
+    /// <param name="useNakedPointer">If false, pointers to primitives are emitted as type*, if true, just "ptr</param>
+    /// <returns></returns>
+    /// <exception cref="NotSupportedException"></exception>
+    public string GetDllCallType(bool useNakedPointer)
     {
-        get
+        if (Kind == SimpleFieldKind.Primitive)
         {
-            if (Kind == SimpleFieldKind.Primitive)
+            switch (TypeName.ToLower())
             {
-                switch (TypeName.ToLower())
-                {
-                    case "single":
-                        return "float";
-                    case "boolean":
-                    case "int32":
-                        return "int";
-                    case "double":
-                        return "double";
-                    case "int64":
-                        return "int64";
-                    case "uint32":
-                        return "uint";
-                    case "uint64":
-                        return "uint";
-                    case "int16":
-                        return "short";
-                    case "uint16":
-                        return "ushort";
-                    case "byte":
-                    case "sbyte":
-                    case "char":
-                        return "char";
-                    case "uintptr":
-                    case "intptr":
-                    case "void":
-                    case "ptr":
-                    case "typehandle":
-                        return "ptr";
-                    default:
-                        throw new NotSupportedException(TypeName);
-                }
+                case "single":
+                    return "float";
+                case "boolean":
+                case "int32":
+                    return "int";
+                case "double":
+                    return "double";
+                case "int64":
+                    return "int64";
+                case "uint32":
+                    return "uint";
+                case "uint64":
+                    return "uint";
+                case "int16":
+                    return "short";
+                case "uint16":
+                    return "ushort";
+                case "byte":
+                case "sbyte":
+                case "char":
+                    return "char";
+                case "uintptr":
+                case "intptr":
+                case "void":
+                case "ptr":
+                case "typehandle":
+                    return "ptr";
+                default:
+                    throw new NotSupportedException(TypeName);
             }
-            else if (Kind == SimpleFieldKind.Pointer)
+        }
+        else if (Kind == SimpleFieldKind.Pointer)
+        {
+            if (!useNakedPointer && UnderlyingType != null &&
+                UnderlyingType.Kind == SimpleFieldKind.Primitive && UnderlyingType.TypeName != "Void")
             {
-                if (UnderlyingType != null && UnderlyingType.Kind == SimpleFieldKind.Primitive && UnderlyingType.TypeName != "Void")
-                {
-                    return UnderlyingType.DllCallType + '*';
-                }
+                return UnderlyingType.GetDllCallType(useNakedPointer) + '*';
+            }
 
-                return "ptr";
-            }
-            else
-            {
-                // TODO handle arrays
-                // Everything else in AHK is a pointer
-                return "ptr";
-            }
+            return "ptr";
+        }
+        else
+        {
+            // TODO handle arrays
+            // Everything else in AHK is a pointer
+            return "ptr";
         }
     }
 

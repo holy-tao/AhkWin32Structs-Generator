@@ -299,8 +299,8 @@ public partial class AhkStruct : AhkType
             else
             {
                 sb.AppendLine($"    {Name} {{");
-                sb.AppendLine($"        get => NumGet(this, {offset}, \"{fieldInfo.DllCallType}\")");
-                sb.AppendLine($"        set => NumPut(\"{fieldInfo.DllCallType}\", value, this, {offset})");
+                sb.AppendLine($"        get => NumGet(this, {offset}, \"{fieldInfo.GetDllCallType(true)}\")");
+                sb.AppendLine($"        set => NumPut(\"{fieldInfo.GetDllCallType(true)}\", value, this, {offset})");
                 sb.AppendLine($"    }}");
             }
         }
@@ -316,7 +316,7 @@ public partial class AhkStruct : AhkType
             };
             string dllCallType= arrTypeInfo.Kind switch
             {
-                SimpleFieldKind.Primitive => arrTypeInfo.DllCallType,
+                SimpleFieldKind.Primitive => arrTypeInfo.GetDllCallType(false),
                 SimpleFieldKind.Pointer => "ptr",
                 _ => ""
             };

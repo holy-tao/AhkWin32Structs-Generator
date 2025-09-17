@@ -52,8 +52,12 @@ class AhkMethod
             sb.AppendLine();
         }
 
+#pragma warning disable CS8629 // Nullable value type may be null.
         List<AhkParameter> stringParams = [.. parameters[1..]
-            .Where(p => p.FieldInfo.Kind == SimpleFieldKind.Pointer && p.FieldInfo.TypeName == "Char" && !p.Reserved)];
+            .Where(p => p.FieldInfo.TypeDef.HasValue)
+            .Where(p => mr.GetString(p.FieldInfo.TypeDef.Value.Name) is "PWSTR" or "PSTR")];
+#pragma warning restore CS8629 // Nullable value type may be null.
+
         if (stringParams.Count > 0)
         {
             foreach (AhkParameter param in stringParams)
@@ -110,7 +114,7 @@ class AhkMethod
             }
 
             if (HasReturnValue)
-                sb.Append(parameters[0].FieldInfo.DllCallType);
+                sb.Append(parameters[0].FieldInfo.GetDllCallType(false));
 
             sb.Append('"');
         }
@@ -136,7 +140,10 @@ class AhkMethod
         {
             AhkParameter param = parameters[i];
 
-            argList.Append($"\"{param.FieldInfo.DllCallType}\"");
+            bool isString = param.FieldInfo.TypeDef.HasValue && mr.GetString(param.FieldInfo.TypeDef.Value.Name) is "PWSTR" or "PSTR";
+            string dllCallType = isString? "ptr" : param.FieldInfo.GetDllCallType(false);
+
+            argList.Append($"\"{dllCallType}\"");
             argList.Append(", ");
             argList.Append(param.Name);
 
