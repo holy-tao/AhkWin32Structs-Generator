@@ -41,12 +41,19 @@ public class ParameterDecoder
             int seq = i + 1;
             paramInfos.TryGetValue(seq, out var param);
 
+            var custAttrs = CustomAttrsForParam(reader, param);
+            // Check for [MemorySize] to identify buffers - these usually show up as byte buffers
+            // BOOL SystemPrng([Out][MemorySize(BytesParamIndex = 1)] byte* pbRandomData, [In] UIntPtr cbRandomData);
+            var fieldInfo = custAttrs.HasFlag(CustomParamAttributes.SizedBuffer) ?
+                new FieldInfo(SimpleFieldKind.Primitive, "ptr") :
+                sig.ParameterTypes[i];
+
             result.Add(new AhkParameter(
                 param.Name.IsNil ? "" : reader.GetString(param.Name),
                 param.SequenceNumber,
-                sig.ParameterTypes[i],
+                fieldInfo,
                 param.Attributes,
-                CustomAttrsForParam(reader, param)
+                custAttrs
             ));
         }
 
@@ -75,6 +82,7 @@ public class ParameterDecoder
             {
                 "ReservedAttribute" => CustomParamAttributes.Reserved,
                 "ConstAttribute" => CustomParamAttributes.Constant,
+                "MemorySizeAttribute" => CustomParamAttributes.SizedBuffer,
                 _ => 0
             };
         }

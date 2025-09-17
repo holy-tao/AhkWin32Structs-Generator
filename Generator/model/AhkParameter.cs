@@ -6,7 +6,8 @@ public enum CustomParamAttributes
 {
     None = 0,
     Reserved = 1,
-    Constant = 2
+    Constant = 2,
+    SizedBuffer = 4
 }
 
 public readonly record struct AhkParameter
