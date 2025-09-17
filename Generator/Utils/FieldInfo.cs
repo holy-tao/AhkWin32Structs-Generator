@@ -46,6 +46,11 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
             }
             else if (Kind == SimpleFieldKind.Pointer)
             {
+                if (UnderlyingType != null && UnderlyingType.Kind == SimpleFieldKind.Primitive && UnderlyingType.TypeName != "Void")
+                {
+                    return UnderlyingType.DllCallType + '*';
+                }
+
                 return "ptr";
             }
             else
