@@ -43,7 +43,8 @@ class AhkMethod
         sb.AppendLine($"    static {Name}({BuildMethodArgumentList()}) {{");
 
         List<AhkParameter> reservedParams = [.. parameters.Where(p => p.Reserved)];
-        if (reservedParams.Count > 0) {
+        if (reservedParams.Count > 0)
+        {
             sb.Append("        static ");
             sb.Append(string.Join(", ", reservedParams.Select(p => $"{p.Name} := 0")));
             sb.Append(" ;Reserved parameters must always be NULL");
@@ -79,14 +80,23 @@ class AhkMethod
 
         if (SetsLastError)
         {
+            // Inspect last error for errors
             sb.AppendLine($"        if(A_LastError)");
             sb.AppendLine($"            throw OSError()");
             sb.AppendLine();
         }
 
+        if (HasReturnValue && ShouldThrowForReturnValue())
+        {
+            // The function returns an HRESULT and we should check to see if we need to throw
+            sb.AppendLine($"        if(result != 0)");
+            sb.AppendLine($"            throw OSError(result)");
+            sb.AppendLine();
+        }
+
         if (HasReturnValue)
             sb.AppendLine("        return result");
-        
+
         sb.AppendLine($"    }}");
     }
 
@@ -95,7 +105,7 @@ class AhkMethod
         StringBuilder sb = new();
         if (HasReturnValue)
             sb.Append("result := ");
-        
+
         sb.Append($"DllCall(\"{DLLName}\\{Name}\"");
 
         if (parameters.Count > 1)
@@ -141,7 +151,7 @@ class AhkMethod
             AhkParameter param = parameters[i];
 
             bool isString = param.FieldInfo.TypeDef.HasValue && mr.GetString(param.FieldInfo.TypeDef.Value.Name) is "PWSTR" or "PSTR";
-            string dllCallType = isString? "ptr" : param.FieldInfo.GetDllCallType(false);
+            string dllCallType = isString ? "ptr" : param.FieldInfo.GetDllCallType(false);
 
             argList.Append($"\"{dllCallType}\"");
             argList.Append(", ");
@@ -191,7 +201,6 @@ class AhkMethod
             // Explicitly say we return an empty string if no return type
             sb.AppendLine("     * @returns {String} Nothing - always returns an empty string");
         }
-        
 
         if (apiDetails?.HelpLink != null)
         {
@@ -216,5 +225,50 @@ class AhkMethod
         }
 
         sb.AppendLine("     */");
+    }
+
+    /// <summary>
+    /// Does this method return an HRESULT and, if so, should we throw an error if it's anything
+    /// other than 0 (S_OK)?
+    /// 
+    /// This is true by default, and false if [DllImport(..., PreserveSig = false)] is present OR EITHER
+    ///     1.  [CanReturnMultipleSuccessValues] is present, OR
+    ///     2.  [CanReturnErrorsAsSuccess] is present
+    /// </summary>
+    /// <returns></returns>
+    private bool ShouldThrowForReturnValue()
+    {
+        // If the method doesn't return an HRESULT, this is always no
+        if (parameters[0].FieldInfo.Kind != SimpleFieldKind.HRESULT)
+        {
+            return false;
+        }
+
+        CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(mr, methodDef, "PreserveSigAttribute");
+        if (attr.HasValue)
+        {
+            var attrVal = ((CustomAttribute)attr).DecodeValue(new CaTypeProvider());
+            bool hasPreserveSig = ((bool?)attrVal.FixedArguments[0].Value) ?? true;
+
+            // https://github.com/microsoft/win32metadata/issues/1315#issuecomment-1281559120
+            if (!hasPreserveSig)
+            {
+                return false;
+            }
+            else
+            {
+                // Check for [CanReturnMultipleSuccessValues] or [CanReturnErrorsAsSuccess]
+                foreach (string attrName in CustomAttributeDecoder.GetAllNames(mr, methodDef))
+                {
+                    if (attrName is "CanReturnMultipleSuccessValuesAttribute" or "CanReturnErrorsAsSuccessAttribute")
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+
+
+        return true;
     }
 }

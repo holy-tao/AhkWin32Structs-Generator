@@ -101,6 +101,13 @@ public static class FieldSignatureDecoder
         TypeDefinition td = reader.GetTypeDefinition(handle);
         string typeName = reader.GetString(reader.GetTypeDefinition(handle).Name);
 
+        // Special case for methods that need to know about it
+        if (typeName == "HRESULT")
+        {
+            fieldInfo = new FieldInfo(SimpleFieldKind.HRESULT, "HRESULT", 0, td);
+            return true;
+        }
+
         FieldDefinitionHandleCollection fields = td.GetFields();
 
         // If struct is empty, check to see if any function pointers point to it

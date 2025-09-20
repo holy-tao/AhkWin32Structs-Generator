@@ -13,9 +13,9 @@ public class ParameterDecoder
         // Build a lookup of ParameterHandle -> Parameter info
         Dictionary<int, Parameter> paramInfos = GetParameters(reader, methodDef);
 
-        // Return type (SequenceNumber = 0)
         if (paramInfos.TryGetValue(0, out var retParam))
         {
+            // Return type might be parameter at sequenceNumber 0
             result.Add(new AhkParameter(
                 retParam.Name.IsNil ? "" : reader.GetString(retParam.Name),
                 0,
@@ -27,9 +27,9 @@ public class ParameterDecoder
         else
         {
             result.Add(new AhkParameter(
-                "Null Return Value",
+                "Return Value",
                 0,
-                new FieldInfo(SimpleFieldKind.Other, "Void"),
+                sig.ReturnType,
                 System.Reflection.ParameterAttributes.None,
                 CustomParamAttributes.None
             ));

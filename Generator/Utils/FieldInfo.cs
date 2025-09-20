@@ -48,6 +48,10 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                     throw new NotSupportedException(TypeName);
             }
         }
+        else if (Kind == SimpleFieldKind.HRESULT)
+        {
+            return "int";   // 32-bit integers under the hood
+        }
         else if (Kind == SimpleFieldKind.Pointer)
         {
             if (!useNakedPointer && UnderlyingType != null &&
@@ -102,11 +106,15 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         }
         else if (Kind == SimpleFieldKind.String)
         {
-            return Length * (ansi? 1 : 2);  //2 for CHARs, assuming UTF-16
+            return Length * (ansi ? 1 : 2);  //2 for CHARs, assuming UTF-16
         }
         else if (Kind == SimpleFieldKind.Pointer)
         {
             return 8;
+        }
+        else if (Kind == SimpleFieldKind.HRESULT)
+        {
+            return 4;
         }
         else
         {
@@ -115,6 +123,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         }
     }
     
+    // Get the name of the AHK type that's used here, for documentation purposes only
     public string AhkType
     {
         get
@@ -158,6 +167,10 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
             else if (Kind == SimpleFieldKind.Pointer || Kind == SimpleFieldKind.COM)
             {
                 return $"Pointer<{TypeName}>";
+            }
+            else if (Kind == SimpleFieldKind.HRESULT)
+            {
+                return "HRESULT";
             }
             else
             {

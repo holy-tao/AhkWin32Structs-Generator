@@ -245,6 +245,7 @@ public partial class AhkStruct : AhkType
                 case SimpleFieldKind.Pointer:
                 case SimpleFieldKind.String:
                 case SimpleFieldKind.COM:
+                case SimpleFieldKind.HRESULT:
                     ToAhkStructMember(sb, offset + embeddingOfset);
                     break;
                 default:
