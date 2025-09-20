@@ -8,15 +8,15 @@ class AhkMethod
 {
     public string Name => mr.GetString(methodDef.Name);
 
-    private MetadataReader mr;
-    private MethodDefinition methodDef;
-    private ApiDetails? apiDetails;
+    private readonly MetadataReader mr;
+    private readonly MethodDefinition methodDef;
+    private readonly ApiDetails? apiDetails;
 
-    private MethodImport import;
+    private readonly MethodImport import;
 
-    public MethodImportAttributes callingConvention => import.Attributes & MethodImportAttributes.CallingConventionMask;
+    public MethodImportAttributes CallingConvention => import.Attributes & MethodImportAttributes.CallingConventionMask;
 
-    public MethodImportAttributes charSet => import.Attributes & MethodImportAttributes.CharSetMask;
+    public MethodImportAttributes CharSet => import.Attributes & MethodImportAttributes.CharSetMask;
 
     public bool SetsLastError => import.Attributes.HasFlag(MethodImportAttributes.SetLastError);
 
@@ -105,10 +105,10 @@ class AhkMethod
         }
 
         // Calling convention / return type
-        if (callingConvention == MethodImportAttributes.CallingConventionCDecl || parameters[0].FieldInfo.TypeName != "Void")
+        if (CallingConvention == MethodImportAttributes.CallingConventionCDecl || parameters[0].FieldInfo.TypeName != "Void")
         {
             sb.Append(", \"");
-            if (callingConvention == MethodImportAttributes.CallingConventionCDecl)
+            if (CallingConvention == MethodImportAttributes.CallingConventionCDecl)
             {
                 sb.Append("CDecl ");
             }
@@ -199,10 +199,10 @@ class AhkMethod
         }
 
         // One-offs
-        if (charSet == MethodImportAttributes.CharSetAnsi)
+        if (CharSet == MethodImportAttributes.CharSetAnsi)
             sb.AppendLine($"     * @charset ANSI");
 
-        if (charSet == MethodImportAttributes.CharSetUnicode)
+        if (CharSet == MethodImportAttributes.CharSetUnicode)
             sb.AppendLine($"     * @charset Unicode");
 
         if (CustomAttributeDecoder.GetAttribute(mr, methodDef, "ObsoleteAttribute") != null)
