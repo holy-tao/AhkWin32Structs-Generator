@@ -113,7 +113,7 @@ public class AhkStructMember
         if (fieldInfo.TypeName.EndsWith("_e__Union") || (embeddedStruct?.IsUnion ?? false))
             flags |= MemberFlags.Union;
 
-        if (fieldInfo.TypeName.EndsWith("_e__Struct") || fieldInfo.TypeName.StartsWith("_Anonymous") || (embeddedStruct?.Anonymous ?? false))
+        if (fieldInfo.TypeName.StartsWith("_Anonymous"))
             flags |= MemberFlags.Anonymous;
 
         return flags;
@@ -158,10 +158,14 @@ public class AhkStructMember
         if (embeddedStruct == null)
             throw new NullReferenceException($"Null embeddedStruct for struct-type field {Name}");
 
+        string qualifiedName = embeddedStruct.typeDef.IsNested ?
+            $"%this.__Class%.{embeddedStruct.Name}" :   //TODO a nicer way to do this woud be to walk up parents
+            embeddedStruct.Name;
+
         sb.AppendLine($"    {Name}{{");
         sb.AppendLine("        get {");
         sb.AppendLine($"            if(!this.HasProp(\"__{Name}\"))");
-        sb.AppendLine($"                this.__{Name} := {embeddedStruct.Name}(this.ptr + {offset})");
+        sb.AppendLine($"                this.__{Name} := {qualifiedName}(this.ptr + {offset})");
         sb.AppendLine($"            return this.__{Name}");
         sb.AppendLine("        }");
         sb.AppendLine("    }");
@@ -247,14 +251,18 @@ public class AhkStructMember
         string ahkElementType = arrTypeInfo.Kind switch
         {
             SimpleFieldKind.Primitive or SimpleFieldKind.Pointer => "Primitive",
+            SimpleFieldKind.Struct => (arrTypeInfo.TypeDef?.IsNested ?? false) ? 
+                $"%this.__Class%.{arrTypeInfo.TypeName}" :   //TODO a nicer way to do this woud be to walk up parents
+                arrTypeInfo.TypeName,
             _ => arrTypeInfo.TypeName
         };
+        
         string dllCallType = arrTypeInfo.Kind switch
         {
             SimpleFieldKind.Primitive => arrTypeInfo.GetDllCallType(false),
             SimpleFieldKind.Pointer => "ptr",
             _ => ""
-        };
+        };            
 
         sb.AppendLine($"    {Name}{{");
         sb.AppendLine("        get {");

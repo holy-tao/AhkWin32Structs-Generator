@@ -10,7 +10,7 @@ public abstract class AhkType : IAhkEmitter
 
     private protected readonly ApiDetails? apiDetails;
 
-    public string Name => mr.GetString(typeDef.Name);
+    public string Name => mr.GetString(typeDef.Name).TrimEnd("_e__Struct");
 
     public string Namespace => mr.GetString(typeDef.Namespace);
 

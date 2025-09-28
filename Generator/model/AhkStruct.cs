@@ -89,16 +89,40 @@ public partial class AhkStruct : AhkType
         var mLogEqComparer = new AhkStructMemberEqualityComparer();
         var mNameComarer = EqualityComparer<AhkStructMember>.Create((left, right) => left?.Name.Equals(right?.Name, StringComparison.CurrentCultureIgnoreCase) ?? false);
 
+        IEnumerable<AhkStruct> embeddedAnonymousStructs = Members
+            .Where(m => m.IsNested && !m.flags.HasFlag(MemberFlags.Union) && !m.flags.HasFlag(MemberFlags.Anonymous))
+            .Select(m => m.embeddedStruct ??
+                throw new NullReferenceException($"{Name}.{m.Name} has no nested type information"))
+            .DistinctBy(s => s.Name);
+
+        // Define Anonymous nested types here
+        foreach (AhkStruct embedded in embeddedAnonymousStructs)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"    class {embedded.Name} extends Win32Struct {{");
+            sb.AppendLine($"        static sizeof => {Size}");
+            sb.AppendLine($"        static packingSize => {PackingSize}");
+
+            // TODO: This is a hack for pretty nesting, we should just take nesting level as a parameter
+            StringBuilder embeddedSb = new();
+            embedded.BodyToAhk(embeddedSb, 0, []);
+            sb.AppendLine(embeddedSb.ToString()
+                .Replace("\n", "\n    "));
+
+            sb.AppendLine("    }");
+        }
+
         foreach (AhkStructMember m in Members)
         {
             if (m.flags.HasFlag(MemberFlags.Reserved) || m.flags.HasFlag(MemberFlags.Alignment))
                 continue;
 
-            if (m.IsNested)
+            // Flatten unions
+            if (m.IsNested && (m.flags.HasFlag(MemberFlags.Union) || m.flags.HasFlag(MemberFlags.Anonymous)))
             {
-                if (m.embeddedStruct == null)
+                if(m.embeddedStruct == null)
                     throw new NullReferenceException($"{Name}.{m.Name} has no nested type information");
-
+                
                 m.embeddedStruct.BodyToAhk(sb, m.offset + embeddingOfset, emittedMembers);
                 continue;
             }

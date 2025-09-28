@@ -37,9 +37,6 @@ public partial class AhkStruct : AhkType
 
     private AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
-        // Union and embedded anonymous struct types don't get tail padding
-        bool align = !(IsUnion || Anonymous);
-
         PackingSize = EstimatePackingSize();
         Layout = GetLayoutKind();
 
