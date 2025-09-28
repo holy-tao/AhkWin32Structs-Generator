@@ -5,7 +5,7 @@ using Microsoft.Windows.SDK.Win32Docs;
 public abstract class AhkType : IAhkEmitter
 {
     private protected readonly MetadataReader mr;
-    private protected readonly TypeDefinition typeDef;
+    public readonly TypeDefinition typeDef;
     private protected readonly Dictionary<string, ApiDetails> apiDocs;
 
     private protected readonly ApiDetails? apiDetails;
