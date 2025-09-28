@@ -240,13 +240,15 @@ public partial class AhkStruct : AhkType
                 case SimpleFieldKind.Array:
                     ToAhkArray(sb, offset + embeddingOfset);
                     break;
+                case SimpleFieldKind.String:
+                    ToAhkStringMember(sb, offset + embeddingOfset);
+                    break;
                 case SimpleFieldKind.Class:
                 case SimpleFieldKind.Primitive:
                 case SimpleFieldKind.Pointer:
-                case SimpleFieldKind.String:
                 case SimpleFieldKind.COM:
                 case SimpleFieldKind.HRESULT:
-                    ToAhkStructMember(sb, offset + embeddingOfset);
+                    ToAhkNumericMember(sb, offset + embeddingOfset);
                     break;
                 default:
                     throw new NotSupportedException($"Unsupported type (field {Name}): {fieldInfo.Kind}");
@@ -285,25 +287,22 @@ public partial class AhkStruct : AhkType
 
         // https://www.autohotkey.com/docs/v2/lib/NumPut.htm
         // https://www.autohotkey.com/docs/v2/lib/NumGet.htm
-        public void ToAhkStructMember(StringBuilder sb, int offset)
+        public void ToAhkNumericMember(StringBuilder sb, int offset)
         {
-            // TODO handle arrays
-            if (fieldInfo.Kind == SimpleFieldKind.String)
-            {
-                string encoding = parent.IsAnsi? "UTF-8" : "UTF-16";
+            sb.AppendLine($"    {Name} {{");
+            sb.AppendLine($"        get => NumGet(this, {offset}, \"{fieldInfo.GetDllCallType(true)}\")");
+            sb.AppendLine($"        set => NumPut(\"{fieldInfo.GetDllCallType(true)}\", value, this, {offset})");
+            sb.AppendLine($"    }}");
+        }
 
-                sb.AppendLine($"    {Name} {{");
-                sb.AppendLine($"        get => StrGet(this.ptr + {offset}, {fieldInfo.Length - 1}, \"{encoding}\")");
-                sb.AppendLine($"        set => StrPut(value, this.ptr + {offset}, {fieldInfo.Length - 1}, \"{encoding}\")");
-                sb.AppendLine($"    }}");
-            }
-            else
-            {
-                sb.AppendLine($"    {Name} {{");
-                sb.AppendLine($"        get => NumGet(this, {offset}, \"{fieldInfo.GetDllCallType(true)}\")");
-                sb.AppendLine($"        set => NumPut(\"{fieldInfo.GetDllCallType(true)}\", value, this, {offset})");
-                sb.AppendLine($"    }}");
-            }
+        public void ToAhkStringMember(StringBuilder sb, int offset)
+        {
+            string encoding = parent.IsAnsi? "UTF-8" : "UTF-16";
+
+            sb.AppendLine($"    {Name} {{");
+            sb.AppendLine($"        get => StrGet(this.ptr + {offset}, {fieldInfo.Length - 1}, \"{encoding}\")");
+            sb.AppendLine($"        set => StrPut(value, this.ptr + {offset}, {fieldInfo.Length - 1}, \"{encoding}\")");
+            sb.AppendLine($"    }}");
         }
 
         private void ToAhkArray(StringBuilder sb, int offset)
@@ -315,7 +314,7 @@ public partial class AhkStruct : AhkType
                 SimpleFieldKind.Primitive or SimpleFieldKind.Pointer => "Primitive",
                 _ => arrTypeInfo.TypeName
             };
-            string dllCallType= arrTypeInfo.Kind switch
+            string dllCallType = arrTypeInfo.Kind switch
             {
                 SimpleFieldKind.Primitive => arrTypeInfo.GetDllCallType(false),
                 SimpleFieldKind.Pointer => "ptr",
