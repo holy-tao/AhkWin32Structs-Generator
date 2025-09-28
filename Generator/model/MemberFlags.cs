@@ -8,5 +8,6 @@ public enum MemberFlags
     Union = 8,
     Anonymous = 16,
     Ansi = 32,
-    Unicode = 64
+    Unicode = 64,
+    NativeBitField = 128
 };

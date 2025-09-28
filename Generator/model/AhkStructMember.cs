@@ -7,6 +7,26 @@ using Microsoft.Windows.SDK.Win32Docs;
 /// </summary>
 public class AhkStructMember
 {
+    /// <summary>
+    /// A bitfield member parsed from a [NativeBitField] element
+    /// </summary>
+    /// <param name="Name"></param>
+    /// <param name="Offset"></param>
+    /// <param name="Length"></param>
+    internal record struct BitfieldMember(string Name, long Offset, long Length)
+    {
+        internal static BitfieldMember ParseAttribute(CustomAttribute attr)
+        {
+            var decoded = attr.DecodeValue(new CaTypeProvider());
+
+            string memberName = (string?)decoded.FixedArguments[0].Value ?? throw new NullReferenceException(nameof(memberName));
+            long bitOffset = (long?)decoded.FixedArguments[1].Value ?? throw new NullReferenceException(nameof(bitOffset));
+            long length = (long?)decoded.FixedArguments[2].Value ?? throw new NullReferenceException(nameof(length));
+
+            return new BitfieldMember(memberName, bitOffset, length);
+        }
+    }
+
     private readonly MetadataReader mr;
     private readonly FieldDefinition def;
 
@@ -15,7 +35,9 @@ public class AhkStructMember
     private readonly AhkStruct parent;
 
     private readonly string? apiDetails;
-    private readonly Dictionary<string, ApiDetails> apiDocs;
+    private readonly Dictionary<string, string>? apiFields;
+
+    private readonly List<BitfieldMember> bitfields;
 
     public readonly MemberFlags flags;
 
@@ -36,7 +58,7 @@ public class AhkStructMember
         this.parent = parent;
         this.mr = mr;
         this.offset = offset;
-        this.apiDocs = apiDocs;
+        this.apiFields = apiFields;
 
         def = fieldDef;
         Name = mr.GetString(def.Name);
@@ -65,6 +87,8 @@ public class AhkStructMember
         }
 
         flags = GetFlags();
+        bitfields = flags.HasFlag(MemberFlags.NativeBitField) ? GetBitfields() : [];
+
         apiFields?.TryGetValue(Name, out apiDetails);
     }
 
@@ -79,8 +103,11 @@ public class AhkStructMember
         if (attrs.Contains("ReservedAttribute"))
             flags |= MemberFlags.Reserved;
 
+        if (attrs.Contains("NativeBitfieldAttribute"))
+            flags |= MemberFlags.NativeBitField;
+
         if (Name.StartsWith("___MISSING_ALIGNMENT__"))
-            flags |= MemberFlags.Alignment;
+                flags |= MemberFlags.Alignment;
 
         if (fieldInfo.TypeName.EndsWith("_e__Union") || (embeddedStruct?.IsUnion ?? false))
             flags |= MemberFlags.Union;
@@ -89,6 +116,13 @@ public class AhkStructMember
             flags |= MemberFlags.Anonymous;
 
         return flags;
+    }
+
+    private List<BitfieldMember> GetBitfields()
+    {
+        return CustomAttributeDecoder.GetAllAttributes(mr, def, "NativeBitfieldAttribute")
+            .Select(BitfieldMember.ParseAttribute)
+            .ToList();    
     }
 
     public void ToAhk(StringBuilder sb, int embeddingOfset = 0)
@@ -141,6 +175,12 @@ public class AhkStructMember
             sb.AppendLine("     * " + AhkType.EscapeDocs(apiDetails, "    "));
         }
 
+        if (flags.HasFlag(MemberFlags.NativeBitField))
+        {
+            sb.AppendLine("     * This bitfield backs the following members:");
+            bitfields.ForEach(bf => sb.AppendLine($"     * - {bf.Name}"));
+        }
+
         if (flags.HasFlag(MemberFlags.Deprecated))
             sb.AppendLine("     * @deprecated");
 
@@ -156,6 +196,11 @@ public class AhkStructMember
         sb.AppendLine($"        get => NumGet(this, {offset}, \"{fieldInfo.GetDllCallType(true)}\")");
         sb.AppendLine($"        set => NumPut(\"{fieldInfo.GetDllCallType(true)}\", value, this, {offset})");
         sb.AppendLine($"    }}");
+
+        if (flags.HasFlag(MemberFlags.NativeBitField))
+        {
+            AppendBitFieldMembers(sb);
+        }
     }
 
     public void ToAhkStringMember(StringBuilder sb, int offset)
@@ -165,6 +210,32 @@ public class AhkStructMember
         sb.AppendLine($"    {Name} {{");
         sb.AppendLine($"        get => StrGet(this.ptr + {offset}, {fieldInfo.Length - 1}, \"{encoding}\")");
         sb.AppendLine($"        set => StrPut(value, this.ptr + {offset}, {fieldInfo.Length - 1}, \"{encoding}\")");
+        sb.AppendLine($"    }}");
+    }
+
+    private void AppendBitFieldMembers(StringBuilder sb)
+    {
+        bitfields.ForEach(bf => AppendBitfieldMember(sb, bf));
+    }
+
+    private void AppendBitfieldMember(StringBuilder sb, BitfieldMember bitfield)
+    {
+        sb.AppendLine();
+
+        sb.AppendLine("    /**");
+        if (apiFields?.TryGetValue(bitfield.Name, out string? memberDescription) ?? false)
+        {
+            sb.AppendLine("     * " + AhkType.EscapeDocs(memberDescription, "    "));
+        }
+
+        sb.AppendLine($"     * @type {{{(fieldInfo.Kind == SimpleFieldKind.Struct ? embeddedStruct?.Name : fieldInfo.AhkType)}}}");
+        sb.AppendLine("     */");
+
+        long mask = (1L << (int)bitfield.Length) - 1;
+
+        sb.AppendLine($"    {bitfield.Name} {{");
+        sb.AppendLine($"        get => (this.{Name} >> {bitfield.Offset}) & 0x{mask:X}");
+        sb.AppendLine($"        set => this.{Name} := ((value & 0x{mask:X}) << {bitfield.Offset}) | (this.{Name} & ~(0x{mask:X} << {bitfield.Offset}))");
         sb.AppendLine($"    }}");
     }
 
