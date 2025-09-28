@@ -86,7 +86,7 @@ public partial class AhkStruct : AhkType
 
     internal void BodyToAhk(StringBuilder sb, int embeddingOfset, List<AhkStructMember> emittedMembers)
     {
-        var mLogEqComparer = EqualityComparer<AhkStructMember>.Create((left, right) => left?.Name == right?.Name && left?.offset == right?.offset);
+        var mLogEqComparer = new AhkStructMemberEqualityComparer();
         var mNameComarer = EqualityComparer<AhkStructMember>.Create((left, right) => left?.Name.Equals(right?.Name, StringComparison.CurrentCultureIgnoreCase) ?? false);
 
         foreach (AhkStructMember m in Members)
@@ -96,7 +96,7 @@ public partial class AhkStruct : AhkType
 
             if (m.IsNested)
             {
-                if(m.embeddedStruct == null)
+                if (m.embeddedStruct == null)
                     throw new NullReferenceException($"{Name}.{m.Name} has no nested type information");
 
                 m.embeddedStruct.BodyToAhk(sb, m.offset + embeddingOfset, emittedMembers);

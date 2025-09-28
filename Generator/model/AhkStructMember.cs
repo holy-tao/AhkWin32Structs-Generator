@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
@@ -13,7 +14,7 @@ public class AhkStructMember
     /// <param name="Name"></param>
     /// <param name="Offset"></param>
     /// <param name="Length"></param>
-    internal record struct BitfieldMember(string Name, long Offset, long Length)
+    public record struct BitfieldMember(string Name, long Offset, long Length)
     {
         internal static BitfieldMember ParseAttribute(CustomAttribute attr)
         {
@@ -37,7 +38,7 @@ public class AhkStructMember
     private readonly string? apiDetails;
     private readonly Dictionary<string, string>? apiFields;
 
-    private readonly List<BitfieldMember> bitfields;
+    public readonly List<BitfieldMember> bitfields;
 
     public readonly MemberFlags flags;
 
@@ -107,7 +108,7 @@ public class AhkStructMember
             flags |= MemberFlags.NativeBitField;
 
         if (Name.StartsWith("___MISSING_ALIGNMENT__"))
-                flags |= MemberFlags.Alignment;
+            flags |= MemberFlags.Alignment;
 
         if (fieldInfo.TypeName.EndsWith("_e__Union") || (embeddedStruct?.IsUnion ?? false))
             flags |= MemberFlags.Union;
@@ -122,7 +123,7 @@ public class AhkStructMember
     {
         return CustomAttributeDecoder.GetAllAttributes(mr, def, "NativeBitfieldAttribute")
             .Select(BitfieldMember.ParseAttribute)
-            .ToList();    
+            .ToList();
     }
 
     public void ToAhk(StringBuilder sb, int embeddingOfset = 0)
@@ -262,5 +263,32 @@ public class AhkStructMember
         sb.AppendLine($"            return this.__{Name}ProxyArray");
         sb.AppendLine("        }");
         sb.AppendLine("    }");
+    }
+}
+
+public class AhkStructMemberEqualityComparer : IEqualityComparer<AhkStructMember>
+{
+    public bool Equals(AhkStructMember? x, AhkStructMember? y)
+    {
+        if (x is null || y is null)
+        {
+            return false;
+        }
+
+        if (x.flags.HasFlag(MemberFlags.NativeBitField) && y.flags.HasFlag(MemberFlags.NativeBitField))
+        {
+            // bitfields are allowed to have different names if the fields the back are identical
+            return x.bitfields.SequenceEqual(y.bitfields);
+        }
+        else
+        {
+            // Non-bitfield members are equal if they share a name and offset
+            return x.offset == y.offset && x.Name.Equals(y.Name, StringComparison.InvariantCultureIgnoreCase);
+        }
+    }
+
+    public int GetHashCode([DisallowNull] AhkStructMember obj)
+    {
+        throw new NotImplementedException();
     }
 }
