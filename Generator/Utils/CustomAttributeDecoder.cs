@@ -27,6 +27,18 @@ public class CustomAttributeDecoder
     public static CustomAttribute? GetAttribute(MetadataReader reader, Parameter def, string targetAttr)
         => GetAttributeFromCollection(reader, def.GetCustomAttributes(), targetAttr);
 
+    public static List<CustomAttribute> GetAllAttributes(MetadataReader reader, FieldDefinition def, string targetAttr)
+        => GetAllAttributesFromCollection(reader, def.GetCustomAttributes(), targetAttr);
+
+    public static List<CustomAttribute> GetAllAttributes(MetadataReader reader, TypeDefinition def, string targetAttr)
+        => GetAllAttributesFromCollection(reader, def.GetCustomAttributes(), targetAttr);
+
+    public static List<CustomAttribute> GetAllAttributes(MetadataReader reader, MethodDefinition def, string targetAttr)
+        => GetAllAttributesFromCollection(reader, def.GetCustomAttributes(), targetAttr);
+
+    public static List<CustomAttribute> GetAllAttributes(MetadataReader reader, Parameter def, string targetAttr)
+        => GetAllAttributesFromCollection(reader, def.GetCustomAttributes(), targetAttr);
+
     public static IEnumerable<string> GetAllNames(MetadataReader reader, TypeDefinition typeDef)
     {
         return GetAll(reader, typeDef).Select(td => reader.GetString(td.Name));
@@ -65,6 +77,28 @@ public class CustomAttributeDecoder
         }
 
         return null;
+    }
+
+    private static List<CustomAttribute> GetAllAttributesFromCollection(MetadataReader reader, CustomAttributeHandleCollection handles, string targetAttr)
+    {
+        List<CustomAttribute> foundAttrs = [];
+
+        foreach (var attrHandle in handles)
+        {
+            var attr = reader.GetCustomAttribute(attrHandle);
+            var ctorHandle = attr.Constructor;
+            // Get the attribute type
+            var attrTypeHandle = reader.GetMemberReference((MemberReferenceHandle)ctorHandle).Parent;
+            var attrTypeRef = reader.GetTypeReference((TypeReferenceHandle)attrTypeHandle);
+            var attrName = reader.GetString(attrTypeRef.Name);
+
+            if (attrName == targetAttr)
+            {
+                foundAttrs.Add(attr);
+            }
+        }
+
+        return foundAttrs;
     }
 
     private static IEnumerable<TypeReference> GetAllCustomAttributeTypeRefs(MetadataReader reader, CustomAttributeHandleCollection handles)

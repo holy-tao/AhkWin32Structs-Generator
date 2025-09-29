@@ -31,28 +31,25 @@ public partial class AhkStruct : AhkType
         return foundStruct;
     }
 
-    internal IEnumerable<Member> Members { get; private set; }
+    internal IEnumerable<AhkStructMember> Members { get; private set; }
 
     private readonly LayoutKind Layout;
 
     private AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
-        // Union and embedded anonymous struct types don't get tail padding
-        bool align = !(IsUnion || Anonymous);
-
         PackingSize = EstimatePackingSize();
         Layout = GetLayoutKind();
 
         // Size tracks our current offset
         Size = 0;
-        List<Member> memberList = [];
+        List<AhkStructMember> memberList = [];
 
         int offset = 0, maxAlignment = 1;
 
         foreach (FieldDefinitionHandle hField in typeDef.GetFields())
         {
             FieldDefinition fieldDef = mr.GetFieldDefinition(hField);
-            Member newMember = new(this, mr, fieldDef, apiDetails?.Fields, apiDocs, offset);
+            AhkStructMember newMember = new(this, mr, fieldDef, apiDetails?.Fields, apiDocs, offset);
 
             memberList.Add(newMember);
 
@@ -75,7 +72,7 @@ public partial class AhkStruct : AhkType
         Size = offset;
         if (IsUnion)
         {
-            Size = memberList.Max(Comparer<Member>.Create((m1, m2) => m2.Size - m1.Size))?.Size ??
+            Size = memberList.Max(Comparer<AhkStructMember>.Create((m1, m2) => m2.Size - m1.Size))?.Size ??
                 throw new NullReferenceException("Union type has no members");
         }
 
