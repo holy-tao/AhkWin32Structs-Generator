@@ -4,6 +4,8 @@ using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 
 public class Program
 {
@@ -21,6 +23,8 @@ public class Program
 
         using PEReader peReader = new(metaDataFileStream);
         MetadataReader mr = peReader.GetMetadataReader();
+
+        CreateVersionFile(mr, ahkOutputDir);
 
         Dictionary<string, ApiDetails> apiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
 
@@ -127,6 +131,28 @@ public class Program
             sb.Append(' ');
         }
         return sb.ToString();
+    }
+
+    private static void CreateVersionFile(MetadataReader mr, string directory)
+    {
+        StringBuilder sb = new();
+
+        sb.AppendLine("# The metadata version as reported in the actual metadata file");
+        sb.AppendLine($"metadata = {mr.MetadataVersion}");
+        sb.AppendLine();
+
+        sb.AppendLine("# NuGet package versions used to generate files");
+        sb.AppendLine("[Packages]");
+
+        // We don't actually load the metadata package so reflection is not helpful to us
+        // Pull this from the .csproj file
+        List<string> trackedAssemblies =[
+            "Microsoft.Windows.SDK.Win32Docs = 0.1.42-alpha",
+            "Microsoft.Windows.SDK.Win32Metadata = 64.0.22-preview"
+        ];
+
+        trackedAssemblies.ForEach(line => sb.AppendLine(line));
+        File.WriteAllText(Path.Combine(directory, "version.ini"), sb.ToString());
     }
 }
 
