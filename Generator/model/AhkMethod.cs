@@ -22,6 +22,10 @@ class AhkMethod
 
     public string DLLName => mr.GetString(mr.GetModuleReference(import.Module).Name);
 
+    // The entry point for the DLL, that is, the actual value that gets looked up in the symbol table
+    // This will almost always be identical to Name, but isn't required to be
+    public string EntryPoint => mr.GetString(import.Name);
+
     public bool HasReturnValue => !(parameters[0].FieldInfo.Kind == SimpleFieldKind.Primitive && parameters[0].FieldInfo.TypeName == "Void");
 
     private readonly List<AhkParameter> parameters = [];
@@ -34,7 +38,6 @@ class AhkMethod
 
         import = methodDef.GetImport();
         parameters = ParameterDecoder.DecodeParameters(mr, methodDef);
-        //Console.WriteLine("break");
     }
 
     public void ToAhk(StringBuilder sb)
@@ -115,7 +118,7 @@ class AhkMethod
         if (HasReturnValue)
             sb.Append("result := ");
 
-        sb.Append($"DllCall(\"{DLLName}\\{Name}\"");
+        sb.Append($"DllCall(\"{DLLName}\\{EntryPoint}\"");
 
         if (parameters.Count > 1)
         {
