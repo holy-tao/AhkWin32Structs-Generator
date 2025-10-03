@@ -42,6 +42,17 @@ class AhkMethod
         MaybeAppendDocumentation(sb);
         sb.AppendLine($"    static {Name}({BuildMethodArgumentList()}) {{");
 
+        // AutoHotkey doesn't support the thiscall calling convention, so we'll have these
+        // always throw MethodErrors.
+        if (CallingConvention == MethodImportAttributes.CallingConventionThisCall)
+        {
+            Console.WriteLine($"!!! Found thiscall method: {Name}");
+            
+            sb.AppendLine($"        throw MethodError(\"Not supported: AutoHotkey does not support the thiscall calling convention\", , A_ThisFunc)");
+            sb.AppendLine("    }");
+            return;
+        }
+
         List<AhkParameter> reservedParams = [.. parameters.Where(p => p.Reserved)];
         if (reservedParams.Count > 0)
         {
@@ -73,8 +84,6 @@ class AhkMethod
             sb.AppendLine($"        A_LastError := 0");
             sb.AppendLine();
         }
-
-        // TODO params, CDecl, output variables
 
         sb.AppendLine($"        {BuildDllCallCall()}");
 
