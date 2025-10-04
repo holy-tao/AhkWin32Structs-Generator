@@ -82,13 +82,40 @@ class AhkMethod
             sb.AppendLine();
         }
 
+        bool epIsOrd = EntryPoint.StartsWith('#');  //Is the EntryPoint and ordinal?
+
         if (SetsLastError)
         {
             sb.AppendLine($"        A_LastError := 0");
             sb.AppendLine();
         }
 
-        sb.AppendLine($"        {BuildDllCallCall()}");
+        // If the Entry Point is an ordinal, we need to manually load and unload the module and get the
+        // proc address ourselves
+        if (epIsOrd)
+        {
+            sb.AppendLine($"        ; This method's EntryPoint is an ordinal, so we need to load the dll manually");
+            sb.AppendLine($"        hModule := DllCall(\"GetModuleHandleW\", \"str\", \"{DLLName}\", \"ptr\")");
+            sb.AppendLine($"        if(!(wasLoaded := hModule != 0))");
+            sb.AppendLine($"            hModule := DllCall(\"LoadLibraryW\",\"str\", \"{DLLName}\", \"ptr\")");
+            sb.AppendLine($"        if(hModule == 0)");
+            sb.AppendLine($"            throw OSError()");
+            sb.AppendLine();
+            sb.AppendLine($"        procAddr := DllCall(\"GetProcAddress\", \"ptr\", hModule, \"uint64\", {EntryPoint[1..]}, \"ptr\")");
+            sb.AppendLine($"        if(procAddr == 0)");
+            sb.AppendLine($"            throw OSError()");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"        {BuildDllCallCall(epIsOrd? "procAddr" : $"\"{DLLName}\\{EntryPoint}\"")}");
+
+        if (epIsOrd)
+        {
+            sb.AppendLine();
+            sb.AppendLine("        if(!wasLoaded)");
+            sb.AppendLine("            DllCall(\"FreeLibraryW\", \"ptr\", hModule)");
+            sb.AppendLine();
+        }
 
         if (SetsLastError)
         {
@@ -112,13 +139,19 @@ class AhkMethod
         sb.AppendLine($"    }}");
     }
 
-    private string BuildDllCallCall()
+    /// <summary>
+    /// Builds the actual DllCall call, like [result := ] DllCall("dll\function", "ptr", ..)
+    /// </summary>
+    /// <returns></returns>
+    private string BuildDllCallCall(string entry)
     {
         StringBuilder sb = new();
         if (HasReturnValue)
             sb.Append("result := ");
 
-        sb.Append($"DllCall(\"{DLLName}\\{EntryPoint}\"");
+        // Entry point is an ordinal, which means we need to manually load the dll and 
+
+        sb.Append($"DllCall({entry}");
 
         if (parameters.Count > 1)
         {
