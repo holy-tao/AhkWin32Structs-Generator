@@ -95,15 +95,8 @@ class AhkMethod
         if (epIsOrd)
         {
             sb.AppendLine($"        ; This method's EntryPoint is an ordinal, so we need to load the dll manually");
-            sb.AppendLine($"        hModule := DllCall(\"GetModuleHandleW\", \"str\", \"{DLLName}\", \"ptr\")");
-            sb.AppendLine($"        if(!(wasLoaded := hModule != 0))");
-            sb.AppendLine($"            hModule := DllCall(\"LoadLibraryW\",\"str\", \"{DLLName}\", \"ptr\")");
-            sb.AppendLine($"        if(hModule == 0)");
-            sb.AppendLine($"            throw OSError()");
-            sb.AppendLine();
-            sb.AppendLine($"        procAddr := DllCall(\"GetProcAddress\", \"ptr\", hModule, \"uint64\", {EntryPoint[1..]}, \"ptr\")");
-            sb.AppendLine($"        if(procAddr == 0)");
-            sb.AppendLine($"            throw OSError()");
+            sb.AppendLine($"        hModule := LibraryLoader.LoadLibraryW(\"{DLLName}\")");
+            sb.AppendLine($"        procAddr := LibraryLoader.GetProcAddress(hModule, {EntryPoint[1..]})");
             sb.AppendLine();
         }
 
@@ -112,8 +105,7 @@ class AhkMethod
         if (epIsOrd)
         {
             sb.AppendLine();
-            sb.AppendLine("        if(!wasLoaded)");
-            sb.AppendLine("            DllCall(\"FreeLibraryW\", \"ptr\", hModule)");
+            sb.AppendLine("        Foundation.FreeLibrary(hModule)");
             sb.AppendLine();
         }
 
