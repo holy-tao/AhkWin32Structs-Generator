@@ -3,6 +3,7 @@ using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
 
 // Minimal provider to decode CustomAttribute values
+// TODO need to rework this to preserve type information for better handling of architecture-specific types
 sealed class CaTypeProvider : ICustomAttributeTypeProvider<string>
 {
     public string GetPrimitiveType(PrimitiveTypeCode typeCode) => typeCode.ToString();
@@ -12,14 +13,14 @@ sealed class CaTypeProvider : ICustomAttributeTypeProvider<string>
     {
         var td = r.GetTypeDefinition(h);
         var ns = r.GetString(td.Namespace);
-        var n  = r.GetString(td.Name);
+        var n = r.GetString(td.Name);
         return string.IsNullOrEmpty(ns) ? n : ns + "." + n;
     }
     public string GetTypeFromReference(MetadataReader r, TypeReferenceHandle h, byte raw)
     {
         var tr = r.GetTypeReference(h);
         var ns = r.GetString(tr.Namespace);
-        var n  = r.GetString(tr.Name);
+        var n = r.GetString(tr.Name);
         return string.IsNullOrEmpty(ns) ? n : ns + "." + n;
     }
     public string GetSZArrayType(string elementType) => elementType + "[]";
@@ -29,6 +30,6 @@ sealed class CaTypeProvider : ICustomAttributeTypeProvider<string>
 
     PrimitiveTypeCode ICustomAttributeTypeProvider<string>.GetUnderlyingEnumType(string type)
     {
-        throw new NotImplementedException();
+        return PrimitiveTypeCode.UInt32;
     }
 }

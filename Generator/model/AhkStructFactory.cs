@@ -8,8 +8,20 @@ public partial class AhkStruct : AhkType
 {
     private static readonly Dictionary<string, AhkStruct> LoadedStructs = [];
 
-    public static AhkStruct Get(MetadataReader reader, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
+    public static AhkStruct? Get(MetadataReader reader, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
     {
+        // Filter out structs for architectures other than x64 and arm64
+        CustomAttribute? archAttr = CustomAttributeDecoder.GetAttribute(reader, typeDef, "SupportedArchitectureAttribute");
+        if (archAttr.HasValue)
+        {
+            var decoded = archAttr.Value.DecodeValue(new CaTypeProvider());
+            Architecture archs = (Architecture)(decoded.FixedArguments[0].Value ?? throw new NullReferenceException());
+            if (!archs.HasFlag(Architecture.X64) && !archs.HasFlag(Architecture.Arm64))
+            {
+                return null;
+            }
+        }
+
         return new AhkStruct(reader, typeDef, apiDocs);
         /*
         string fqn = reader.GetString(typeDef.Namespace) + "." + reader.GetString(typeDef.Name);

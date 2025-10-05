@@ -46,7 +46,7 @@ public class Program
                 IAhkEmitter? emitter = ParseType(mr, typeDef, apiDocs);
                 if (emitter == null)
                 {
-                    Console.WriteLine($">>> Skipped {baseTypeName}: {typeName}");
+                    Console.WriteLine($">>> Skipped {baseTypeName}: {mr.GetString(typeDef.Namespace)}.{typeName}");
                     continue;
                 }
 
