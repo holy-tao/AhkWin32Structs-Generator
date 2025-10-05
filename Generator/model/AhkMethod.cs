@@ -179,7 +179,7 @@ class AhkMethod
         }
 
         // Calling convention / return type
-        if (CallingConvention == MethodImportAttributes.CallingConventionCDecl || parameters[0].FieldInfo.TypeName != "Void")
+        if (CallingConvention == MethodImportAttributes.CallingConventionCDecl || HasReturnValue)
         {
             sb.Append(", \"");
             if (CallingConvention == MethodImportAttributes.CallingConventionCDecl)
