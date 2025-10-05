@@ -140,6 +140,33 @@ class AhkMethod
     }
 
     /// <summary>
+    /// Get a list of the types referenced in the method - this is currently only the 
+    /// LibraryLoader and Foundations APIs for ordinal methods, but in the future might
+    /// be e.g. return values.
+    /// </summary>
+    /// <returns></returns>
+    public List<TypeDefinition> GetReferencedTypes()
+    {
+        List<TypeDefinition> referencedTypes = [];
+
+        // Methods with ordinal EntryPoints need APIs for Dll loading and unloadings
+        if (EntryPoint.StartsWith('#'))
+        {
+            List<string> dllLoadRequired = [
+                "Windows.Win32.Foundation.Apis",                // FreeLibrary is here for some reason
+                "Windows.Win32.System.LibraryLoader.Apis"
+            ];
+
+            referencedTypes.AddRange(mr.TypeDefinitions
+                .Select(mr.GetTypeDefinition)
+                .Where(td => dllLoadRequired.Contains(AhkStruct.GetFqn(mr, td)))
+                .ToList());
+        }
+
+        return referencedTypes;
+    }
+
+    /// <summary>
     /// Builds the actual DllCall call, like [result := ] DllCall("dll\function", "ptr", ..)
     /// </summary>
     /// <returns></returns>

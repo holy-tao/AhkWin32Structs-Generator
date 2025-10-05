@@ -45,8 +45,7 @@ class AhkApiType : AhkType
 
     public override void ToAhk(StringBuilder sb)
     {
-        sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
-        sb.AppendLine();
+        HeadersToAhk(sb);
 
         MaybeAddTypeDocumentation(sb);
         sb.AppendLine($"class {GetName()} {{");
@@ -57,6 +56,22 @@ class AhkApiType : AhkType
         AppendMethods(sb);
 
         sb.AppendLine("}");
+    }
+
+    private void HeadersToAhk(StringBuilder sb)
+    {
+        sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
+        sb.AppendLine();
+
+        List<TypeDefinition> imports = [];
+        methods.ForEach(m => imports.AddRange(m.GetReferencedTypes()));
+        imports = imports.DistinctBy(im => AhkStruct.GetFqn(mr, im)).ToList();
+
+        foreach (TypeDefinition import in imports)
+        {
+            string sbPath = AhkStruct.RelativePathBetweenNamespaces(Namespace, mr.GetString(import.Namespace));
+            sb.AppendLine($"#Include {sbPath}{mr.GetString(import.Name)}.ahk");
+        }
     }
 
     private void AppendConstants(StringBuilder sb)

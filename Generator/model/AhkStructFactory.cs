@@ -31,6 +31,11 @@ public partial class AhkStruct : AhkType
         return foundStruct;
     }
 
+    public static string GetFqn(MetadataReader reader, TypeDefinition td)
+    {
+        return reader.GetString(td.Namespace) + "." + reader.GetString(td.Name);
+    }
+
     internal IEnumerable<AhkStructMember> Members { get; private set; }
 
     private readonly LayoutKind Layout;
@@ -106,13 +111,13 @@ public partial class AhkStruct : AhkType
         };
     }
 
-    private static string NamespaceToPath(string ns)
+    public static string NamespaceToPath(string ns)
     {
         // Replace dots with directory separators
         return ns.Replace('.', Path.DirectorySeparatorChar);
     }
 
-    private static string RelativePathBetweenNamespaces(string fromNs, string? toNs)
+    public static string RelativePathBetweenNamespaces(string fromNs, string? toNs)
     {
         if (string.IsNullOrEmpty(toNs))
         {
