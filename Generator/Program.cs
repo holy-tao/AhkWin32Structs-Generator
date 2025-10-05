@@ -116,9 +116,6 @@ public class Program
         if (typeDef.IsNested)
             return true;
 
-        if (FieldSignatureDecoder.IsPseudoPrimitive(mr, typeDefHandle, out FieldInfo? _))
-            return true;
-
         return false;
     }
 
