@@ -64,13 +64,13 @@ public class AhkStructMember
         def = fieldDef;
         Name = mr.GetString(def.Name);
 
-        fieldInfo = FieldSignatureDecoder.DecodeFieldType(mr, fieldDef);
+        fieldInfo = fieldDef.DecodeSignature(new FieldSignatureProvider(mr, parent.typeDef), new());
 
         if (fieldInfo.Kind == SimpleFieldKind.Struct)
         {
             TypeDefinition fieldTypeDef = fieldInfo.TypeDef ??
                 throw new NullReferenceException($"Null TypeDef for Class or Struct field {Name}");
-            embeddedStruct = AhkStruct.Get(mr, fieldTypeDef, apiDocs);
+            embeddedStruct = AhkStruct.Get(mr, fieldTypeDef, apiDocs) ?? throw new NullReferenceException();
             Size = embeddedStruct.Size;
         }
         else if (fieldInfo.Kind == SimpleFieldKind.Array)

@@ -12,9 +12,20 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
 {
     private readonly MetadataReader _reader;
 
+    /// <summary>
+    /// The Type Definition in which to resolve any Type References
+    /// </summary>
+    private readonly TypeDefinition? _typeRefResolutionContext;
+
     public FieldSignatureProvider(MetadataReader reader)
     {
         _reader = reader;
+    }
+
+    public FieldSignatureProvider(MetadataReader reader, TypeDefinition typeRefResolutionContext)
+    {
+        _reader = reader;
+        _typeRefResolutionContext = typeRefResolutionContext;
     }
 
     // Primitive and special codes
@@ -26,6 +37,22 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
 
     public FieldInfo GetTypeFromReference(TypeReferenceHandle handle, byte rawTypeKind)
     {
+        if (_typeRefResolutionContext != null)
+        {
+            // Caller sent in resolution context - search it
+            TypeDefinition parent = (TypeDefinition)_typeRefResolutionContext;
+            TypeReference typeRef = _reader.GetTypeReference(handle);
+            string typeName = _reader.GetString(typeRef.Name);
+
+            foreach (var nestedHandle in parent.GetNestedTypes())
+            {
+                var nestedTd = _reader.GetTypeDefinition(nestedHandle);
+                if (_reader.StringComparer.Equals(nestedTd.Name, typeName))
+                    return FieldSignatureDecoder.DecodeTypeDef(_reader, nestedHandle);
+            }
+        }
+
+        // No resolution context provided - resolve globally
         var resolved = FieldSignatureDecoder.ResolveTypeReference(_reader, handle);
         return resolved != null
             ? FieldSignatureDecoder.DecodeTypeDef(_reader, resolved.Value)
