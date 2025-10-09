@@ -5,7 +5,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   metadata:
@@ -16,8 +15,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
 
-      - name: Configure Git User
+      - name: Configure Git
         shell: pwsh
         run: |
           git config --local user.email '${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com'
@@ -30,7 +30,7 @@ jobs:
         shell: pwsh
         run: ./scripts/Get-Win32Metadata.ps1
 
-      - name: Commit Changes
+      - name: Commit and Push Changes
         id: commit-metadata
         shell: pwsh
         run: |
@@ -42,29 +42,12 @@ jobs:
 
           if (-not (git diff-index --quiet HEAD --)) {
               git commit -m "Update Win32Metadata to $version"
+              git pull
+              git push -f
           } else {
               Write-Host "No changes to commit for Win32Metadata"
               exit 0
           }
-
-          Write-Host "version=$version"
-          Write-Host "branchName=$branchName"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "branchName=$branchName"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
-
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ steps.commit-metadata.outputs.branchName }}
-          title: "Update Win32Metadata to ${{ steps.commit-metadata.outputs.version }}"
-          body: | 
-            This PR updates Win32Metadata to version ${{ steps.commit-metadata.outputs.version }}.
-            See https://www.nuget.org/packages/Microsoft.Windows.SDK.Win32Metadata/
-          base: main
-          labels: automated
-          draft: false
-          reviewers: holy-tao
 
   docs:
     name: Update Win32Docs
@@ -74,8 +57,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ssh-key: ${{ secrets.DEPLOY_KEY }}
 
-      - name: Configure Git User
+      - name: Configure Git
         shell: pwsh
         run: |
           git config --local user.email '${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com'
@@ -88,7 +72,7 @@ jobs:
         shell: pwsh
         run: ./scripts/Get-Win32Docs.ps1
 
-      - name: Commit Changes
+      - name: Commit and Push Changes
         id: commit-docs
         shell: pwsh
         run: |
@@ -100,26 +84,9 @@ jobs:
 
           if (-not (git diff-index --quiet HEAD --)) {
               git commit -m "Update Win32Docs to $version"
+              git pull
+              git push -f
           } else {
               Write-Host "No changes to commit for Win32Docs"
               exit 0
           }
-
-          Write-Host "version=$version"
-          Write-Host "branchName=$branchName"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "branchName=$branchName"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "version=$version"
-
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ steps.commit-docs.outputs.branchName }}
-          title: "Update Win32Docs to ${{ steps.commit-docs.outputs.version }}"
-          body: |
-            This PR updates Win32Docs to version ${{ steps.commit-docs.outputs.version }}.
-            See https://www.nuget.org/packages/Microsoft.Windows.SDK.Win32Docs/
-          base: main
-          labels: automated
-          draft: false
-          reviewers: holy-tao
