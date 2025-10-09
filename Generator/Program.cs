@@ -11,13 +11,18 @@ public class Program
 {
     public static void Main(string[] args)
     {
+        if(args.Length != 3)
+        {
+            Console.WriteLine("Usage: AhkWin32Structs.exe <path-to-winmd> <path-to-msgpack> <output-root>");
+            return;
+        }
+
         Stopwatch stopwatch = new();
         stopwatch.Start();
 
-        //TODO read in filepaths from command line or environment variables or something
-        using FileStream metaDataFileStream = File.OpenRead(@"C:\Programming\AhkWin32Structs\metadata\Windows.Win32.winmd");
-        using FileStream apiDocFileStream = File.OpenRead(@"C:\Programming\AhkWin32Structs\metadata\apidocs.msgpack");
-        string ahkOutputDir = @"C:\Programming\AhkWin32Structs\AhkWin32projection\";
+        using FileStream metaDataFileStream = File.OpenRead(args[0]);
+        using FileStream apiDocFileStream = File.OpenRead(args[1]);
+        string ahkOutputDir = args[2];
 
         using StreamWriter errFileStream = new(File.Create(Path.Combine(ahkOutputDir, "errors.txt")));
 
