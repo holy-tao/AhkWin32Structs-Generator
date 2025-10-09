@@ -17,6 +17,8 @@ public class Program
             return;
         }
 
+        Console.WriteLine("Parsing metadata and generating AHK scripts...");
+
         Stopwatch stopwatch = new();
         stopwatch.Start();
 
@@ -149,7 +151,10 @@ public class Program
                 File.ReadAllText(fullPath).Trim()
             })
             .ToList()
-            .ForEach(info => sb.AppendLine($"{info[0]} = {info[1]}"));
+            .ForEach(info => {
+                sb.AppendLine($"{info[0]} = {info[1]}");
+                Console.WriteLine($"\t{info[0]}: {info[1]}");
+            });
 
         File.WriteAllText(Path.Join(outputDirectory, "version.ini"), sb.ToString());
     }
