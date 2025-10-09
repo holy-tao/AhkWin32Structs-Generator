@@ -86,12 +86,7 @@ public partial class AhkStruct : AhkType
             offset += newMember.Size;
         }
 
-        Size = offset;
-        if (IsUnion)
-        {
-            Size = memberList.Max(Comparer<AhkStructMember>.Create((m1, m2) => m2.Size - m1.Size))?.Size ??
-                throw new NullReferenceException("Union type has no members");
-        }
+        Size = IsUnion? memberList.Select(m => m.Size).Max() : offset;
 
         PackingSize = Math.Min(PackingSize, maxAlignment);
         int tailPadding = (maxAlignment - (offset % maxAlignment)) % maxAlignment;
