@@ -1,15 +1,30 @@
 {
     "configurations": [
-    {
-        "name": "Validate Generated AutoHotkey Syntax",
-        "type": "PowerShell",
-        "request": "launch",
-        "script": "${workspaceFolder}/Validator/ValidateAhk.ps1",
-        "args": [
-                "-AhkExePath", "\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe\"",
-                "-Directory", "\"${workspaceFolder}\\ahk\\Windows\"",
+        {
+            "name": "Build and Generate AHK",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}\\Generator\\bin\\Debug\\net9.0\\AhkWin32Structs.exe",
+            "args": [
+                "${workspaceFolder}\\metadata\\Windows.Win32.winmd",
+                "${workspaceFolder}\\metadata\\apidocs.msgpack",
+                "${workspaceFolder}\\AhkWin32projection\\"
             ],
-        "cwd": "${cwd}"
-    }
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "internalConsole"
+        },
+        {
+            "name": "Validate Generated AutoHotkey Syntax",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/Validator/ValidateAhk.ps1",
+            "args": [
+                    "-AhkExePath", "\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe\"",
+                    "-Directory", "\"${workspaceFolder}\\ahk\\Windows\"",
+                ],
+            "cwd": "${cwd}"
+        }
     ]
 }
