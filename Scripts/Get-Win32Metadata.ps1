@@ -4,7 +4,6 @@
 $ErrorActionPreference = "Stop"
 Import-Module -name "$PSScriptRoot\Modules\Git-Utils.psm1"
 
-# Get the repository root directory using git
 $repoRoot = Get-RepoRoot
 
 $destDir = Join-Path $repoRoot "metadata"
