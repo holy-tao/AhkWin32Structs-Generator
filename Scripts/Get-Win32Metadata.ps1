@@ -2,18 +2,10 @@
 # https://www.nuget.org/packages/Microsoft.Windows.SDK.Win32Metadata/
 
 $ErrorActionPreference = "Stop"
+Import-Module -name "$PSScriptRoot\Modules\Git-Utils.psm1"
 
 # Get the repository root directory using git
-try {
-    $repoRoot = (git rev-parse --show-toplevel 2>$null).Trim()
-    if (-not $repoRoot) {
-        throw "Not inside a Git repository."
-    }
-}
-catch {
-    Write-Error "Failed to determine Git repository root. Ensure 'git' is installed and this script is run inside a repo."
-    exit 1
-}
+$repoRoot = Get-RepoRoot
 
 $destDir = Join-Path $repoRoot "metadata"
 
