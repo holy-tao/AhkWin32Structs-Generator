@@ -13,7 +13,7 @@ public class Program
     {
         if(args.Length != 3)
         {
-            Console.WriteLine("Usage: AhkWin32Structs.exe <path-to-winmd> <path-to-msgpack> <output-root>");
+            Console.Error.WriteLine("Usage: AhkWin32Structs.exe <path-to-winmd> <path-to-msgpack> <output-root>");
             return;
         }
 
@@ -23,8 +23,6 @@ public class Program
         using FileStream metaDataFileStream = File.OpenRead(args[0]);
         using FileStream apiDocFileStream = File.OpenRead(args[1]);
         string ahkOutputDir = args[2];
-
-        using StreamWriter errFileStream = new(File.Create(Path.Combine(ahkOutputDir, "errors.txt")));
 
         using PEReader peReader = new(metaDataFileStream);
         MetadataReader mr = peReader.GetMetadataReader();
@@ -51,7 +49,8 @@ public class Program
                 IAhkEmitter? emitter = ParseType(mr, typeDef, apiDocs);
                 if (emitter == null)
                 {
-                    Console.WriteLine($">>> Skipped {baseTypeName}: {mr.GetString(typeDef.Namespace)}.{typeName}");
+
+                    Debug.WriteLine($">>> Skipped {baseTypeName}: {mr.GetString(typeDef.Namespace)}.{typeName}");
                     continue;
                 }
 
@@ -66,17 +65,15 @@ public class Program
             {
                 Console.Error.WriteLine($"!!! {ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
 
-                errFileStream.WriteLine($"{ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
-                errFileStream.WriteLine(ex.Message);
-                errFileStream.WriteLine(ex.StackTrace);
-                errFileStream.WriteLine();
-
-                errFileStream.Flush();
+                Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
+                Console.Error.WriteLine(ex.Message);
+                Console.Error.WriteLine(ex.StackTrace);
+                Console.Error.WriteLine();
             }
 
             if (total % 1000 == 0)
             {
-                Console.WriteLine($"Emitted: {total}");
+                Debug.WriteLine($"Emitted: {total}");
             }
         }
 
