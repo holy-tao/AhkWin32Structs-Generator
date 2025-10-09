@@ -7,8 +7,7 @@
             "preLaunchTask": "build",
             "program": "${workspaceFolder}\\Generator\\bin\\Debug\\net9.0\\AhkWin32Structs.exe",
             "args": [
-                "${workspaceFolder}\\metadata\\Windows.Win32.winmd",
-                "${workspaceFolder}\\metadata\\apidocs.msgpack",
+                "${workspaceFolder}\\metadata\\",
                 "${workspaceFolder}\\AhkWin32projection\\"
             ],
             "cwd": "${workspaceFolder}",

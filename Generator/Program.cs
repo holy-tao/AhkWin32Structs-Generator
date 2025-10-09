@@ -11,24 +11,24 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        if(args.Length != 3)
+        if(args.Length != 2)
         {
-            Console.Error.WriteLine("Usage: AhkWin32Structs.exe <path-to-winmd> <path-to-msgpack> <output-root>");
+            Console.Error.WriteLine("Usage: AhkWin32Structs.exe <metadata-directory> <output-root>");
             return;
         }
 
         Stopwatch stopwatch = new();
         stopwatch.Start();
 
-        using FileStream metaDataFileStream = File.OpenRead(args[0]);
-        using FileStream apiDocFileStream = File.OpenRead(args[1]);
-        string ahkOutputDir = args[2];
+        using FileStream metaDataFileStream = File.OpenRead(Path.Join(args[0], "Windows.Win32.winmd"));
+        using FileStream apiDocFileStream = File.OpenRead(Path.Join(args[0], "apidocs.msgpack"));
+        string ahkOutputDir = args[1];
 
         using PEReader peReader = new(metaDataFileStream);
         MetadataReader mr = peReader.GetMetadataReader();
 
-        CreateVersionFile(mr, ahkOutputDir);
-
+        CreateVersionFile(mr, args[0], ahkOutputDir);
+        
         Dictionary<string, ApiDetails> apiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
 
         int total = 0;
@@ -132,7 +132,7 @@ public class Program
         return sb.ToString();
     }
 
-    private static void CreateVersionFile(MetadataReader mr, string directory)
+    private static void CreateVersionFile(MetadataReader mr, string metadataDirectory, string outputDirectory)
     {
         StringBuilder sb = new();
 
@@ -143,15 +143,15 @@ public class Program
         sb.AppendLine("# NuGet package versions used to generate files");
         sb.AppendLine("[Packages]");
 
-        // We don't actually load the metadata package so reflection is not helpful to us
-        // Pull this from the .csproj file
-        List<string> trackedAssemblies =[
-            "Microsoft.Windows.SDK.Win32Docs = 0.1.42-alpha",
-            "Microsoft.Windows.SDK.Win32Metadata = 64.0.22-preview"
-        ];
+        Directory.EnumerateFiles(metadataDirectory, "*.version")
+            .Select(fullPath => new string[] {
+                Path.GetFileNameWithoutExtension(fullPath),
+                File.ReadAllText(fullPath).Trim()
+            })
+            .ToList()
+            .ForEach(info => sb.AppendLine($"{info[0]} = {info[1]}"));
 
-        trackedAssemblies.ForEach(line => sb.AppendLine(line));
-        File.WriteAllText(Path.Combine(directory, "version.ini"), sb.ToString());
+        File.WriteAllText(Path.Join(outputDirectory, "version.ini"), sb.ToString());
     }
 }
 
