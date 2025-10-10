@@ -4,13 +4,30 @@ using Microsoft.Windows.SDK.Win32Docs;
 
 public abstract class AhkType : IAhkEmitter
 {
+    // List of globally-defined names in AutoHotkey that we must check for conflics. Most of these words
+    // are also reserved in other languages so it's a non-issue, but at least string has a conflict with a
+    // kernel struct
+    private static readonly List<string> globalReservedNames = ["string", "number", "float", "integer"];
+
     private protected readonly MetadataReader mr;
     public readonly TypeDefinition typeDef;
     private protected readonly Dictionary<string, ApiDetails> apiDocs;
 
     private protected readonly ApiDetails? apiDetails;
 
-    public string Name => mr.GetString(typeDef.Name).TrimEnd("_e__Struct");
+    public string Name
+    {
+        get
+        {
+            string candidate = mr.GetString(typeDef.Name).TrimEnd("_e__Struct");
+            if (globalReservedNames.Contains(candidate, StringComparer.CurrentCultureIgnoreCase))
+            {
+                candidate = "Win32" + candidate;
+            }
+
+            return candidate;
+        }
+    }
 
     public string Namespace => mr.GetString(typeDef.Namespace);
 
@@ -97,7 +114,9 @@ public abstract class AhkType : IAhkEmitter
     public string GetDesiredFilepath(string root)
     {
         string namespacePath = Path.Join(Namespace.Split("."));
-        return Path.Join(root, namespacePath, $"{Name}.ahk");
+        string canonicalName = mr.GetString(typeDef.Name);
+
+        return Path.Join(root, namespacePath, $"{canonicalName}.ahk");
     }
 
     protected virtual MemberFlags GetFlags()
