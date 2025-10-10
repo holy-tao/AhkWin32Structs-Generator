@@ -48,11 +48,8 @@ public class Program
         {
             TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
 
-            if (typeDef.BaseType.Kind != HandleKind.TypeReference)
-                continue;
-
             string typeNamespace = mr.GetString(typeDef.Namespace);
-            if (ShouldSkipType(mr, hTypeDef, out string typeName, out string baseTypeName))
+            if (ShouldSkipType(mr, hTypeDef))
                 continue;
 
             try
@@ -60,7 +57,11 @@ public class Program
                 IAhkEmitter? emitter = ParseType(mr, typeDef);
                 if (emitter == null)
                 {
+<<<<<<< HEAD
                     Debug.WriteLine($"Non-explicit skip for {baseTypeName} {mr.GetString(typeDef.Namespace)}.{typeName}");
+=======
+                    Debug.WriteLine($">>> Skipped {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
+>>>>>>> f9b0c04 (Find Interfaces and Generate Stubs)
                     continue;
                 }
 
@@ -73,6 +74,11 @@ public class Program
             }
             catch (Exception ex)
             {
+<<<<<<< HEAD
+=======
+                string typeName = mr.GetString(typeDef.Name);
+
+>>>>>>> f9b0c04 (Find Interfaces and Generate Stubs)
                 Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
                 Console.Error.WriteLine(ex.Message);
                 Console.Error.WriteLine(ex.StackTrace);
@@ -90,14 +96,25 @@ public class Program
 
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef)
     {
+        if ((typeDef.Attributes & TypeAttributes.Interface) != 0)
+        {
+            // COM Interface
+            return new AhkComInterface(mr, typeDef, apiDocs);
+        }
+
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
         string typeName = mr.GetString(typeDef.Name);
         string baseTypeName = mr.GetString(baseTypeRef.Name);
 
-        if (typeName == "Apis")
+        if (baseTypeName == "Object" && typeName == "Apis")
         {
+<<<<<<< HEAD
             // This is the generic type that global functions and constants wind up in
             return new AhkApiType(mr, typeDef);
+=======
+            // This is the generic class that global functions and constants wind up in
+            return new AhkApiType(mr, typeDef, apiDocs);
+>>>>>>> f9b0c04 (Find Interfaces and Generate Stubs)
         }
 
         return baseTypeName switch
@@ -108,17 +125,30 @@ public class Program
         };
     }
 
-    private static bool ShouldSkipType(MetadataReader mr, TypeDefinitionHandle typeDefHandle, out string typeName, out string baseTypeName)
+    private static bool ShouldSkipType(MetadataReader mr, TypeDefinitionHandle typeDefHandle)
     {
-        TypeDefinition typeDef = mr.GetTypeDefinition((TypeDefinitionHandle)typeDefHandle);
-        TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-        baseTypeName = mr.GetString(baseTypeRef.Name);
-        typeName = mr.GetString(typeDef.Name);
+        TypeDefinition typeDef = mr.GetTypeDefinition(typeDefHandle);
 
+        if (typeDef.BaseType.Kind != HandleKind.TypeReference)
+            return false;
+
+        TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
+        string baseTypeName = mr.GetString(baseTypeRef.Name);
+
+<<<<<<< HEAD
         // MultiCastDelegate means function pointer
         if (baseTypeName is "MulticastDelegate" or "Attribute")
+=======
+        // Placeholder for a COM CLSID that we shouldn't generate a file for
+        if (baseTypeName == "ValueType" && typeDef.GetFields().Count == 0)
             return true;
 
+        // Function pointer, no analagous concept in AHK - we emit these as primitives elsewhere
+        if (baseTypeName == "MulticastDelegate")
+>>>>>>> f9b0c04 (Find Interfaces and Generate Stubs)
+            return true;
+
+        // Handled in their parents
         if (typeDef.IsNested)
             return true;
 
