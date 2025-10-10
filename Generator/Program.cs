@@ -39,11 +39,8 @@ public class Program
         {
             TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
 
-            if (typeDef.BaseType.Kind != HandleKind.TypeReference)
-                continue;
-
             string typeNamespace = mr.GetString(typeDef.Namespace);
-            if (ShouldSkipType(mr, hTypeDef, out string typeName, out string baseTypeName))
+            if (ShouldSkipType(mr, hTypeDef))
                 continue;
 
             try
@@ -51,8 +48,7 @@ public class Program
                 IAhkEmitter? emitter = ParseType(mr, typeDef, apiDocs);
                 if (emitter == null)
                 {
-
-                    Debug.WriteLine($">>> Skipped {baseTypeName}: {mr.GetString(typeDef.Namespace)}.{typeName}");
+                    Debug.WriteLine($">>> Skipped {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
                     continue;
                 }
 
@@ -65,7 +61,7 @@ public class Program
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"!!! {ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
+                string typeName = mr.GetString(typeDef.Name);
 
                 Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
                 Console.Error.WriteLine(ex.Message);
@@ -84,13 +80,19 @@ public class Program
 
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
     {
+        if ((typeDef.Attributes & TypeAttributes.Interface) != 0)
+        {
+            // COM Interface
+            return new AhkComInterface(mr, typeDef, apiDocs);
+        }
+
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
         string typeName = mr.GetString(typeDef.Name);
         string baseTypeName = mr.GetString(baseTypeRef.Name);
 
-        if (typeName == "Apis")
+        if (baseTypeName == "Object" && typeName == "Apis")
         {
-            // This is the generic type that global functions and constants wind up in
+            // This is the generic class that global functions and constants wind up in
             return new AhkApiType(mr, typeDef, apiDocs);
         }
 
@@ -102,21 +104,25 @@ public class Program
         };
     }
 
-    private static bool ShouldSkipType(MetadataReader mr, TypeDefinitionHandle typeDefHandle, out string typeName, out string baseTypeName)
+    private static bool ShouldSkipType(MetadataReader mr, TypeDefinitionHandle typeDefHandle)
     {
-        TypeDefinition typeDef = mr.GetTypeDefinition((TypeDefinitionHandle)typeDefHandle);
+        TypeDefinition typeDef = mr.GetTypeDefinition(typeDefHandle);
+
+        if (typeDef.BaseType.Kind != HandleKind.TypeReference)
+            return false;
+
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-        baseTypeName = mr.GetString(baseTypeRef.Name);
-        typeName = mr.GetString(typeDef.Name);
+        string baseTypeName = mr.GetString(baseTypeRef.Name);
 
-        // Probably an opaque pointer or handle type. In any case, an AHK we can just use an Integer
-        if (typeDef.GetFields().Count == 0)
+        // Placeholder for a COM CLSID that we shouldn't generate a file for
+        if (baseTypeName == "ValueType" && typeDef.GetFields().Count == 0)
             return true;
 
-        // MultiCastDelegate means function pointer
-        if (baseTypeName == "MultiCastDelegate")
+        // Function pointer, no analagous concept in AHK - we emit these as primitives elsewhere
+        if (baseTypeName == "MulticastDelegate")
             return true;
 
+        // Handled in their parents
         if (typeDef.IsNested)
             return true;
 
