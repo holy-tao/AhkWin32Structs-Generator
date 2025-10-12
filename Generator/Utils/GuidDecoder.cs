@@ -31,6 +31,28 @@ class GuidDecoder
         );
     }
 
+    /// <summary>
+    /// Decodes a the Guid of a Type Definition of it has a GuidAttribute
+    /// </summary>
+    /// <param name="reader">reader for metadata</param>
+    /// <param name="typeDef">TypeDef to get the Guid for</param>
+    /// <returns></returns>
+    public static Guid? MaybeDecodeGuid(MetadataReader reader, TypeDefinition typeDef)
+    {
+        CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(reader, typeDef, "GuidAttribute");
+        if (!attr.HasValue)
+            return null;
+
+        return DecodeFromAtribute(attr.Value);
+    }
+
+    /// <summary>
+    /// Decodes a Guid from a TypeDef
+    /// </summary>
+    /// <param name="reader">reader for metadata</param>
+    /// <param name="typeDef">TypeDef to get the Guid for</param>
+    /// <returns></returns>
+    /// <exception cref="NullReferenceException">If typeDef has no GuidAttribute</exception>
     public static Guid DecodeGuid(MetadataReader reader, TypeDefinition typeDef)
     {
         CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(reader, typeDef, "GuidAttribute");
@@ -40,6 +62,13 @@ class GuidDecoder
         return DecodeFromAtribute(attr.Value);
     }
 
+    /// <summary>
+    /// Decodes a Guid from a Field Definition
+    /// </summary>
+    /// <param name="reader">reader for metadata</param>
+    /// <param name="fieldDef">field to get the Guid for</param>
+    /// <returns></returns>
+    /// <exception cref="NullReferenceException">if fieldDef has no GuidAttribute</exception>
     public static Guid DecodeGuid(MetadataReader reader, FieldDefinition fieldDef)
     {
         CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(reader, fieldDef, "GuidAttribute");

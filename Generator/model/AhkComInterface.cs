@@ -7,7 +7,7 @@ using Microsoft.Windows.SDK.Win32Docs;
 class AhkComInterface : AhkType
 {
     // Interface ID for this interface
-    public readonly Guid iid;
+    public readonly Guid? iid;
 
     // CLSID for an instantiatable object the implements this interface, if any
     public readonly Guid? clsid;
@@ -16,7 +16,7 @@ class AhkComInterface : AhkType
 
     public AhkComInterface(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
-        iid = GuidDecoder.DecodeGuid(mr, typeDef);
+        iid = GuidDecoder.MaybeDecodeGuid(mr, typeDef);
         clsid = GetClsid();
 
         List<TypeDefinition> impls = GetResolvedInterfaceImplementations();
@@ -63,7 +63,7 @@ class AhkComInterface : AhkType
 
         if (implClassHandle.HasValue && !implClassHandle.Value.IsNil)
         {
-            return GuidDecoder.DecodeGuid(mr, mr.GetTypeDefinition(implClassHandle.Value));
+            return GuidDecoder.MaybeDecodeGuid(mr, mr.GetTypeDefinition(implClassHandle.Value));
         }
 
         return null;
@@ -75,12 +75,16 @@ class AhkComInterface : AhkType
         sb.AppendLine();
 
         MaybeAddTypeDocumentation(sb);
-        sb.AppendLine($"class {Name} extends {(BaseInterface.HasValue? mr.GetString(BaseInterface.Value.Name) : "Win32ComInterface")}{{");
-        sb.AppendLine( "    /**");
-        sb.AppendLine($"     * The interface identifier for {Name}");
-        sb.AppendLine( "     * @type {Guid}");
-        sb.AppendLine( "     */");
-        sb.AppendLine($"    static IID => Guid(\"{iid.ToString()}\")");
+        sb.AppendLine($"class {Name} extends {(BaseInterface.HasValue ? mr.GetString(BaseInterface.Value.Name) : "Win32ComInterface")}{{");
+
+        if (iid.HasValue)
+        {
+            sb.AppendLine( "    /**");
+            sb.AppendLine($"     * The interface identifier for {Name}");
+            sb.AppendLine( "     * @type {Guid}");
+            sb.AppendLine( "     */");
+            sb.AppendLine($"    static IID => Guid(\"{iid.Value.ToString()}\")");
+        }
 
         if (clsid.HasValue)
         {
