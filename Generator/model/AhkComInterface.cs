@@ -14,14 +14,28 @@ class AhkComInterface : AhkType
 
     public readonly TypeDefinition? BaseInterface;
 
+    public readonly List<AhkComMethod> Methods;
+
+    public readonly int VTableOffset;
+
     public AhkComInterface(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
         iid = GuidDecoder.MaybeDecodeGuid(mr, typeDef);
         clsid = GetClsid();
 
-        List<TypeDefinition> impls = GetResolvedInterfaceImplementations();
+        BaseInterface = GetBaseTypeDef(typeDef);
+        VTableOffset = GetVTableOffset();
 
-        BaseInterface = impls.Count switch
+        Methods = typeDef.GetMethods()
+            .Select((handle, i) => new AhkComMethod(mr, mr.GetMethodDefinition(handle), apiDocs, i + VTableOffset))
+            .ToList();
+    }
+
+    private TypeDefinition? GetBaseTypeDef(TypeDefinition forType)
+    {
+        List<TypeDefinition> impls = GetResolvedInterfaceImplementations(forType);
+
+        return impls.Count switch
         {
             0 => null,
             1 => impls.First(),
@@ -35,9 +49,9 @@ class AhkComInterface : AhkType
     /// <returns>All directly implemented interfaces for this interface</returns>
     /// <exception cref="NullReferenceException"></exception>
     /// <exception cref="NotSupportedException"></exception>
-    private List<TypeDefinition> GetResolvedInterfaceImplementations()
+    private List<TypeDefinition> GetResolvedInterfaceImplementations(TypeDefinition forType)
     {
-        return typeDef.GetInterfaceImplementations()
+        return forType.GetInterfaceImplementations()
             .Select(ih => mr.GetInterfaceImplementation(ih).Interface)
             .Select(iface => iface.Kind switch
                 {
@@ -48,6 +62,25 @@ class AhkComInterface : AhkType
                 }
             )
             .ToList();
+    }
+
+    /// <summary>
+    /// Count the number of methods in this interface's inheritance chain, not including
+    /// itself
+    /// </summary>
+    /// <returns></returns>
+    private int GetVTableOffset()
+    {
+        TypeDefinition? current = BaseInterface;
+        int offset = 0;
+
+        while (current.HasValue)
+        {
+            offset += current.Value.GetMethods().ToList().Count;
+            current = GetBaseTypeDef(current.Value);
+        }
+
+        return offset;
     }
 
     private Guid? GetClsid()
@@ -89,11 +122,24 @@ class AhkComInterface : AhkType
         if (clsid.HasValue)
         {
             sb.AppendLine();
-            sb.AppendLine( "    /**");
+            sb.AppendLine("    /**");
             sb.AppendLine($"     * The class identifier for {Name.TrimStart('I')}");
-            sb.AppendLine( "     * @type {Guid}");
-            sb.AppendLine( "     */");
+            sb.AppendLine("     * @type {Guid}");
+            sb.AppendLine("     */");
             sb.AppendLine($"    static CLSID => Guid(\"{clsid.Value.ToString()}\")");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("    /**");
+        sb.AppendLine("     * The offset into the COM object's virtual function table at which this interface's methods begin.");
+        sb.AppendLine("     * @type {Integer}");
+        sb.AppendLine("     */");
+        sb.AppendLine($"    static vTableOffset => {VTableOffset}");
+
+        foreach (AhkComMethod method in Methods)
+        {
+            sb.AppendLine();
+            method.ToAhk(sb);
         }
 
         sb.AppendLine("}");

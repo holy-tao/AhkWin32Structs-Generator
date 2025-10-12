@@ -20,11 +20,11 @@ class AhkMethod
 
     public bool SetsLastError => import.Attributes.HasFlag(MethodImportAttributes.SetLastError);
 
-    public string DLLName => mr.GetString(mr.GetModuleReference(import.Module).Name);
+    public string DLLName => import.Module.IsNil? "" : mr.GetString(mr.GetModuleReference(import.Module).Name);
 
     // The entry point for the DLL, that is, the actual value that gets looked up in the symbol table
     // This will almost always be identical to Name, but isn't required to be
-    public string EntryPoint => mr.GetString(import.Name);
+    public string EntryPoint => import.Name.IsNil? "" : mr.GetString(import.Name);
 
     public bool HasReturnValue => !(parameters[0].FieldInfo.Kind == SimpleFieldKind.Primitive && parameters[0].FieldInfo.TypeName == "Void");
 
@@ -168,9 +168,7 @@ class AhkMethod
         if (HasReturnValue)
             sb.Append("result := ");
 
-        // Entry point is an ordinal, which means we need to manually load the dll and 
-
-        sb.Append($"DllCall({entry}");
+        AppendAhkEntryPoint(sb, entry);
 
         if (parameters.Count > 1)
         {
@@ -194,6 +192,17 @@ class AhkMethod
         }
 
         return sb.Append(')').ToString();
+    }
+
+    /// <summary>
+    /// Appends the starting stub snippet of the DllCall. Exists so that AhkComMethod can override
+    /// this to append ComCall instead of DllCall
+    /// </summary>
+    /// <param name="sb"></param>
+    /// <param name="entryPoint"></param>
+    private protected virtual void AppendAhkEntryPoint(StringBuilder sb, string entryPoint = "")
+    {
+        sb.Append($"DllCall({entryPoint}");
     }
 
     private string BuildMethodArgumentList()
