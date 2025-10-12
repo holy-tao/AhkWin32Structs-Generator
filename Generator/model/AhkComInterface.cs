@@ -1,4 +1,5 @@
 
+using System.Diagnostics;
 using System.Reflection.Metadata;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
@@ -11,11 +12,42 @@ class AhkComInterface : AhkType
     // CLSID for an instantiatable object the implements this interface, if any
     public readonly Guid? clsid;
 
+    public readonly TypeDefinition? BaseInterface;
+
     public AhkComInterface(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
         iid = GuidDecoder.DecodeGuid(mr, typeDef);
         clsid = GetClsid();
-        
+
+        List<TypeDefinition> impls = GetResolvedInterfaceImplementations();
+
+        BaseInterface = impls.Count switch
+        {
+            0 => null,
+            1 => impls.First(),
+            _ => throw new NotSupportedException($"Interface {Namespace}.{Name} implements {impls.Count} interfaces, expected 1: [{string.Join(",", impls.Select(td => mr.GetString(td.Name)))}]")
+        };
+    }
+
+    /// <summary>
+    /// Collects all directly implemented interfaces for this interface and resolves any TypeReferences.
+    /// </summary>
+    /// <returns>All directly implemented interfaces for this interface</returns>
+    /// <exception cref="NullReferenceException"></exception>
+    /// <exception cref="NotSupportedException"></exception>
+    private List<TypeDefinition> GetResolvedInterfaceImplementations()
+    {
+        return typeDef.GetInterfaceImplementations()
+            .Select(ih => mr.GetInterfaceImplementation(ih).Interface)
+            .Select(iface => iface.Kind switch
+                {
+                    // Resolve type reference, asserting that it's not null, then resolve the handle
+                    HandleKind.TypeReference => mr.GetTypeDefinition(FieldSignatureDecoder.ResolveTypeReference(mr, (TypeReferenceHandle)iface) ?? throw new NullReferenceException()),
+                    HandleKind.TypeDefinition => mr.GetTypeDefinition((TypeDefinitionHandle)iface),
+                    _ => throw new NotSupportedException($"{iface.Kind} for interface {Namespace}.{Name}")
+                }
+            )
+            .ToList();
     }
 
     private Guid? GetClsid()
@@ -43,7 +75,7 @@ class AhkComInterface : AhkType
         sb.AppendLine();
 
         MaybeAddTypeDocumentation(sb);
-        sb.AppendLine($"class {Name} extends Win32ComInterface{{");
+        sb.AppendLine($"class {Name} extends {(BaseInterface.HasValue? mr.GetString(BaseInterface.Value.Name) : "Win32ComInterface")}{{");
         sb.AppendLine( "    /**");
         sb.AppendLine($"     * The interface identifier for {Name}");
         sb.AppendLine( "     * @type {Guid}");
@@ -70,7 +102,22 @@ class AhkComInterface : AhkType
             .Aggregate((agg, cur) => agg + cur);
 
         sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
-        sb.AppendLine($"#Include {pathToBase}Win32ComInterface.ahk");
+
+        if (BaseInterface.HasValue)
+        {
+            // Class should extend the base interface
+            TypeDefinition resolved = (TypeDefinition)BaseInterface;
+            string relPath = RelativePathBetweenNamespaces(Namespace, mr.GetString(resolved.Namespace));
+            string directive = $"#Include {relPath}{mr.GetString(resolved.Name)}.ahk";
+
+            sb.AppendLine(directive);
+        }
+        else
+        {
+            // This is a base interface - probably IUnknown - extend the base class
+            sb.AppendLine($"#Include {pathToBase}Win32ComInterface.ahk");
+        }
+
         sb.AppendLine($"#Include {pathToBase}Guid.ahk");
     }
 }
