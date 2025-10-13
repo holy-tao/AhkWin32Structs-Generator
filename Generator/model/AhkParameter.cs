@@ -44,4 +44,29 @@ public readonly record struct AhkParameter
     public bool Reserved => CustomAttributes.HasFlag(CustomParamAttributes.Reserved);
     public bool IsReturnValue => CustomAttributes.HasFlag(CustomParamAttributes.RetVal);
     public bool IsComOutPtr => CustomAttributes.HasFlag(CustomParamAttributes.ComOutPtr);
+
+    public bool IsPtr => FieldInfo.Kind == SimpleFieldKind.Pointer;
+    public bool IsPrimitive => FieldInfo.Kind == SimpleFieldKind.Primitive;
+    public bool IsArray => FieldInfo.Kind == SimpleFieldKind.Array;
+    public bool IsStruct => FieldInfo.Kind == SimpleFieldKind.Struct;
+    public bool IsString => FieldInfo.Kind == SimpleFieldKind.String;
+    public bool IsHRESULT => FieldInfo.Kind == SimpleFieldKind.HRESULT;
+    public bool IsCom => FieldInfo.Kind == SimpleFieldKind.COM;
+    public bool IsClass => FieldInfo.Kind == SimpleFieldKind.Class;
+    public bool IsOther => FieldInfo.Kind == SimpleFieldKind.Other;
+
+    public bool IsPtrToPrimitive => IsPtr && FieldInfo?.Kind == SimpleFieldKind.Primitive;
+
+    public string? GetTypeDefName(MetadataReader mr)
+    {
+        if (FieldInfo == null || FieldInfo.TypeDef == null)
+            return null;
+        return mr.GetString(FieldInfo.TypeDef.Value.Name);
+    }
+    
+    public string? GetTypeDefNamespace(MetadataReader mr) {
+        if (FieldInfo == null || FieldInfo.TypeDef == null)
+            return null;
+        return mr.GetString(FieldInfo.TypeDef.Value.Namespace);
+    }
 }
