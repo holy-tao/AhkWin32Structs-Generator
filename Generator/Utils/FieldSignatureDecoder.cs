@@ -95,6 +95,8 @@ public static class FieldSignatureDecoder
     /// 
     /// Note: the [NativeTypedef] attribute won't work for us here because it also picks up things like RECT and POINT,
     /// which are structs.
+    /// 
+    /// TODO: refactor or nix this entire process
     /// </summary>
     public static bool IsPseudoPrimitive(MetadataReader reader, TypeDefinitionHandle handle, [NotNullWhen(true)] out FieldInfo? fieldInfo )
     {
@@ -105,6 +107,11 @@ public static class FieldSignatureDecoder
         if (typeName == "HRESULT")
         {
             fieldInfo = new FieldInfo(SimpleFieldKind.HRESULT, "HRESULT", 0, td);
+            return true;
+        }
+        else if(typeName == "BSTR")
+        {
+            fieldInfo = new FieldInfo(SimpleFieldKind.String, "BSTR", 0, td);
             return true;
         }
 
