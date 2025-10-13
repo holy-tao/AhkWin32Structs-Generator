@@ -8,11 +8,11 @@ class AhkMethod
 {
     public string Name => mr.GetString(methodDef.Name);
 
-    private readonly MetadataReader mr;
-    private readonly MethodDefinition methodDef;
-    private readonly ApiDetails? apiDetails;
+    private protected readonly MetadataReader mr;
+    private protected readonly MethodDefinition methodDef;
+    private protected readonly ApiDetails? apiDetails;
 
-    private readonly MethodImport import;
+    private protected readonly MethodImport import;
 
     public MethodImportAttributes CallingConvention => import.Attributes & MethodImportAttributes.CallingConventionMask;
 
@@ -28,7 +28,7 @@ class AhkMethod
 
     public bool HasReturnValue => !(parameters[0].FieldInfo.Kind == SimpleFieldKind.Primitive && parameters[0].FieldInfo.TypeName == "Void");
 
-    private readonly List<AhkParameter> parameters = [];
+    private protected readonly List<AhkParameter> parameters = [];
 
     public AhkMethod(MetadataReader mr, MethodDefinition methodDef, Dictionary<string, ApiDetails> apiDocs)
     {
@@ -40,7 +40,7 @@ class AhkMethod
         parameters = ParameterDecoder.DecodeParameters(mr, methodDef);
     }
 
-    public void ToAhk(StringBuilder sb)
+    public virtual void ToAhk(StringBuilder sb)
     {
         MaybeAppendDocumentation(sb);
         sb.AppendLine($"    static {Name}({BuildMethodArgumentList()}) {{");
@@ -162,7 +162,7 @@ class AhkMethod
     /// Builds the actual DllCall call, like [result := ] DllCall("dll\function", "ptr", ..)
     /// </summary>
     /// <returns></returns>
-    private string BuildDllCallCall(string entry)
+    private protected string BuildDllCallCall(string entry)
     {
         StringBuilder sb = new();
         if (HasReturnValue)
@@ -205,16 +205,16 @@ class AhkMethod
         sb.Append($"DllCall({entryPoint}");
     }
 
-    private string BuildMethodArgumentList()
+    private protected string BuildMethodArgumentList()
     {
         return string.Join(", ", parameters
-            .Slice(1, parameters.Count - 1)     // Skip param 0, the return value
-            .Where(p => !p.Reserved)            // Skip reserved params
+            .Slice(1, parameters.Count - 1)                 // Skip param 0, the return value
+            .Where(p => !(p.Reserved || p.IsReturnValue))   // Skip reserved params and explicit return values
             .Select(p => p.Name)
         );
     }
 
-    private string BuildDllCallArgumentList()
+    private protected virtual string BuildDllCallArgumentList()
     {
         StringBuilder argList = new();
 
@@ -239,7 +239,7 @@ class AhkMethod
         return argList.ToString();
     }
 
-    private void MaybeAppendDocumentation(StringBuilder sb)
+    private protected void MaybeAppendDocumentation(StringBuilder sb)
     {
         sb.AppendLine("    /**");
         sb.AppendLine("     * " + AhkType.EscapeDocs(apiDetails?.Description, "    "));
@@ -309,7 +309,7 @@ class AhkMethod
     ///     2.  [CanReturnErrorsAsSuccess] is present
     /// </summary>
     /// <returns></returns>
-    private bool ShouldThrowForReturnValue()
+    private protected bool ShouldThrowForReturnValue()
     {
         // If the method doesn't return an HRESULT, this is always no
         if (parameters[0].FieldInfo.Kind != SimpleFieldKind.HRESULT)

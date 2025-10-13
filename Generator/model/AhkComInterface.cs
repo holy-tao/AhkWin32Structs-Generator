@@ -26,6 +26,8 @@ class AhkComInterface : AhkType
         BaseInterface = GetBaseTypeDef(typeDef);
         VTableOffset = GetVTableOffset();
 
+        //TODO: Parse [SpecialName] methods into property getters and setters
+        //TODO (maybe): for objects that implement IDispatch, call ComObjQuery wrap its result
         Methods = typeDef.GetMethods()
             .Select((handle, i) => new AhkComMethod(mr, mr.GetMethodDefinition(handle), apiDocs, i + VTableOffset))
             .ToList();
@@ -116,7 +118,7 @@ class AhkComInterface : AhkType
             sb.AppendLine($"     * The interface identifier for {Name}");
             sb.AppendLine( "     * @type {Guid}");
             sb.AppendLine( "     */");
-            sb.AppendLine($"    static IID => Guid(\"{iid.Value.ToString()}\")");
+            sb.AppendLine($"    static IID => Guid(\"{{{iid.Value.ToString()}}}\")");
         }
 
         if (clsid.HasValue)
@@ -126,7 +128,7 @@ class AhkComInterface : AhkType
             sb.AppendLine($"     * The class identifier for {Name.TrimStart('I')}");
             sb.AppendLine("     * @type {Guid}");
             sb.AppendLine("     */");
-            sb.AppendLine($"    static CLSID => Guid(\"{clsid.Value.ToString()}\")");
+            sb.AppendLine($"    static CLSID => Guid(\"{{{clsid.Value.ToString()}}}\")");
         }
 
         sb.AppendLine();
@@ -145,7 +147,7 @@ class AhkComInterface : AhkType
         sb.AppendLine("}");
     }
 
-    private void HeadersToAhk(StringBuilder sb)
+    private protected void HeadersToAhk(StringBuilder sb)
     {
         string pathToBase = Namespace.Split(".")
             .Select(val => $"..{Path.DirectorySeparatorChar}")
@@ -162,11 +164,10 @@ class AhkComInterface : AhkType
 
             sb.AppendLine(directive);
         }
-        else
-        {
-            // This is a base interface - probably IUnknown - extend the base class
-            sb.AppendLine($"#Include {pathToBase}Win32ComInterface.ahk");
-        }
+
+        string varenumPath = RelativePathBetweenNamespaces(Namespace, "Windows.Win32.System.Variant");
+        sb.AppendLine($"#Include {pathToBase}Win32ComInterface.ahk");
+        sb.AppendLine($"#Include {varenumPath}VARENUM.ahk");
 
         sb.AppendLine($"#Include {pathToBase}Guid.ahk");
     }
