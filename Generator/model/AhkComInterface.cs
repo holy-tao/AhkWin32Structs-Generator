@@ -18,7 +18,7 @@ class AhkComInterface : AhkType
 
     public readonly int VTableOffset;
 
-    public AhkComInterface(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
+    public AhkComInterface(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
     {
         iid = GuidDecoder.MaybeDecodeGuid(mr, typeDef);
         clsid = GetClsid();
@@ -27,7 +27,7 @@ class AhkComInterface : AhkType
         VTableOffset = GetVTableOffset();
 
         Methods = typeDef.GetMethods()
-            .Select((handle, i) => new AhkComMethod(mr, mr.GetMethodDefinition(handle), apiDocs, i + VTableOffset))
+            .Select((handle, i) => new AhkComMethod(mr, mr.GetMethodDefinition(handle), i + VTableOffset))
             .ToList();
     }
 
@@ -112,11 +112,11 @@ class AhkComInterface : AhkType
 
         if (iid.HasValue)
         {
-            sb.AppendLine( "    /**");
+            sb.AppendLine("    /**");
             sb.AppendLine($"     * The interface identifier for {Name}");
-            sb.AppendLine( "     * @type {Guid}");
-            sb.AppendLine( "     */");
-            sb.AppendLine($"    static IID => Guid(\"{iid.Value.ToString()}\")");
+            sb.AppendLine("     * @type {Guid}");
+            sb.AppendLine("     */");
+            sb.AppendLine($"    static IID => Guid(\"{{{iid.Value.ToString()}}}\")");
         }
 
         if (clsid.HasValue)
@@ -126,7 +126,7 @@ class AhkComInterface : AhkType
             sb.AppendLine($"     * The class identifier for {Name.TrimStart('I')}");
             sb.AppendLine("     * @type {Guid}");
             sb.AppendLine("     */");
-            sb.AppendLine($"    static CLSID => Guid(\"{clsid.Value.ToString()}\")");
+            sb.AppendLine($"    static CLSID => Guid(\"{{{clsid.Value.ToString()}}}\")");
         }
 
         sb.AppendLine();
@@ -145,29 +145,34 @@ class AhkComInterface : AhkType
         sb.AppendLine("}");
     }
 
-    private void HeadersToAhk(StringBuilder sb)
+    protected override List<string> GetReferencedTypes()
     {
-        string pathToBase = Namespace.Split(".")
-            .Select(val => $"..{Path.DirectorySeparatorChar}")
-            .Aggregate((agg, cur) => agg + cur);
+        var imports = base.GetReferencedTypes();
 
-        sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
+        // Check for methods with String parameters
+        if(Methods.Any(m => m.HasStringParam))
+        {
+            imports.Add("Windows.Win32.Foundation.BSTR");
+        }
+        Methods.ForEach(m => imports.AddRange(m.GetReferencedTypes()));
 
         if (BaseInterface.HasValue)
         {
-            // Class should extend the base interface
-            TypeDefinition resolved = (TypeDefinition)BaseInterface;
-            string relPath = RelativePathBetweenNamespaces(Namespace, mr.GetString(resolved.Namespace));
-            string directive = $"#Include {relPath}{mr.GetString(resolved.Name)}.ahk";
-
-            sb.AppendLine(directive);
-        }
-        else
-        {
-            // This is a base interface - probably IUnknown - extend the base class
-            sb.AppendLine($"#Include {pathToBase}Win32ComInterface.ahk");
+            imports.Add(GetFqn(mr, (TypeDefinition)BaseInterface));
         }
 
+        return imports;
+    }
+
+
+    private protected void HeadersToAhk(StringBuilder sb)
+    {
+        string pathToBase = GetPathToBase();
+
+        sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
+        sb.AppendLine($"#Include {pathToBase}Win32ComInterface.ahk");
         sb.AppendLine($"#Include {pathToBase}Guid.ahk");
+
+        AppendImports(sb);
     }
 }

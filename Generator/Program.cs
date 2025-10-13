@@ -49,6 +49,8 @@ public class Program
             TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
 
             string typeNamespace = mr.GetString(typeDef.Namespace);
+            string typeName = mr.GetString(typeDef.Name);
+
             if (ShouldSkipType(mr, hTypeDef))
                 continue;
 
@@ -57,11 +59,7 @@ public class Program
                 IAhkEmitter? emitter = ParseType(mr, typeDef);
                 if (emitter == null)
                 {
-<<<<<<< HEAD
-                    Debug.WriteLine($"Non-explicit skip for {baseTypeName} {mr.GetString(typeDef.Namespace)}.{typeName}");
-=======
-                    Debug.WriteLine($">>> Skipped {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
->>>>>>> f9b0c04 (Find Interfaces and Generate Stubs)
+                    Debug.WriteLine($"Non-explicit skip for {mr.GetString(typeDef.Namespace)}.{typeName}");
                     continue;
                 }
 
@@ -74,11 +72,6 @@ public class Program
             }
             catch (Exception ex)
             {
-<<<<<<< HEAD
-=======
-                string typeName = mr.GetString(typeDef.Name);
-
->>>>>>> f9b0c04 (Find Interfaces and Generate Stubs)
                 Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
                 Console.Error.WriteLine(ex.Message);
                 Console.Error.WriteLine(ex.StackTrace);
@@ -99,7 +92,7 @@ public class Program
         if ((typeDef.Attributes & TypeAttributes.Interface) != 0)
         {
             // COM Interface
-            return new AhkComInterface(mr, typeDef, apiDocs);
+            return new AhkComInterface(mr, typeDef);
         }
 
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
@@ -108,13 +101,8 @@ public class Program
 
         if (baseTypeName == "Object" && typeName == "Apis")
         {
-<<<<<<< HEAD
             // This is the generic type that global functions and constants wind up in
             return new AhkApiType(mr, typeDef);
-=======
-            // This is the generic class that global functions and constants wind up in
-            return new AhkApiType(mr, typeDef, apiDocs);
->>>>>>> f9b0c04 (Find Interfaces and Generate Stubs)
         }
 
         return baseTypeName switch
@@ -135,17 +123,8 @@ public class Program
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
         string baseTypeName = mr.GetString(baseTypeRef.Name);
 
-<<<<<<< HEAD
         // MultiCastDelegate means function pointer
         if (baseTypeName is "MulticastDelegate" or "Attribute")
-=======
-        // Placeholder for a COM CLSID that we shouldn't generate a file for
-        if (baseTypeName == "ValueType" && typeDef.GetFields().Count == 0)
-            return true;
-
-        // Function pointer, no analagous concept in AHK - we emit these as primitives elsewhere
-        if (baseTypeName == "MulticastDelegate")
->>>>>>> f9b0c04 (Find Interfaces and Generate Stubs)
             return true;
 
         // Handled in their parents
@@ -191,5 +170,3 @@ public class Program
         File.WriteAllText(Path.Join(outputDirectory, "version.ini"), sb.ToString());
     }
 }
-
-// For enums, value__ is the base type of the enum

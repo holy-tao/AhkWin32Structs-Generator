@@ -188,6 +188,8 @@ public abstract class AhkType : IAhkEmitter
     public static string GetFqn(MetadataReader reader, TypeDefinition td)
     {
         return reader.GetString(td.Namespace) + "." + reader.GetString(td.Name);
+    }
+    
     public static string NamespaceToPath(string ns)
     {
         // Replace dots with directory separators
