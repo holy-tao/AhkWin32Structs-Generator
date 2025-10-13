@@ -57,7 +57,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         {
             return UnderlyingType?.GetDllCallType(useNakedPointer) ?? throw new NullReferenceException();
         }
-        else if (Kind == SimpleFieldKind.Pointer)
+        else if (Kind == SimpleFieldKind.Pointer || Kind == SimpleFieldKind.COM)
         {
             if (!useNakedPointer && UnderlyingType != null)
             {
@@ -73,7 +73,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                     }
                 }
             }
-
+            
             return "ptr";
         }
         else
