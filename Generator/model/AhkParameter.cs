@@ -8,8 +8,8 @@ public enum CustomParamAttributes
     Reserved = 1,
     Constant = 2,
     SizedBuffer = 4,
-    RetVal = 8,
-    ComOutPtr = 16
+    ComOutPtr = 8,
+    RetVal = 16
 }
 
 public readonly record struct AhkParameter
