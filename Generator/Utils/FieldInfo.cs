@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
 
 public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, TypeDefinition? TypeDef = null, FieldInfo? UnderlyingType = null)
@@ -52,14 +53,18 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         {
             return "int";   // 32-bit integers under the hood
         }
-        else if (Kind == SimpleFieldKind.Pointer)
+        else if (Kind == SimpleFieldKind.Pointer || Kind == SimpleFieldKind.COM)
         {
-            if (!useNakedPointer && UnderlyingType != null &&
-                UnderlyingType.Kind == SimpleFieldKind.Primitive && UnderlyingType.TypeName != "Void")
+            if (!useNakedPointer && UnderlyingType != null)
             {
-                return UnderlyingType.GetDllCallType(useNakedPointer) + '*';
+                return UnderlyingType.Kind switch
+                {
+                    SimpleFieldKind.Primitive => UnderlyingType.GetDllCallType(useNakedPointer) + '*',
+                    SimpleFieldKind.Pointer => UnderlyingType.GetDllCallType(useNakedPointer),
+                    _ => "ptr"
+                };
             }
-
+            
             return "ptr";
         }
         else
