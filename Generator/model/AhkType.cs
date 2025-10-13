@@ -40,11 +40,15 @@ public abstract class AhkType : IAhkEmitter
     public bool IsAnsi => flags.HasFlag(MemberFlags.Ansi);    //Some types have both flags!?
     public bool IsUnicode => flags.HasFlag(MemberFlags.Unicode);
 
+    public readonly List<CAInfo> CustomAttributes;
+
     public AhkType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
     {
         this.mr = mr;
         this.typeDef = typeDef;
         this.apiDocs = apiDocs;
+
+        CustomAttributes = CustomAttributeDecoder.DecodeAll(mr, typeDef);
 
         flags = GetFlags();
 
@@ -94,8 +98,7 @@ public abstract class AhkType : IAhkEmitter
             sb.AppendLine("     * " + fieldDescription.Replace("\n", "\n * "));
         }
 
-        var attrs = CustomAttributeDecoder.GetAllNames(mr, constant.fieldDef);
-        if (attrs.Contains("ObsoleteAttribute"))
+        if (CustomAttributes.Any(c => c.Name is "ObsoleteAttribute"))
             sb.AppendLine($"     * @deprecated");
 
         sb.AppendLine($"     * @type {{{constant.Ahktype}}}");
@@ -123,9 +126,9 @@ public abstract class AhkType : IAhkEmitter
     {
         MemberFlags flags = MemberFlags.None;
 
-        foreach (string attrName in CustomAttributeDecoder.GetAllNames(mr, typeDef))
+        foreach (CAInfo attr in CustomAttributes)
         {
-            flags |= attrName switch
+            flags |= attr.Name switch
             {
                 "ObsoleteAttribute" => MemberFlags.Deprecated,
                 "ReservedAttribute" => MemberFlags.Reserved,

@@ -1,6 +1,8 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
 
+public readonly record struct CAInfo(string Name, CustomAttributeValue<string> Attr);
+
 public class CustomAttributeDecoder
 {
     public static IEnumerable<TypeReference> GetAll(MetadataReader reader, TypeDefinition def)
@@ -38,6 +40,18 @@ public class CustomAttributeDecoder
 
     public static List<CustomAttribute> GetAllAttributes(MetadataReader reader, Parameter def, string targetAttr)
         => GetAllAttributesFromCollection(reader, def.GetCustomAttributes(), targetAttr);
+
+    public static List<CAInfo> DecodeAll(MetadataReader reader, FieldDefinition def)
+        => DecodeAll(reader, def.GetCustomAttributes());
+
+    public static List<CAInfo> DecodeAll(MetadataReader reader, TypeDefinition def)
+        => DecodeAll(reader, def.GetCustomAttributes());
+
+    public static List<CAInfo> DecodeAll(MetadataReader reader, MethodDefinition def)
+        => DecodeAll(reader, def.GetCustomAttributes());
+
+    public static List<CAInfo> DecodeAll(MetadataReader reader, Parameter def)
+        => DecodeAll(reader, def.GetCustomAttributes());
 
     public static IEnumerable<string> GetAllNames(MetadataReader reader, TypeDefinition typeDef)
     {
@@ -109,5 +123,25 @@ public class CustomAttributeDecoder
             .Select(ctor => reader.GetMemberReference((MemberReferenceHandle)ctor).Parent)
             .Where(parent => parent.Kind == HandleKind.TypeReference)
             .Select(parent => reader.GetTypeReference((TypeReferenceHandle)parent));
+    }
+
+    private static List<CAInfo> DecodeAll(MetadataReader reader, CustomAttributeHandleCollection handles)
+    {
+        List<CAInfo> infos = [];
+        CaTypeProvider provider = new();
+
+        foreach (var attrHandle in handles)
+        {
+            var attr = reader.GetCustomAttribute(attrHandle);
+            var ctorHandle = attr.Constructor;
+            // Get the attribute type
+            var attrTypeHandle = reader.GetMemberReference((MemberReferenceHandle)ctorHandle).Parent;
+            var attrTypeRef = reader.GetTypeReference((TypeReferenceHandle)attrTypeHandle);
+            var attrName = reader.GetString(attrTypeRef.Name);
+
+            infos.Add(new(attrName, attr.DecodeValue(provider)));
+        }
+
+        return infos;
     }
 }

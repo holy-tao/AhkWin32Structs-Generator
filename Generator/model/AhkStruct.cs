@@ -145,14 +145,13 @@ public partial class AhkStruct : AhkType
         // Check for [StructSizeField("<FIELDNAME>")] and generate a __New method if there is one
         // This seems to only pick up cbSize members. But e.g. TTVALIDATIONTESTSPARAMS.ulStructSize should also have this
         // TODO open an issue
-        CustomAttribute? sizeFieldAttr = CustomAttributeDecoder.GetAttribute(mr, typeDef, "StructSizeFieldAttribute");
-        if (sizeFieldAttr.HasValue)
-            GenerateAhkNew(sb, sizeFieldAttr.Value);
+        CAInfo sizeFieldAttr = CustomAttributes.SingleOrDefault(c => c.Name is "StructSizeFieldAttribute");
+        if (sizeFieldAttr != default)
+            GenerateAhkNew(sb, sizeFieldAttr.Attr);
     }
 
-    private void GenerateAhkNew(StringBuilder sb, CustomAttribute sizeFieldAttr)
+    private void GenerateAhkNew(StringBuilder sb, CustomAttributeValue<string> decoded)
     {
-        CustomAttributeValue<string> decoded = sizeFieldAttr.DecodeValue(new CaTypeProvider());
         var arg = decoded.FixedArguments[0];
 
         sb.AppendLine();

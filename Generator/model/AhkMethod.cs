@@ -30,10 +30,14 @@ class AhkMethod
 
     private readonly List<AhkParameter> parameters = [];
 
+    private readonly List<CAInfo> CustomAttributes;
+
     public AhkMethod(MetadataReader mr, MethodDefinition methodDef, Dictionary<string, ApiDetails> apiDocs)
     {
         this.mr = mr;
         this.methodDef = methodDef;
+        CustomAttributes = CustomAttributeDecoder.DecodeAll(mr, methodDef);
+
         apiDocs.TryGetValue(Name, out apiDetails);
 
         import = methodDef.GetImport();
@@ -278,14 +282,13 @@ class AhkMethod
         if (CharSet == MethodImportAttributes.CharSetUnicode)
             sb.AppendLine($"     * @charset Unicode");
 
-        if (CustomAttributeDecoder.GetAttribute(mr, methodDef, "ObsoleteAttribute") != null)
+        if (CustomAttributes.Any(c => c.Name is "ObsoleteAttribute"))
             sb.AppendLine($"     * @deprecated");
 
-        CustomAttribute? osPlatform = CustomAttributeDecoder.GetAttribute(mr, methodDef, "SupportedOSPlatformAttribute");
-        if (osPlatform != null)
+        CAInfo osPlatform = CustomAttributes.SingleOrDefault(c => c.Name is "SupportedOSPlatformAttribute");
+        if (osPlatform != default)
         {
-            var decoded = osPlatform.Value.DecodeValue(new CaTypeProvider());
-            sb.AppendLine($"     * @since {decoded.FixedArguments[0].Value ?? ""}");
+            sb.AppendLine($"     * @since {osPlatform.Attr.FixedArguments[0].Value ?? ""}");
         }
 
         sb.AppendLine("     */");
@@ -308,11 +311,10 @@ class AhkMethod
             return false;
         }
 
-        CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(mr, methodDef, "PreserveSigAttribute");
-        if (attr.HasValue)
+        CAInfo attr = CustomAttributes.SingleOrDefault(c => c.Name is "PreserveSigAttribute");
+        if (attr != default)
         {
-            var attrVal = ((CustomAttribute)attr).DecodeValue(new CaTypeProvider());
-            bool hasPreserveSig = ((bool?)attrVal.FixedArguments[0].Value) ?? true;
+            bool hasPreserveSig = ((bool?)attr.Attr.FixedArguments[0].Value) ?? true;
 
             // https://github.com/microsoft/win32metadata/issues/1315#issuecomment-1281559120
             if (!hasPreserveSig)
@@ -321,17 +323,9 @@ class AhkMethod
             }
             else
             {
-                // Check for [CanReturnMultipleSuccessValues] or [CanReturnErrorsAsSuccess]
-                foreach (string attrName in CustomAttributeDecoder.GetAllNames(mr, methodDef))
-                {
-                    if (attrName is "CanReturnMultipleSuccessValuesAttribute" or "CanReturnErrorsAsSuccessAttribute")
-                    {
-                        return false;
-                    }
-                }
+                return !CustomAttributes.Any(c => c.Name is "CanReturnMultipleSuccessValuesAttribute" or "CanReturnErrorsAsSuccessAttribute");
             }
         }
-
 
         return true;
     }
