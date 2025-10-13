@@ -17,21 +17,27 @@ public static class FieldSignatureDecoder
     public static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle)
     {
         var td = reader.GetTypeDefinition(tdHandle);
-        if (IsEnum(reader, tdHandle))
+        string typeName = reader.GetString(td.Name);
+
+        if(typeName == "HRESULT")
+        {
+            return new FieldInfo(SimpleFieldKind.HRESULT, "HRESULT", 0, td);
+        }
+        else if (IsEnum(reader, tdHandle))
         {
             string underlying = GetEnumUnderlyingType(reader, tdHandle);
             return new FieldInfo(SimpleFieldKind.Primitive, underlying);
         }
+        else if (IsUsedAsFunctionPointer(reader, tdHandle))
+        {
+            return new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td);
+        }
         else if (IsComInterface(reader, tdHandle))
         {
-            return new FieldInfo(SimpleFieldKind.COM, reader.GetString(td.Name), 0, td);
-        }
-        else if (IsPseudoPrimitive(reader, tdHandle, out FieldInfo? fieldInfo))
-        {
-            return fieldInfo;
+            return new FieldInfo(SimpleFieldKind.COM, typeName, 0, td);
         }
 
-        return new FieldInfo(SimpleFieldKind.Struct, reader.GetString(td.Name), 0, td);
+        return new FieldInfo(SimpleFieldKind.Struct, typeName, 0, td);
     }
 
     public static bool IsComInterface(MetadataReader reader, TypeDefinitionHandle handle)
@@ -45,11 +51,6 @@ public static class FieldSignatureDecoder
         // Most (nearly all) COM interfaces have the [Guid] attribute
         if (CustomAttributeDecoder.GetAllNames(reader, td).Contains("GuidAttribute"))
             return true;
-
-        // The base interfaces do not have GUIDs
-        //string typeName = reader.GetString(td.Name);
-        //if (typeName == "IUnknown" || typeName == "IDispatch")
-        //   return true;
 
         if (!td.BaseType.IsNil)
         {
@@ -86,122 +87,6 @@ public static class FieldSignatureDecoder
                    reader.StringComparer.Equals(tr.Name, "Enum");
         }
         return false;
-    }
-
-    /// <summary>
-    /// Determine whether or not the given type can be represented in AutoHotkey with a simple Integer, and thus
-    /// we can treat it as a primitive. Such types include handles (e.g. HWND), NativeTypeDefs (BOOL, HRESULT, etc),
-    /// string pointers (LPWSTR, BSTR, etc), and function pointers and callback addresses.
-    /// 
-    /// Note: the [NativeTypedef] attribute won't work for us here because it also picks up things like RECT and POINT,
-    /// which are structs.
-    /// </summary>
-    public static bool IsPseudoPrimitive(MetadataReader reader, TypeDefinitionHandle handle, [NotNullWhen(true)] out FieldInfo? fieldInfo )
-    {
-        TypeDefinition td = reader.GetTypeDefinition(handle);
-        string typeName = reader.GetString(reader.GetTypeDefinition(handle).Name);
-
-        // Special case for methods that need to know about it
-        if (typeName == "HRESULT")
-        {
-            fieldInfo = new FieldInfo(SimpleFieldKind.HRESULT, "HRESULT", 0, td);
-            return true;
-        }
-
-        FieldDefinitionHandleCollection fields = td.GetFields();
-
-        // If struct is empty, check to see if any function pointers point to it
-        if (fields.Count == 0 && IsUsedAsFunctionPointer(reader, handle))
-        {
-            fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, typeName);
-            return true;
-        }
-
-        // Otherwise a pseudo-primitive must have exactly one member
-        if (fields.Count != 1) {
-            fieldInfo = null;
-            return false;
-        } 
-
-        FieldDefinitionHandle? singleFieldHandle = fields.FirstOrDefault();
-        if (!singleFieldHandle.HasValue)
-        {
-            fieldInfo = null;
-            return false;
-        }
-
-        FieldDefinition singleField = reader.GetFieldDefinition(singleFieldHandle.Value);
-
-        var blob = reader.GetBlobReader(singleField.Signature);
-        var _ = blob.ReadSignatureHeader();
-        SkipCustomModsAndPinned(ref blob);
-        var sigTypeCode = blob.ReadSignatureTypeCode();
-
-        if (sigTypeCode.IsPrimitive())
-        {
-            // Extract underlying primitive type
-            fieldInfo = new FieldInfo(SimpleFieldKind.Primitive, sigTypeCode.ToString(), 0, td);
-            return true;
-        }
-        else if (sigTypeCode == SignatureTypeCode.Pointer)
-        {
-            // Some other pointer type
-            var underlyingTypeCode = blob.ReadSignatureTypeCode();
-            fieldInfo = new FieldInfo(
-                SimpleFieldKind.Pointer,
-                underlyingTypeCode.ToString(),
-                0,
-                td,
-                new FieldInfo(SimpleFieldKind.Primitive, underlyingTypeCode.ToString()));
-            return true;
-        }
-        else if (sigTypeCode == SignatureTypeCode.FunctionPointer)
-        {
-            fieldInfo = new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td);
-            return true;
-        }
-        else if (sigTypeCode == SignatureTypeCode.TypeHandle || sigTypeCode == (SignatureTypeCode)17 || sigTypeCode == (SignatureTypeCode)18)
-        {
-            var sigHandle = blob.ReadTypeHandle();
-
-            TypeDefinitionHandle? innerDef = sigHandle.Kind switch
-            {
-                HandleKind.TypeReference => ResolveTypeReference(reader, (TypeReferenceHandle)sigHandle),
-                HandleKind.TypeDefinition => (TypeDefinitionHandle)sigHandle,
-                _ => null
-            };
-
-            if (innerDef.HasValue)
-                return IsPseudoPrimitive(reader, innerDef.Value, out fieldInfo); // recursively unwrap
-        }
-
-        fieldInfo = null;
-        return false;
-    }
-
-    // Skip the optional / required / pinned flags for fields
-    private static void SkipCustomModsAndPinned(ref BlobReader b)
-    {
-        while (b.RemainingBytes > 0)
-        {
-            byte marker = b.ReadByte();
-
-            switch (marker)
-            {
-                case 0x1F: // cmod_reqd
-                case 0x20: // cmod_opt
-                    b.ReadCompressedInteger(); // skip the TypeDefOrRef coded index
-                    continue;
-
-                case 0x45: // pinned
-                    continue;
-
-                default:
-                    // Not a modifier - back up
-                    b.Offset -= 1;
-                    return;
-            }
-        }
     }
 
     public static string GetEnumUnderlyingType(MetadataReader reader, TypeDefinitionHandle handle)
