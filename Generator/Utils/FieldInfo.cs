@@ -182,6 +182,10 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
             {
                 return "HRESULT";
             }
+            else if (Kind == SimpleFieldKind.Struct || Kind == SimpleFieldKind.Class)
+            {
+                return TypeName;
+            }
             else
             {
                 // Assuming 64-bit ahk
