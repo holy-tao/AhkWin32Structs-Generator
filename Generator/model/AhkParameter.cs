@@ -57,6 +57,13 @@ public readonly record struct AhkParameter
 
     public bool IsPtrToPrimitive => IsPtr && FieldInfo?.Kind == SimpleFieldKind.Primitive;
 
+    public bool IsHandle(MetadataReader mr)
+    {
+        if (!FieldInfo.TypeDef.HasValue)
+            return false;
+        return AhkStruct.IsHandle(mr, FieldInfo.TypeDef.Value);
+    }
+
     public string? GetTypeDefName(MetadataReader mr)
     {
         if (FieldInfo == null || FieldInfo.TypeDef == null)

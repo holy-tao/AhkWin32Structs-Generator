@@ -172,7 +172,7 @@ public partial class AhkStruct : AhkType
     /// Try to figure out whether or not this struct is a handle type.
     /// </summary>
     /// <returns></returns>
-    private static bool IsHandle(MetadataReader mr, TypeDefinition td)
+    public static bool IsHandle(MetadataReader mr, TypeDefinition td)
     {
         IEnumerable<string> attrs = CustomAttributeDecoder.GetAllNames(mr, td);
         return td.GetFields().Count == 1 && attrs.Any(HandleAttrs.Contains);

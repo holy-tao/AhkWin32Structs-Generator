@@ -71,21 +71,18 @@ class AhkMethod
             sb.AppendLine();
         }
 
-#pragma warning disable CS8629 // Nullable value type may be null.
-        List<AhkParameter> stringParams = [.. parameters[1..]
-            .Where(p => p.FieldInfo.TypeDef.HasValue)
-            .Where(p => mr.GetString(p.FieldInfo.TypeDef.Value.Name) is "PWSTR" or "PSTR")];
-#pragma warning restore CS8629 // Nullable value type may be null.
+        // Allow string literals and dereference handles
+        var stringParams = parameters[1..].Where(p => p.GetTypeDefName(mr) is "PWSTR" or "PSTR").ToList();
+        var handleParams = parameters[1..].Where(p => p.IsHandle(mr)).ToList();
 
-        if (stringParams.Count > 0)
+        stringParams.ForEach(param => sb.AppendLine($"        {param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}"));
+        handleParams.ForEach(param => sb.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}"));
+
+        if (stringParams.Count > 0 || handleParams.Count > 0)
         {
-            foreach (AhkParameter param in stringParams)
-            {
-                sb.AppendLine($"        {param.Name} := {param.Name} is String? StrPtr({param.Name}) : {param.Name}");
-            }
             sb.AppendLine();
         }
-
+        
         bool epIsOrd = EntryPoint.StartsWith('#');  //Is the EntryPoint and ordinal?
 
         if (SetsLastError)
