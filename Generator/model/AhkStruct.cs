@@ -13,10 +13,10 @@ public partial class AhkStruct : AhkType
 
     public bool IsUnion => flags.HasFlag(MemberFlags.Union);
 
-    internal void ToAhk(StringBuilder sb, bool headers, List<AhkStructMember> emittedMembers)
+    public virtual void ToAhk(StringBuilder sb, bool headers, List<AhkStructMember> emittedMembers)
     {
-        if (headers)
-            HeadersToAhk(sb);
+        HeadersToAhk(sb);
+        sb.AppendLine();
 
         MaybeAddTypeDocumentation(sb);
         sb.AppendLine($"class {Name} extends Win32Struct");
@@ -30,16 +30,12 @@ public partial class AhkStruct : AhkType
         sb.AppendLine("}");
     }
 
-    // Devices.BiometricFramework.WINBIO_ASYNC_RESULT not importing e.g. WINBIO_IDENTITY or WINBIO_PROTECTION POLICY
-    private void HeadersToAhk(StringBuilder sb)
+    private protected void HeadersToAhk(StringBuilder sb)
     {
         // Path to Win32Struct.ahk, expecting it to be in the root of wherever we're making this class
-        string pathToBase = Namespace.Split(".")
-            .Select(val => $"..{Path.DirectorySeparatorChar}")
-            .Aggregate((agg, cur) => agg + cur);
 
         sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
-        sb.AppendLine($"#Include {pathToBase}Win32Struct.ahk");
+        sb.AppendLine($"#Include {GetPathToBase()}Win32Struct.ahk");
 
         // Generate #Include statements for embedded structs
         var importedTypes = new List<string>();
@@ -62,8 +58,6 @@ public partial class AhkStruct : AhkType
             sb.AppendLine($"#Include {sbPath}{m.fieldInfo.TypeName}.ahk");
             importedTypes.Add(m.fieldInfo.TypeName);
         }
-
-        sb.AppendLine();
     }
 
     // Get all members of the struct for which we should generate #Include statements,

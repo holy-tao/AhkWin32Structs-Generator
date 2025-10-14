@@ -148,4 +148,11 @@ public abstract class AhkType : IAhkEmitter
 
         return flags;
     }
+
+    protected string GetPathToBase()
+    {
+        return Namespace.Split(".")
+            .Select(val => $"..{Path.DirectorySeparatorChar}")
+            .Aggregate((agg, cur) => agg + cur);
+    }
 }

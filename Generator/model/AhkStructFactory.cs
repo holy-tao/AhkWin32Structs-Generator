@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.Metadata.Ecma335;
@@ -22,7 +23,10 @@ public partial class AhkStruct : AhkType
             }
         }
 
-        return new AhkStruct(reader, typeDef, apiDocs);
+        return IsHandle(reader, typeDef) ?
+            new AhkHandle(reader, typeDef, apiDocs) :
+            new AhkStruct(reader, typeDef, apiDocs);
+            
         /*
         string fqn = reader.GetString(typeDef.Namespace) + "." + reader.GetString(typeDef.Name);
         AhkStruct? ahkStruct = Get(fqn);
@@ -48,11 +52,11 @@ public partial class AhkStruct : AhkType
         return reader.GetString(td.Namespace) + "." + reader.GetString(td.Name);
     }
 
-    internal IEnumerable<AhkStructMember> Members { get; private set; }
+    protected IEnumerable<AhkStructMember> Members { get; private set; }
 
     private readonly LayoutKind Layout;
 
-    private AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
+    private protected AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
     {
         PackingSize = EstimatePackingSize();
         Layout = GetLayoutKind();
@@ -139,5 +143,38 @@ public partial class AhkStruct : AhkType
         if (!relativePath.EndsWith(Path.DirectorySeparatorChar))
             relativePath += Path.DirectorySeparatorChar;
         return relativePath;
+    }
+
+    public bool HasCustomAttribute(params string[] attrs)
+    {
+        return CustomAttributes.Any(c => attrs.Contains(c.Name));
+    }
+
+    public CAInfo GetCustomAttribute(string attr, StringComparison comparison = default)
+    {
+        return CustomAttributes.Single(c => c.Name.Equals(attr, comparison));
+    }
+
+    public List<CAInfo> GetCustomAttributes(string attr, StringComparison comparison = default)
+    {
+        return CustomAttributes.FindAll(c => c.Name.Equals(attr, comparison));
+    }
+
+    public CAInfo? MaybeGetCustomAttribute(string attr)
+    {
+        CAInfo found = CustomAttributes.SingleOrDefault(c => c.Name == attr);
+        return found == default ? null : found;
+    }
+
+    static readonly ReadOnlyCollection<string> HandleAttrs = new(["RAIIFreeAttribute", "AlsoUsableForAttribute", "InvalidHandleValueAttribute"]);
+
+    /// <summary>
+    /// Try to figure out whether or not this struct is a handle type.
+    /// </summary>
+    /// <returns></returns>
+    private static bool IsHandle(MetadataReader mr, TypeDefinition td)
+    {
+        IEnumerable<string> attrs = CustomAttributeDecoder.GetAllNames(mr, td);
+        return td.GetFields().Count == 1 && attrs.Any(HandleAttrs.Contains);
     }
 }
