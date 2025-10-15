@@ -9,7 +9,9 @@ public enum CustomParamAttributes
     Constant = 2,
     SizedBuffer = 4,
     ComOutPtr = 8,
-    RetVal = 16
+    RetVal = 16,
+    DoNotRelease = 32,
+    HasIgnoreIfReturn = 64  // Caller will need to decode the value but we can indicate that it exists
 }
 
 public readonly record struct AhkParameter
@@ -44,6 +46,8 @@ public readonly record struct AhkParameter
     public bool Reserved => CustomAttributes.HasFlag(CustomParamAttributes.Reserved);
     public bool IsReturnValue => CustomAttributes.HasFlag(CustomParamAttributes.RetVal);
     public bool IsComOutPtr => CustomAttributes.HasFlag(CustomParamAttributes.ComOutPtr);
+    public bool ScriptOwned => !CustomAttributes.HasFlag(CustomParamAttributes.DoNotRelease);
+    public bool HasIgnoreIfReturn => CustomAttributes.HasFlag(CustomParamAttributes.HasIgnoreIfReturn);
 
     public bool IsPtr => FieldInfo.Kind == SimpleFieldKind.Pointer;
     public bool IsPrimitive => FieldInfo.Kind == SimpleFieldKind.Primitive;

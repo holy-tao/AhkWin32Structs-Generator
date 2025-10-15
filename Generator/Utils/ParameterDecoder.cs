@@ -85,6 +85,8 @@ public class ParameterDecoder
                 "MemorySizeAttribute" => CustomParamAttributes.SizedBuffer,
                 "ComOutPtrAttribute" => CustomParamAttributes.ComOutPtr,
                 "RetValAttribute" => CustomParamAttributes.RetVal,
+                "DoNotReleaseAttribute" => CustomParamAttributes.DoNotRelease,
+                "IgnoreIfReturnAttribute" => CustomParamAttributes.HasIgnoreIfReturn,
                 _ => 0
             };
         }

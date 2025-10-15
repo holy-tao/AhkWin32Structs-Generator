@@ -118,18 +118,47 @@ class AhkMethod
             sb.AppendLine();
         }
 
-        if (HasReturnValue && ShouldThrowForReturnValue())
+        if (HasReturnValue)
+            AppendReturnStatement(sb, parameters[0]);
+
+        sb.AppendLine($"    }}");
+    }
+
+    private void AppendReturnStatement(StringBuilder sb, AhkParameter returnValue)
+    {
+        // The function returns an HRESULT and we should check to see if we need to throw
+        if (ShouldThrowForReturnValue())
         {
-            // The function returns an HRESULT and we should check to see if we need to throw
             sb.AppendLine($"        if(result != 0)");
             sb.AppendLine($"            throw OSError(result)");
             sb.AppendLine();
         }
 
-        if (HasReturnValue)
-            sb.AppendLine("        return result");
+        // We need to wrap handles and decide ownership & validity
+        if (returnValue.IsHandle(mr))
+        {
+            TypeDefinition returnValueType = returnValue.FieldInfo.TypeDef ?? throw new NullReferenceException();
 
-        sb.AppendLine($"    }}");
+            if (returnValue.HasIgnoreIfReturn)
+            {
+                var conditions = CustomAttributeDecoder.DecodeAll(mr, returnValueType)
+                    .Where(attr => attr.Name == "IgnoreIfReturnAttribute")
+                    .Select(info => info.Attr.FixedArguments[0].Value)
+                    .Select(v => $"result == {(long)(v ?? throw new NullReferenceException())}");
+                string orStatement = string.Join(" || ", conditions);
+
+                sb.AppendLine($"        if({orStatement})");
+                sb.AppendLine($"            return {returnValue.Name}.Invalid()");
+                sb.AppendLine();
+            }
+
+            string fieldName = mr.GetString(mr.GetFieldDefinition(returnValueType.GetFields().First()).Name);
+            sb.AppendLine($"        return {returnValue.GetTypeDefName(mr)}({{{fieldName}: result}}, {returnValue.ScriptOwned})");
+        }
+        else
+        {
+            sb.AppendLine("        return result");
+        }
     }
 
     /// <summary>
@@ -154,6 +183,12 @@ class AhkMethod
                 .Select(mr.GetTypeDefinition)
                 .Where(td => dllLoadRequired.Contains(AhkStruct.GetFqn(mr, td)))
                 .ToList());
+        }
+
+        // If the return type is a handle, we need to import the handle
+        if (HasReturnValue && parameters[0].IsHandle(mr))
+        {
+            referencedTypes.Add(parameters[0].FieldInfo.TypeDef ?? throw new NullReferenceException());
         }
 
         return referencedTypes;
