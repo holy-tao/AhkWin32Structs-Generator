@@ -51,8 +51,7 @@ public class Program
                 IAhkEmitter? emitter = ParseType(mr, typeDef, apiDocs);
                 if (emitter == null)
                 {
-
-                    Debug.WriteLine($">>> Skipped {baseTypeName}: {mr.GetString(typeDef.Namespace)}.{typeName}");
+                    Debug.WriteLine($"Non-explicit skip for {baseTypeName} {mr.GetString(typeDef.Namespace)}.{typeName}");
                     continue;
                 }
 
@@ -65,8 +64,6 @@ public class Program
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"!!! {ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
-
                 Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
                 Console.Error.WriteLine(ex.Message);
                 Console.Error.WriteLine(ex.StackTrace);
@@ -109,12 +106,8 @@ public class Program
         baseTypeName = mr.GetString(baseTypeRef.Name);
         typeName = mr.GetString(typeDef.Name);
 
-        // Probably an opaque pointer or handle type. In any case, an AHK we can just use an Integer
-        if (typeDef.GetFields().Count == 0)
-            return true;
-
         // MultiCastDelegate means function pointer
-        if (baseTypeName == "MultiCastDelegate")
+        if (baseTypeName is "MulticastDelegate" or "Attribute")
             return true;
 
         if (typeDef.IsNested)
