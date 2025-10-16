@@ -165,7 +165,7 @@ public class AhkStructMember
         sb.AppendLine($"    {Name}{{");
         sb.AppendLine("        get {");
         sb.AppendLine($"            if(!this.HasProp(\"__{Name}\"))");
-        sb.AppendLine($"                this.__{Name} := {qualifiedName}(this.ptr + {offset})");
+        sb.AppendLine($"                this.__{Name} := {qualifiedName}({offset}, this)");
         sb.AppendLine($"            return this.__{Name}");
         sb.AppendLine("        }");
         sb.AppendLine("    }");

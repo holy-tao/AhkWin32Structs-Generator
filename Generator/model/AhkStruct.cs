@@ -149,12 +149,8 @@ public partial class AhkStruct : AhkType
         var arg = decoded.FixedArguments[0];
 
         sb.AppendLine();
-        sb.AppendLine("    /**");
-        sb.AppendLine($"     * Initializes the struct. `{arg.Value}` must always contain the size of the struct.");
-        sb.AppendLine($"     * @param {{Integer}} ptr The location at which to create the struct, or 0 to create a new `Buffer`");
-        sb.AppendLine("     */");
-        sb.AppendLine("    __New(ptr := 0){");
-        sb.AppendLine("        super.__New(ptr)");
+        sb.AppendLine("    __New(ptrOrObj := 0, parent := \"\"){");
+        sb.AppendLine("        super.__New(ptrOrObj, parent)");
         sb.AppendLine($"        this.{arg.Value} := {Size}");
         sb.AppendLine("    }");
     }
