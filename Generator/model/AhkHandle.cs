@@ -59,10 +59,7 @@ class AhkHandle : AhkStruct
         string apisCls = Namespace.Split(".").Last();
 
         sb.AppendLine();
-        sb.AppendLine("    __Delete(){");
-        sb.AppendLine("        if(!this.owned)");
-        sb.AppendLine("            return");
-        sb.AppendLine();
+        sb.AppendLine("    Free(){");
         sb.AppendLine($"        {apisCls}.{FreeFunc}(this.{Members.First().Name})");
         sb.AppendLine($"        this.{Members.First().Name} := {InvalidValues.FirstOrDefault()}");
         sb.AppendLine("    }");
