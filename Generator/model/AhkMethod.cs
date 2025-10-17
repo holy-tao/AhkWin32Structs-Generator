@@ -32,13 +32,13 @@ class AhkMethod
 
     private readonly List<CAInfo> CustomAttributes;
 
-    public AhkMethod(MetadataReader mr, MethodDefinition methodDef, Dictionary<string, ApiDetails> apiDocs)
+    public AhkMethod(MetadataReader mr, MethodDefinition methodDef)
     {
         this.mr = mr;
         this.methodDef = methodDef;
         CustomAttributes = CustomAttributeDecoder.DecodeAll(mr, methodDef);
 
-        apiDocs.TryGetValue(Name, out apiDetails);
+        Program.ApiDocs.TryGetValue(Name, out apiDetails);
 
         import = methodDef.GetImport();
         parameters = ParameterDecoder.DecodeParameters(mr, methodDef);

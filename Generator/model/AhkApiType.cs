@@ -12,7 +12,7 @@ class AhkApiType : AhkType
     List<ConstantInfo> constants = [];
     List<AhkMethod> methods = [];
 
-    public AhkApiType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
+    public AhkApiType(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
     {
         // Constants
         foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
@@ -38,7 +38,7 @@ class AhkApiType : AhkType
         }
 
         methods = typeDef.GetMethods()
-            .Select(handle => new AhkMethod(mr, mr.GetMethodDefinition(handle), apiDocs))
+            .Select(handle => new AhkMethod(mr, mr.GetMethodDefinition(handle)))
             .DistinctBy(method => method.Name)
             .ToList();
     }

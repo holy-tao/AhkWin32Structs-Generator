@@ -11,7 +11,6 @@ public abstract class AhkType : IAhkEmitter
 
     private protected readonly MetadataReader mr;
     public readonly TypeDefinition typeDef;
-    private protected readonly Dictionary<string, ApiDetails> apiDocs;
 
     private protected readonly ApiDetails? apiDetails;
 
@@ -42,17 +41,16 @@ public abstract class AhkType : IAhkEmitter
 
     public readonly List<CAInfo> CustomAttributes;
 
-    public AhkType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
+    public AhkType(MetadataReader mr, TypeDefinition typeDef)
     {
         this.mr = mr;
         this.typeDef = typeDef;
-        this.apiDocs = apiDocs;
 
         CustomAttributes = CustomAttributeDecoder.DecodeAll(mr, typeDef);
 
         flags = GetFlags();
 
-        apiDocs.TryGetValue(Name, out apiDetails);
+        Program.ApiDocs.TryGetValue(Name, out apiDetails);
     }
 
     public abstract void ToAhk(StringBuilder sb);

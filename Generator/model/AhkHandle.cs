@@ -9,7 +9,7 @@ class AhkHandle : AhkStruct
 
     private readonly List<long> InvalidValues;
 
-    public AhkHandle(MetadataReader reader, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(reader, typeDef, apiDocs)
+    public AhkHandle(MetadataReader reader, TypeDefinition typeDef) : base(reader, typeDef)
     {
         CAInfo? RAIIFree = MaybeGetCustomAttribute("RAIIFreeAttribute");
         FreeFunc = (string?)RAIIFree?.Attr.FixedArguments[0].Value;

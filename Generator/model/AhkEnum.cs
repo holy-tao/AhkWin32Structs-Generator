@@ -7,7 +7,7 @@ public class AhkEnum : AhkType
 {
     private readonly List<ConstantInfo> constants;
 
-    public AhkEnum(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
+    public AhkEnum(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
     {
         constants = new List<ConstantInfo>();
 
