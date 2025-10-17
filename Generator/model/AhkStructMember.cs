@@ -146,7 +146,12 @@ public class AhkStructMember
             case SimpleFieldKind.Pointer:
             case SimpleFieldKind.COM:
             case SimpleFieldKind.HRESULT:
-                ToAhkNumericMember(sb, offset + embeddingOfset);
+                ToAhkNumericMember(sb, offset + embeddingOfset, fieldInfo);
+                break;
+            case SimpleFieldKind.NativeTypedef:
+                if (fieldInfo.UnderlyingType == null)
+                    throw new NullReferenceException();
+                ToAhkNumericMember(sb, offset + embeddingOfset, fieldInfo.UnderlyingType);
                 break;
             default:
                 throw new NotSupportedException($"Unsupported type (field {Name}): {fieldInfo.Kind}");
@@ -165,7 +170,7 @@ public class AhkStructMember
         sb.AppendLine($"    {Name}{{");
         sb.AppendLine("        get {");
         sb.AppendLine($"            if(!this.HasProp(\"__{Name}\"))");
-        sb.AppendLine($"                this.__{Name} := {qualifiedName}(this.ptr + {offset})");
+        sb.AppendLine($"                this.__{Name} := {qualifiedName}({offset}, this)");
         sb.AppendLine($"            return this.__{Name}");
         sb.AppendLine("        }");
         sb.AppendLine("    }");
@@ -195,7 +200,7 @@ public class AhkStructMember
 
     // https://www.autohotkey.com/docs/v2/lib/NumPut.htm
     // https://www.autohotkey.com/docs/v2/lib/NumGet.htm
-    public void ToAhkNumericMember(StringBuilder sb, int offset)
+    public void ToAhkNumericMember(StringBuilder sb, int offset, FieldInfo fieldInfo)
     {
         sb.AppendLine($"    {Name} {{");
         sb.AppendLine($"        get => NumGet(this, {offset}, \"{fieldInfo.GetDllCallType(true)}\")");
@@ -220,7 +225,10 @@ public class AhkStructMember
 
     private void AppendBitFieldMembers(StringBuilder sb)
     {
-        bitfields.ForEach(bf => AppendBitfieldMember(sb, bf));
+        bitfields
+            .Where(bf => bf.Name is not "Reserved")
+            .ToList()
+            .ForEach(bf => AppendBitfieldMember(sb, bf));
     }
 
     private void AppendBitfieldMember(StringBuilder sb, BitfieldMember bitfield)
@@ -250,8 +258,8 @@ public class AhkStructMember
 
         string ahkElementType = arrTypeInfo.Kind switch
         {
-            SimpleFieldKind.Primitive or SimpleFieldKind.Pointer or SimpleFieldKind.COM => "Primitive",
-            SimpleFieldKind.Struct => (arrTypeInfo.TypeDef?.IsNested ?? false) ? 
+            SimpleFieldKind.Primitive or SimpleFieldKind.Pointer or SimpleFieldKind.COM or SimpleFieldKind.NativeTypedef => "Primitive",
+            SimpleFieldKind.Struct => (arrTypeInfo.TypeDef?.IsNested ?? false) ?
                 $"%this.__Class%.{arrTypeInfo.TypeName}" :   //TODO a nicer way to do this woud be to walk up parents
                 arrTypeInfo.TypeName,
             _ => arrTypeInfo.TypeName
@@ -260,7 +268,9 @@ public class AhkStructMember
         string dllCallType = arrTypeInfo.Kind switch
         {
             SimpleFieldKind.Primitive => arrTypeInfo.GetDllCallType(false),
-            SimpleFieldKind.Pointer or SimpleFieldKind.COM=> "ptr",
+            SimpleFieldKind.Pointer or SimpleFieldKind.COM => "ptr",
+            SimpleFieldKind.NativeTypedef => arrTypeInfo.UnderlyingType?.GetDllCallType(false)
+                ?? throw new NullReferenceException(),
             _ => ""
         };            
 

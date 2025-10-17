@@ -61,6 +61,7 @@ class AhkApiType : AhkType
     private void HeadersToAhk(StringBuilder sb)
     {
         sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
+        sb.Append($"#Include {GetPathToBase()}Win32Handle.ahk");
         sb.AppendLine();
 
         List<TypeDefinition> imports = [];

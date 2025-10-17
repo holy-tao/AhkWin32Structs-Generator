@@ -13,10 +13,10 @@ public partial class AhkStruct : AhkType
 
     public bool IsUnion => flags.HasFlag(MemberFlags.Union);
 
-    internal void ToAhk(StringBuilder sb, bool headers, List<AhkStructMember> emittedMembers)
+    public virtual void ToAhk(StringBuilder sb, bool headers, List<AhkStructMember> emittedMembers)
     {
-        if (headers)
-            HeadersToAhk(sb);
+        HeadersToAhk(sb);
+        sb.AppendLine();
 
         MaybeAddTypeDocumentation(sb);
         sb.AppendLine($"class {Name} extends Win32Struct");
@@ -30,16 +30,12 @@ public partial class AhkStruct : AhkType
         sb.AppendLine("}");
     }
 
-    // Devices.BiometricFramework.WINBIO_ASYNC_RESULT not importing e.g. WINBIO_IDENTITY or WINBIO_PROTECTION POLICY
-    private void HeadersToAhk(StringBuilder sb)
+    private protected void HeadersToAhk(StringBuilder sb)
     {
         // Path to Win32Struct.ahk, expecting it to be in the root of wherever we're making this class
-        string pathToBase = Namespace.Split(".")
-            .Select(val => $"..{Path.DirectorySeparatorChar}")
-            .Aggregate((agg, cur) => agg + cur);
 
         sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
-        sb.AppendLine($"#Include {pathToBase}Win32Struct.ahk");
+        sb.AppendLine($"#Include {GetPathToBase()}Win32Struct.ahk");
 
         // Generate #Include statements for embedded structs
         var importedTypes = new List<string>();
@@ -62,8 +58,6 @@ public partial class AhkStruct : AhkType
             sb.AppendLine($"#Include {sbPath}{m.fieldInfo.TypeName}.ahk");
             importedTypes.Add(m.fieldInfo.TypeName);
         }
-
-        sb.AppendLine();
     }
 
     // Get all members of the struct for which we should generate #Include statements,
@@ -91,6 +85,7 @@ public partial class AhkStruct : AhkType
 
         IEnumerable<AhkStruct> embeddedAnonymousStructs = Members
             .Where(m => m.IsNested && !m.flags.HasFlag(MemberFlags.Union) && !m.flags.HasFlag(MemberFlags.Anonymous))
+            .Where(m => m.Name is not "Reserved")
             .Select(m => m.embeddedStruct ??
                 throw new NullReferenceException($"{Name}.{m.Name} has no nested type information"))
             .DistinctBy(s => s.Name);
@@ -145,23 +140,18 @@ public partial class AhkStruct : AhkType
         // Check for [StructSizeField("<FIELDNAME>")] and generate a __New method if there is one
         // This seems to only pick up cbSize members. But e.g. TTVALIDATIONTESTSPARAMS.ulStructSize should also have this
         // TODO open an issue
-        CustomAttribute? sizeFieldAttr = CustomAttributeDecoder.GetAttribute(mr, typeDef, "StructSizeFieldAttribute");
-        if (sizeFieldAttr.HasValue)
-            GenerateAhkNew(sb, sizeFieldAttr.Value);
+        CAInfo sizeFieldAttr = CustomAttributes.SingleOrDefault(c => c.Name is "StructSizeFieldAttribute");
+        if (sizeFieldAttr != default)
+            GenerateAhkNew(sb, sizeFieldAttr.Attr);
     }
 
-    private void GenerateAhkNew(StringBuilder sb, CustomAttribute sizeFieldAttr)
+    private void GenerateAhkNew(StringBuilder sb, CustomAttributeValue<string> decoded)
     {
-        CustomAttributeValue<string> decoded = sizeFieldAttr.DecodeValue(new CaTypeProvider());
         var arg = decoded.FixedArguments[0];
 
         sb.AppendLine();
-        sb.AppendLine("    /**");
-        sb.AppendLine($"     * Initializes the struct. `{arg.Value}` must always contain the size of the struct.");
-        sb.AppendLine($"     * @param {{Integer}} ptr The location at which to create the struct, or 0 to create a new `Buffer`");
-        sb.AppendLine("     */");
-        sb.AppendLine("    __New(ptr := 0){");
-        sb.AppendLine("        super.__New(ptr)");
+        sb.AppendLine("    __New(ptrOrObj := 0, parent := \"\"){");
+        sb.AppendLine("        super.__New(ptrOrObj, parent)");
         sb.AppendLine($"        this.{arg.Value} := {Size}");
         sb.AppendLine("    }");
     }

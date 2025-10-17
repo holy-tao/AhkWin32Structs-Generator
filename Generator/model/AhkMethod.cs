@@ -30,10 +30,14 @@ class AhkMethod
 
     private readonly List<AhkParameter> parameters = [];
 
+    private readonly List<CAInfo> CustomAttributes;
+
     public AhkMethod(MetadataReader mr, MethodDefinition methodDef, Dictionary<string, ApiDetails> apiDocs)
     {
         this.mr = mr;
         this.methodDef = methodDef;
+        CustomAttributes = CustomAttributeDecoder.DecodeAll(mr, methodDef);
+
         apiDocs.TryGetValue(Name, out apiDetails);
 
         import = methodDef.GetImport();
@@ -67,21 +71,18 @@ class AhkMethod
             sb.AppendLine();
         }
 
-#pragma warning disable CS8629 // Nullable value type may be null.
-        List<AhkParameter> stringParams = [.. parameters[1..]
-            .Where(p => p.FieldInfo.TypeDef.HasValue)
-            .Where(p => mr.GetString(p.FieldInfo.TypeDef.Value.Name) is "PWSTR" or "PSTR")];
-#pragma warning restore CS8629 // Nullable value type may be null.
+        // Allow string literals and dereference handles
+        var stringParams = parameters[1..].Where(p => p.GetTypeDefName(mr) is "PWSTR" or "PSTR").ToList();
+        var handleParams = parameters[1..].Where(p => p.IsHandle(mr)).ToList();
 
-        if (stringParams.Count > 0)
+        stringParams.ForEach(param => sb.AppendLine($"        {param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}"));
+        handleParams.ForEach(param => sb.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}"));
+
+        if (stringParams.Count > 0 || handleParams.Count > 0)
         {
-            foreach (AhkParameter param in stringParams)
-            {
-                sb.AppendLine($"        {param.Name} := {param.Name} is String? StrPtr({param.Name}) : {param.Name}");
-            }
             sb.AppendLine();
         }
-
+        
         bool epIsOrd = EntryPoint.StartsWith('#');  //Is the EntryPoint and ordinal?
 
         if (SetsLastError)
@@ -117,18 +118,47 @@ class AhkMethod
             sb.AppendLine();
         }
 
-        if (HasReturnValue && ShouldThrowForReturnValue())
+        if (HasReturnValue)
+            AppendReturnStatement(sb, parameters[0]);
+
+        sb.AppendLine($"    }}");
+    }
+
+    private void AppendReturnStatement(StringBuilder sb, AhkParameter returnValue)
+    {
+        // The function returns an HRESULT and we should check to see if we need to throw
+        if (ShouldThrowForReturnValue())
         {
-            // The function returns an HRESULT and we should check to see if we need to throw
             sb.AppendLine($"        if(result != 0)");
             sb.AppendLine($"            throw OSError(result)");
             sb.AppendLine();
         }
 
-        if (HasReturnValue)
-            sb.AppendLine("        return result");
+        // We need to wrap handles and decide ownership & validity
+        if (returnValue.IsHandle(mr))
+        {
+            TypeDefinition returnValueType = returnValue.FieldInfo.TypeDef ?? throw new NullReferenceException();
 
-        sb.AppendLine($"    }}");
+            if (returnValue.HasIgnoreIfReturn)
+            {
+                var conditions = CustomAttributeDecoder.DecodeAll(mr, returnValueType)
+                    .Where(attr => attr.Name == "IgnoreIfReturnAttribute")
+                    .Select(info => info.Attr.FixedArguments[0].Value)
+                    .Select(v => $"result == {(long)(v ?? throw new NullReferenceException())}");
+                string orStatement = string.Join(" || ", conditions);
+
+                sb.AppendLine($"        if({orStatement})");
+                sb.AppendLine($"            return {returnValue.Name}.Invalid()");
+                sb.AppendLine();
+            }
+
+            string fieldName = mr.GetString(mr.GetFieldDefinition(returnValueType.GetFields().First()).Name);
+            sb.AppendLine($"        return {returnValue.GetTypeDefName(mr)}({{{fieldName}: result}}, {returnValue.ScriptOwned})");
+        }
+        else
+        {
+            sb.AppendLine("        return result");
+        }
     }
 
     /// <summary>
@@ -153,6 +183,12 @@ class AhkMethod
                 .Select(mr.GetTypeDefinition)
                 .Where(td => dllLoadRequired.Contains(AhkStruct.GetFqn(mr, td)))
                 .ToList());
+        }
+
+        // If the return type is a handle, we need to import the handle
+        if (HasReturnValue && parameters[0].IsHandle(mr))
+        {
+            referencedTypes.Add(parameters[0].FieldInfo.TypeDef ?? throw new NullReferenceException());
         }
 
         return referencedTypes;
@@ -278,14 +314,13 @@ class AhkMethod
         if (CharSet == MethodImportAttributes.CharSetUnicode)
             sb.AppendLine($"     * @charset Unicode");
 
-        if (CustomAttributeDecoder.GetAttribute(mr, methodDef, "ObsoleteAttribute") != null)
+        if (CustomAttributes.Any(c => c.Name is "ObsoleteAttribute"))
             sb.AppendLine($"     * @deprecated");
 
-        CustomAttribute? osPlatform = CustomAttributeDecoder.GetAttribute(mr, methodDef, "SupportedOSPlatformAttribute");
-        if (osPlatform != null)
+        CAInfo osPlatform = CustomAttributes.SingleOrDefault(c => c.Name is "SupportedOSPlatformAttribute");
+        if (osPlatform != default)
         {
-            var decoded = osPlatform.Value.DecodeValue(new CaTypeProvider());
-            sb.AppendLine($"     * @since {decoded.FixedArguments[0].Value ?? ""}");
+            sb.AppendLine($"     * @since {osPlatform.Attr.FixedArguments[0].Value ?? ""}");
         }
 
         sb.AppendLine("     */");
@@ -308,11 +343,10 @@ class AhkMethod
             return false;
         }
 
-        CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(mr, methodDef, "PreserveSigAttribute");
-        if (attr.HasValue)
+        CAInfo attr = CustomAttributes.SingleOrDefault(c => c.Name is "PreserveSigAttribute");
+        if (attr != default)
         {
-            var attrVal = ((CustomAttribute)attr).DecodeValue(new CaTypeProvider());
-            bool hasPreserveSig = ((bool?)attrVal.FixedArguments[0].Value) ?? true;
+            bool hasPreserveSig = ((bool?)attr.Attr.FixedArguments[0].Value) ?? true;
 
             // https://github.com/microsoft/win32metadata/issues/1315#issuecomment-1281559120
             if (!hasPreserveSig)
@@ -321,17 +355,9 @@ class AhkMethod
             }
             else
             {
-                // Check for [CanReturnMultipleSuccessValues] or [CanReturnErrorsAsSuccess]
-                foreach (string attrName in CustomAttributeDecoder.GetAllNames(mr, methodDef))
-                {
-                    if (attrName is "CanReturnMultipleSuccessValuesAttribute" or "CanReturnErrorsAsSuccessAttribute")
-                    {
-                        return false;
-                    }
-                }
+                return !CustomAttributes.Any(c => c.Name is "CanReturnMultipleSuccessValuesAttribute" or "CanReturnErrorsAsSuccessAttribute");
             }
         }
-
 
         return true;
     }

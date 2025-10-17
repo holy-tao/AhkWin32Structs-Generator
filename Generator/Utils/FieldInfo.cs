@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
 
 public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, TypeDefinition? TypeDef = null, FieldInfo? UnderlyingType = null)
@@ -45,19 +46,32 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                 case "typehandle":
                     return "ptr";
                 default:
-                    throw new NotSupportedException(TypeName);
+                    return "ptr";   // A pointer-sized NativeTypedef
             }
         }
         else if (Kind == SimpleFieldKind.HRESULT)
         {
             return "int";   // 32-bit integers under the hood
         }
+        else if(Kind == SimpleFieldKind.NativeTypedef)
+        {
+            return UnderlyingType?.GetDllCallType(useNakedPointer) ?? throw new NullReferenceException();
+        }
         else if (Kind == SimpleFieldKind.Pointer)
         {
-            if (!useNakedPointer && UnderlyingType != null &&
-                UnderlyingType.Kind == SimpleFieldKind.Primitive && UnderlyingType.TypeName != "Void")
+            if (!useNakedPointer && UnderlyingType != null)
             {
-                return UnderlyingType.GetDllCallType(useNakedPointer) + '*';
+                if (UnderlyingType.Kind == SimpleFieldKind.Pointer)
+                {
+                    return UnderlyingType.GetDllCallType(useNakedPointer);
+                }
+                else if (UnderlyingType.Kind == SimpleFieldKind.Primitive)
+                {
+                    if (UnderlyingType.TypeName.ToLowerInvariant() != "void")
+                    {
+                        return UnderlyingType.GetDllCallType(useNakedPointer) + '*';
+                    }
+                }
             }
 
             return "ptr";
@@ -116,6 +130,10 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         {
             return 4;
         }
+        else if(Kind == SimpleFieldKind.NativeTypedef)
+        {
+            return UnderlyingType?.GetWidth(ansi) ?? throw new NullReferenceException();
+        }
         else
         {
             // Else assume pointer
@@ -171,6 +189,10 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
             else if (Kind == SimpleFieldKind.HRESULT)
             {
                 return "HRESULT";
+            }
+            else if (Kind == SimpleFieldKind.Struct || Kind == SimpleFieldKind.Class || Kind == SimpleFieldKind.NativeTypedef)
+            {
+                return TypeName;
             }
             else
             {
