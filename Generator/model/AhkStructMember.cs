@@ -225,7 +225,10 @@ public class AhkStructMember
 
     private void AppendBitFieldMembers(StringBuilder sb)
     {
-        bitfields.ForEach(bf => AppendBitfieldMember(sb, bf));
+        bitfields
+            .Where(bf => bf.Name is not "Reserved")
+            .ToList()
+            .ForEach(bf => AppendBitfieldMember(sb, bf));
     }
 
     private void AppendBitfieldMember(StringBuilder sb, BitfieldMember bitfield)

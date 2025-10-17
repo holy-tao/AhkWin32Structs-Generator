@@ -85,6 +85,7 @@ public partial class AhkStruct : AhkType
 
         IEnumerable<AhkStruct> embeddedAnonymousStructs = Members
             .Where(m => m.IsNested && !m.flags.HasFlag(MemberFlags.Union) && !m.flags.HasFlag(MemberFlags.Anonymous))
+            .Where(m => m.Name is not "Reserved")
             .Select(m => m.embeddedStruct ??
                 throw new NullReferenceException($"{Name}.{m.Name} has no nested type information"))
             .DistinctBy(s => s.Name);
