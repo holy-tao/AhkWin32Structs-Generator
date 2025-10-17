@@ -11,5 +11,6 @@
     <PackageReference Include="MessagePack" Version="3.1.4" />
     <PackageReference Include="Microsoft.Windows.SDK.Win32Docs" Version="0.1.42-alpha" />
     <PackageReference Include="Microsoft.Windows.SDK.Win32Metadata" Version="64.0.22-preview" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>
 </Project>
