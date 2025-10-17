@@ -255,8 +255,8 @@ public class AhkStructMember
 
         string ahkElementType = arrTypeInfo.Kind switch
         {
-            SimpleFieldKind.Primitive or SimpleFieldKind.Pointer or SimpleFieldKind.COM => "Primitive",
-            SimpleFieldKind.Struct => (arrTypeInfo.TypeDef?.IsNested ?? false) ? 
+            SimpleFieldKind.Primitive or SimpleFieldKind.Pointer or SimpleFieldKind.COM or SimpleFieldKind.NativeTypedef => "Primitive",
+            SimpleFieldKind.Struct => (arrTypeInfo.TypeDef?.IsNested ?? false) ?
                 $"%this.__Class%.{arrTypeInfo.TypeName}" :   //TODO a nicer way to do this woud be to walk up parents
                 arrTypeInfo.TypeName,
             _ => arrTypeInfo.TypeName
@@ -265,7 +265,9 @@ public class AhkStructMember
         string dllCallType = arrTypeInfo.Kind switch
         {
             SimpleFieldKind.Primitive => arrTypeInfo.GetDllCallType(false),
-            SimpleFieldKind.Pointer or SimpleFieldKind.COM=> "ptr",
+            SimpleFieldKind.Pointer or SimpleFieldKind.COM => "ptr",
+            SimpleFieldKind.NativeTypedef => arrTypeInfo.UnderlyingType?.GetDllCallType(false)
+                ?? throw new NullReferenceException(),
             _ => ""
         };            
 
