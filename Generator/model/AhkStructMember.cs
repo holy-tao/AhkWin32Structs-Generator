@@ -146,7 +146,12 @@ public class AhkStructMember
             case SimpleFieldKind.Pointer:
             case SimpleFieldKind.COM:
             case SimpleFieldKind.HRESULT:
-                ToAhkNumericMember(sb, offset + embeddingOfset);
+                ToAhkNumericMember(sb, offset + embeddingOfset, fieldInfo);
+                break;
+            case SimpleFieldKind.NativeTypedef:
+                if (fieldInfo.UnderlyingType == null)
+                    throw new NullReferenceException();
+                ToAhkNumericMember(sb, offset + embeddingOfset, fieldInfo.UnderlyingType);
                 break;
             default:
                 throw new NotSupportedException($"Unsupported type (field {Name}): {fieldInfo.Kind}");
@@ -195,7 +200,7 @@ public class AhkStructMember
 
     // https://www.autohotkey.com/docs/v2/lib/NumPut.htm
     // https://www.autohotkey.com/docs/v2/lib/NumGet.htm
-    public void ToAhkNumericMember(StringBuilder sb, int offset)
+    public void ToAhkNumericMember(StringBuilder sb, int offset, FieldInfo fieldInfo)
     {
         sb.AppendLine($"    {Name} {{");
         sb.AppendLine($"        get => NumGet(this, {offset}, \"{fieldInfo.GetDllCallType(true)}\")");

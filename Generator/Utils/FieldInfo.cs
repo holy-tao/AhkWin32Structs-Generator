@@ -46,12 +46,16 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                 case "typehandle":
                     return "ptr";
                 default:
-                    throw new NotSupportedException(TypeName);
+                    return "ptr";   // A pointer-sized NativeTypedef
             }
         }
         else if (Kind == SimpleFieldKind.HRESULT)
         {
             return "int";   // 32-bit integers under the hood
+        }
+        else if(Kind == SimpleFieldKind.NativeTypedef)
+        {
+            return UnderlyingType?.GetDllCallType(useNakedPointer) ?? throw new NullReferenceException();
         }
         else if (Kind == SimpleFieldKind.Pointer)
         {
@@ -61,15 +65,15 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                 {
                     return UnderlyingType.GetDllCallType(useNakedPointer);
                 }
-                else if(UnderlyingType.Kind == SimpleFieldKind.Primitive)
+                else if (UnderlyingType.Kind == SimpleFieldKind.Primitive)
                 {
-                    if(UnderlyingType.TypeName.ToLowerInvariant() != "void")
+                    if (UnderlyingType.TypeName.ToLowerInvariant() != "void")
                     {
                         return UnderlyingType.GetDllCallType(useNakedPointer) + '*';
                     }
                 }
             }
-            
+
             return "ptr";
         }
         else
@@ -125,6 +129,10 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         else if (Kind == SimpleFieldKind.HRESULT)
         {
             return 4;
+        }
+        else if(Kind == SimpleFieldKind.NativeTypedef)
+        {
+            return UnderlyingType?.GetWidth(ansi) ?? throw new NullReferenceException();
         }
         else
         {
@@ -182,7 +190,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
             {
                 return "HRESULT";
             }
-            else if (Kind == SimpleFieldKind.Struct || Kind == SimpleFieldKind.Class)
+            else if (Kind == SimpleFieldKind.Struct || Kind == SimpleFieldKind.Class || Kind == SimpleFieldKind.NativeTypedef)
             {
                 return TypeName;
             }

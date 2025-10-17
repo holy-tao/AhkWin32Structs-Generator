@@ -11,5 +11,6 @@ public enum SimpleFieldKind
     Other,      // unhandled, will produce an error
     COM,        // A pointer to a COM Interface
     String,     // A string buffer for which we can use StrPut / StrGet (usually a character array)
-    HRESULT     // An int that's specifically an HRESULT
+    HRESULT,     // An int that's specifically an HRESULT
+    NativeTypedef
 }

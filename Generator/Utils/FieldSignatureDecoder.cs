@@ -11,7 +11,7 @@ public static class FieldSignatureDecoder
         if (header != (byte)SignatureKind.Field)
             throw new BadImageFormatException("Not a field signature");
 
-        return fieldDef.DecodeSignature(new FieldSignatureProvider(reader), null);
+        return fieldDef.DecodeSignature(new FieldSignatureProvider(reader), new());
     }
 
     public static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle)
@@ -19,9 +19,13 @@ public static class FieldSignatureDecoder
         var td = reader.GetTypeDefinition(tdHandle);
         string typeName = reader.GetString(td.Name);
 
-        if(typeName == "HRESULT")
+        if (typeName == "HRESULT")
         {
             return new FieldInfo(SimpleFieldKind.HRESULT, "HRESULT", 0, td);
+        }
+        else if(IsNonHandleNativeTypedef(reader, td))
+        {
+            return DecodeNativeTypedef(reader, td);
         }
         else if (IsEnum(reader, tdHandle))
         {
@@ -97,7 +101,7 @@ public static class FieldSignatureDecoder
             var fd = reader.GetFieldDefinition(fieldHandle);
             if (reader.StringComparer.Equals(fd.Name, "value__"))
             {
-                return fd.DecodeSignature(new FieldSignatureProvider(reader), null).TypeName;
+                return fd.DecodeSignature(new FieldSignatureProvider(reader), new()).TypeName;
             }
         }
         return "Int32";
@@ -111,6 +115,26 @@ public static class FieldSignatureDecoder
     {
         TypeDefinition typeDef = reader.GetTypeDefinition(defHandle);
         return CustomAttributeDecoder.GetAllNames(reader, typeDef).Contains("UnmanagedFunctionPointerAttribute");
+    }
+
+    public static bool IsNonHandleNativeTypedef(MetadataReader mr, TypeDefinition typeDef)
+    {
+        return CustomAttributeDecoder.GetAllNames(mr, typeDef).Contains("NativeTypedefAttribute")
+            && !AhkStruct.IsHandle(mr, typeDef)
+            && typeDef.GetFields().Count == 1;
+    }
+
+    public static FieldInfo DecodeNativeTypedef(MetadataReader mr, TypeDefinition typeDef)
+    {
+        FieldDefinition fieldDef = mr.GetFieldDefinition(typeDef.GetFields().First());
+        
+        return new FieldInfo(
+            SimpleFieldKind.NativeTypedef,
+            mr.GetString(typeDef.Name),
+            0,
+            typeDef,
+            fieldDef.DecodeSignature(new FieldSignatureProvider(mr, typeDef), new())
+        );
     }
 
     public static TypeDefinitionHandle? ResolveTypeReference(MetadataReader reader, TypeReferenceHandle trHandle)
