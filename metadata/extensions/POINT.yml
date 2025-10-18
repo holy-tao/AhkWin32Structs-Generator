@@ -1,0 +1,14 @@
+add-to:
+  - Windows.Win32.Foundation.POINT
+  - Windows.Win32.Foundation.POINTL
+requires: []
+code: |
+    /**
+     * Many Win32 APIs take points as 64-bit integer value types.
+     * This will return the POINT in a compatible format
+     */
+    Value => NumGet(this, "uint64")
+
+    ToString() {
+        return Format("({1}, {2})", this.x, this.y)
+    }
