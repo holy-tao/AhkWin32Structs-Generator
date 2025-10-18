@@ -135,6 +135,8 @@ public partial class AhkStruct : AhkType
             emittedMembers.Add(m);
         }
 
+        extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
+
         // Check for [StructSizeField("<FIELDNAME>")] and generate a __New method if there is one
         // This seems to only pick up cbSize members. But e.g. TTVALIDATIONTESTSPARAMS.ulStructSize should also have this
         // TODO open an issue

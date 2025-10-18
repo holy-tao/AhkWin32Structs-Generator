@@ -47,11 +47,6 @@ public partial class AhkStruct : AhkType
         return foundStruct;
     }
 
-    public static string GetFqn(MetadataReader reader, TypeDefinition td)
-    {
-        return reader.GetString(td.Namespace) + "." + reader.GetString(td.Name);
-    }
-
     protected IEnumerable<AhkStructMember> Members { get; private set; }
 
     private readonly LayoutKind Layout;

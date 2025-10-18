@@ -40,6 +40,8 @@ public class AhkEnum : AhkType
             sb.AppendLine($"    static {constant.Name} => {constant.ValueAsAhkLiteral}");
         }
 
+        extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
+
         sb.AppendLine("}");
     }
 }

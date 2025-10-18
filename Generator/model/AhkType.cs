@@ -14,6 +14,8 @@ public abstract class AhkType : IAhkEmitter
 
     private protected readonly ApiDetails? apiDetails;
 
+    private protected readonly List<AhkExtension>? extensions;
+
     public string Name
     {
         get
@@ -51,6 +53,7 @@ public abstract class AhkType : IAhkEmitter
         flags = GetFlags();
 
         Program.ApiDocs.TryGetValue(Name, out apiDetails);
+        Program.Extensions.TryGetValue(GetFqn(mr,typeDef), out extensions);
     }
 
     public abstract void ToAhk(StringBuilder sb);
@@ -103,15 +106,6 @@ public abstract class AhkType : IAhkEmitter
         sb.AppendLine("     */");
     }
 
-    public static string? EscapeDocs(string? docString, string? indent = " ")
-    {
-        // Remove comments from documentation and add asterisks to newlines
-        return docString?
-            .Replace("/*", "//")
-            .Replace("*/", "")
-            .Replace("\n", $"\n{indent} * ");
-    }
-
     public string GetDesiredFilepath(string root)
     {
         string namespacePath = Path.Join(Namespace.Split("."));
@@ -122,7 +116,7 @@ public abstract class AhkType : IAhkEmitter
 
     protected virtual void AppendImports(StringBuilder sb)
     {
-        foreach (string import in GetReferencedTypes())
+        foreach (string import in GetReferencedTypes().Distinct())
         {
             List<string> parts = [.. import.Split(".")];
             string importNamespace = string.Join(".", parts[0..^1]);    // All but last
@@ -135,7 +129,17 @@ public abstract class AhkType : IAhkEmitter
 
     protected virtual List<string> GetReferencedTypes()
     {
-        return [];
+        List<string> imports = [];
+
+        extensions?.ForEach(e => imports.AddRange(e.Requirements));
+
+        return imports;
+    }
+
+    protected string GetExtensionCodeTokenized(AhkExtension ex)
+    {
+        return ex.GetCodeIndented(1)
+            .Replace("$Class", Name);
     }
 
     protected virtual MemberFlags GetFlags()
@@ -170,5 +174,19 @@ public abstract class AhkType : IAhkEmitter
         return Namespace.Split(".")
             .Select(val => $"..{Path.DirectorySeparatorChar}")
             .Aggregate((agg, cur) => agg + cur);
+    }
+
+    public static string? EscapeDocs(string? docString, string? indent = " ")
+    {
+        // Remove comments from documentation and add asterisks to newlines
+        return docString?
+            .Replace("/*", "//")
+            .Replace("*/", "")
+            .Replace("\n", $"\n{indent} * ");
+    }
+
+    public static string GetFqn(MetadataReader reader, TypeDefinition td)
+    {
+        return reader.GetString(td.Namespace) + "." + reader.GetString(td.Name);
     }
 }
