@@ -26,8 +26,6 @@ class AhkHandle : AhkStruct
         sb.AppendLine($"#Include {GetPathToBase()}Win32Handle.ahk");
 
         // RAIIFree method is guaranteed to be in our namespace if it exists
-        if (FreeFunc != null)
-            sb.AppendLine($"#Include .\\Apis.ahk");
         sb.AppendLine();
 
         MaybeAddTypeDocumentation(sb);
@@ -53,7 +51,17 @@ class AhkHandle : AhkStruct
 
         sb.AppendLine("}");
     }
-    
+
+    protected override List<string> GetReferencedTypes()
+    {
+        List<string> imports = base.GetReferencedTypes();
+        
+        if (FreeFunc != null)
+            imports.Add(string.Join('.', Namespace, "Apis"));
+            
+        return imports;
+    }
+
     private void AppendDestructor(StringBuilder sb)
     {
         string apisCls = Namespace.Split(".").Last();
