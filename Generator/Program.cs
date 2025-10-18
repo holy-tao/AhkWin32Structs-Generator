@@ -11,6 +11,8 @@ public class Program
 {
     public static Dictionary<string, ApiDetails> ApiDocs = [];
 
+    public static Dictionary<string, List<AhkExtension>> Extensions = [];
+
     public static void Main(string[] args)
     {
         if (args.Length != 2)
@@ -19,23 +21,28 @@ public class Program
             return;
         }
 
-        Console.WriteLine("Parsing metadata and generating AHK scripts...");
+        string metadataDir = args[0];
+        string ahkOutputDir = args[1];
+
+        Console.WriteLine("Reading metadata...");
 
         Stopwatch stopwatch = new();
         stopwatch.Start();
 
-        using FileStream metaDataFileStream = File.OpenRead(Path.Join(args[0], "Windows.Win32.winmd"));
-        using FileStream apiDocFileStream = File.OpenRead(Path.Join(args[0], "apidocs.msgpack"));
-        string ahkOutputDir = args[1];
+        using FileStream metaDataFileStream = File.OpenRead(Path.Join(metadataDir, "Windows.Win32.winmd"));
+        using FileStream apiDocFileStream = File.OpenRead(Path.Join(metadataDir, "apidocs.msgpack"));
 
         using PEReader peReader = new(metaDataFileStream);
         MetadataReader mr = peReader.GetMetadataReader();
 
-        CreateVersionFile(mr, args[0], ahkOutputDir);
-
         ApiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
+        Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(metadataDir, "extensions"));
 
         int total = 0;
+
+        Console.WriteLine("Generating bindings...");
+
+        CreateVersionFile(mr, args[0], ahkOutputDir);
 
         foreach (TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
         {
