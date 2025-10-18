@@ -167,28 +167,23 @@ class AhkMethod
     /// be e.g. return values.
     /// </summary>
     /// <returns></returns>
-    public List<TypeDefinition> GetReferencedTypes()
+    public List<string> GetReferencedTypes()
     {
-        List<TypeDefinition> referencedTypes = [];
+        List<string> referencedTypes = [];
 
         // Methods with ordinal EntryPoints need APIs for Dll loading and unloadings
         if (EntryPoint.StartsWith('#'))
         {
-            List<string> dllLoadRequired = [
+            referencedTypes.AddRange([
                 "Windows.Win32.Foundation.Apis",                // FreeLibrary is here for some reason
                 "Windows.Win32.System.LibraryLoader.Apis"
-            ];
-
-            referencedTypes.AddRange(mr.TypeDefinitions
-                .Select(mr.GetTypeDefinition)
-                .Where(td => dllLoadRequired.Contains(AhkStruct.GetFqn(mr, td)))
-                .ToList());
+            ]);
         }
 
         // If the return type is a handle, we need to import the handle
         if (HasReturnValue && parameters[0].IsHandle(mr))
         {
-            referencedTypes.Add(parameters[0].FieldInfo.TypeDef ?? throw new NullReferenceException());
+            referencedTypes.Add(AhkStruct.GetFqn(mr, parameters[0].FieldInfo.TypeDef ?? throw new NullReferenceException()));
         }
 
         return referencedTypes;

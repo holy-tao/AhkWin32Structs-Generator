@@ -120,6 +120,24 @@ public abstract class AhkType : IAhkEmitter
         return Path.Join(root, namespacePath, $"{canonicalName}.ahk");
     }
 
+    protected virtual void AppendImports(StringBuilder sb)
+    {
+        foreach (string import in GetReferencedTypes())
+        {
+            List<string> parts = [.. import.Split(".")];
+            string importNamespace = string.Join(".", parts[0..^1]);    // All but last
+            string importName = parts.Last();
+
+            string sbPath = AhkStruct.RelativePathBetweenNamespaces(Namespace, importNamespace);
+            sb.AppendLine($"#Include {sbPath}{importName}.ahk");
+        }
+    }
+
+    protected virtual List<string> GetReferencedTypes()
+    {
+        return [];
+    }
+
     protected virtual MemberFlags GetFlags()
     {
         MemberFlags flags = MemberFlags.None;

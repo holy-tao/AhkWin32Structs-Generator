@@ -1,7 +1,5 @@
 using System.Text;
-using Microsoft.Windows.SDK.Win32Docs;
 using System.Reflection.Metadata;
-using System.Runtime.InteropServices;
 
 public partial class AhkStruct : AhkType
 {
@@ -37,27 +35,27 @@ public partial class AhkStruct : AhkType
         sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
         sb.AppendLine($"#Include {GetPathToBase()}Win32Struct.ahk");
 
-        // Generate #Include statements for embedded structs
-        var importedTypes = new List<string>();
+        AppendImports(sb);
+    }
 
-        foreach (AhkStructMember m in GetAllNonNestedMembers().Where((m) => m.embeddedStruct != null))
-        {
-            if (importedTypes.Contains(m.fieldInfo.TypeName) || m.fieldInfo.Kind == SimpleFieldKind.COM)
-                continue;
+    protected override List<string> GetReferencedTypes()
+    {
+        var imports = base.GetReferencedTypes();
 
-            if (m.flags.HasFlag(MemberFlags.Anonymous) || (m.flags.HasFlag(MemberFlags.Union) && m.IsNested))
-                continue;
+        IEnumerable<string> embeddedImports = GetAllNonNestedMembers()
+            .Where(m => m.embeddedStruct != null)
+            .Where(m =>
+                m.fieldInfo.Kind != SimpleFieldKind.COM &&
+                !(m.flags.HasFlag(MemberFlags.Anonymous) || (m.flags.HasFlag(MemberFlags.Union) && m.IsNested)) &&
+                !(m.fieldInfo.Kind == SimpleFieldKind.Array &&
+                m.fieldInfo.UnderlyingType?.Kind != SimpleFieldKind.Struct) &&
+                !(m.fieldInfo.TypeDef?.IsNested ?? false)
+            )
+            .GroupBy(m => m.fieldInfo.TypeName) // prevent duplicates
+            .Select(g => GetFqn(mr, g.First().fieldInfo.TypeDef ?? throw new NullReferenceException()));
 
-            if (m.fieldInfo.Kind == SimpleFieldKind.Array && m.fieldInfo.UnderlyingType?.Kind != SimpleFieldKind.Struct)
-                continue;
-
-            if (m.fieldInfo.TypeDef?.IsNested ?? false)
-                continue;
-
-            string sbPath = RelativePathBetweenNamespaces(Namespace, m.embeddedStruct?.Namespace);
-            sb.AppendLine($"#Include {sbPath}{m.fieldInfo.TypeName}.ahk");
-            importedTypes.Add(m.fieldInfo.TypeName);
-        }
+        imports.AddRange(embeddedImports.Distinct());
+        return imports;
     }
 
     // Get all members of the struct for which we should generate #Include statements,

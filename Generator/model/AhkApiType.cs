@@ -61,18 +61,17 @@ class AhkApiType : AhkType
     private void HeadersToAhk(StringBuilder sb)
     {
         sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
-        sb.Append($"#Include {GetPathToBase()}Win32Handle.ahk");
+        sb.AppendLine($"#Include {GetPathToBase()}Win32Handle.ahk");
+        AppendImports(sb);
         sb.AppendLine();
+    }
 
-        List<TypeDefinition> imports = [];
+    protected override List<string> GetReferencedTypes()
+    {
+        var imports = base.GetReferencedTypes();
         methods.ForEach(m => imports.AddRange(m.GetReferencedTypes()));
-        imports = imports.DistinctBy(im => AhkStruct.GetFqn(mr, im)).ToList();
 
-        foreach (TypeDefinition import in imports)
-        {
-            string sbPath = AhkStruct.RelativePathBetweenNamespaces(Namespace, mr.GetString(import.Namespace));
-            sb.AppendLine($"#Include {sbPath}{mr.GetString(import.Name)}.ahk");
-        }
+        return [.. imports.Distinct()];
     }
 
     private void AppendConstants(StringBuilder sb)
