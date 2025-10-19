@@ -53,8 +53,7 @@ public class AhkStructMember
     // flags.HasFlag(MemberFlags.Union) || flags.HasFlag(MemberFlags.Anonymous) || 
     public bool IsNested => embeddedStruct?.typeDef.IsNested ?? false;
 
-    public AhkStructMember(AhkStruct parent, MetadataReader mr, FieldDefinition fieldDef, Dictionary<string, string>? apiFields,
-        Dictionary<string, ApiDetails> apiDocs, int offset = 0)
+    public AhkStructMember(AhkStruct parent, MetadataReader mr, FieldDefinition fieldDef, Dictionary<string, string>? apiFields, int offset = 0)
     {
         this.parent = parent;
         this.mr = mr;
@@ -70,7 +69,7 @@ public class AhkStructMember
         {
             TypeDefinition fieldTypeDef = fieldInfo.TypeDef ??
                 throw new NullReferenceException($"Null TypeDef for Class or Struct field {Name}");
-            embeddedStruct = AhkStruct.Get(mr, fieldTypeDef, apiDocs) ?? throw new NullReferenceException();
+            embeddedStruct = AhkStruct.Get(mr, fieldTypeDef) ?? throw new NullReferenceException();
             Size = embeddedStruct.Size;
         }
         else if (fieldInfo.Kind == SimpleFieldKind.Array)
@@ -80,7 +79,7 @@ public class AhkStructMember
             Size = fieldInfo.Length * arrayElementType.GetWidth(parent.IsAnsi);
 
             if (arrayElementType.TypeDef != null)
-                embeddedStruct = AhkStruct.Get(mr, (TypeDefinition)arrayElementType.TypeDef, apiDocs);
+                embeddedStruct = AhkStruct.Get(mr, (TypeDefinition)arrayElementType.TypeDef);
         }
         else
         {

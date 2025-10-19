@@ -9,7 +9,7 @@ public partial class AhkStruct : AhkType
 {
     private static readonly Dictionary<string, AhkStruct> LoadedStructs = [];
 
-    public static AhkStruct? Get(MetadataReader reader, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
+    public static AhkStruct? Get(MetadataReader reader, TypeDefinition typeDef)
     {
         // Filter out structs for architectures other than x64 and arm64
         CustomAttribute? archAttr = CustomAttributeDecoder.GetAttribute(reader, typeDef, "SupportedArchitectureAttribute");
@@ -24,8 +24,8 @@ public partial class AhkStruct : AhkType
         }
 
         return IsHandle(reader, typeDef) ?
-            new AhkHandle(reader, typeDef, apiDocs) :
-            new AhkStruct(reader, typeDef, apiDocs);
+            new AhkHandle(reader, typeDef) :
+            new AhkStruct(reader, typeDef);
             
         /*
         string fqn = reader.GetString(typeDef.Namespace) + "." + reader.GetString(typeDef.Name);
@@ -47,16 +47,11 @@ public partial class AhkStruct : AhkType
         return foundStruct;
     }
 
-    public static string GetFqn(MetadataReader reader, TypeDefinition td)
-    {
-        return reader.GetString(td.Namespace) + "." + reader.GetString(td.Name);
-    }
-
     protected IEnumerable<AhkStructMember> Members { get; private set; }
 
     private readonly LayoutKind Layout;
 
-    private protected AhkStruct(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
+    private protected AhkStruct(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
     {
         PackingSize = EstimatePackingSize();
         Layout = GetLayoutKind();
@@ -70,7 +65,7 @@ public partial class AhkStruct : AhkType
         foreach (FieldDefinitionHandle hField in typeDef.GetFields())
         {
             FieldDefinition fieldDef = mr.GetFieldDefinition(hField);
-            AhkStructMember newMember = new(this, mr, fieldDef, apiDetails?.Fields, apiDocs, offset);
+            AhkStructMember newMember = new(this, mr, fieldDef, apiDetails?.Fields, offset);
 
             memberList.Add(newMember);
 

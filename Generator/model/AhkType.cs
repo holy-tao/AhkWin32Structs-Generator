@@ -11,9 +11,10 @@ public abstract class AhkType : IAhkEmitter
 
     private protected readonly MetadataReader mr;
     public readonly TypeDefinition typeDef;
-    private protected readonly Dictionary<string, ApiDetails> apiDocs;
 
     private protected readonly ApiDetails? apiDetails;
+
+    private protected readonly List<AhkExtension>? extensions;
 
     public string Name
     {
@@ -42,17 +43,17 @@ public abstract class AhkType : IAhkEmitter
 
     public readonly List<CAInfo> CustomAttributes;
 
-    public AhkType(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs)
+    public AhkType(MetadataReader mr, TypeDefinition typeDef)
     {
         this.mr = mr;
         this.typeDef = typeDef;
-        this.apiDocs = apiDocs;
 
         CustomAttributes = CustomAttributeDecoder.DecodeAll(mr, typeDef);
 
         flags = GetFlags();
 
-        apiDocs.TryGetValue(Name, out apiDetails);
+        Program.ApiDocs.TryGetValue(Name, out apiDetails);
+        Program.Extensions.TryGetValue(GetFqn(mr,typeDef), out extensions);
     }
 
     public abstract void ToAhk(StringBuilder sb);
@@ -105,21 +106,40 @@ public abstract class AhkType : IAhkEmitter
         sb.AppendLine("     */");
     }
 
-    public static string? EscapeDocs(string? docString, string? indent = " ")
-    {
-        // Remove comments from documentation and add asterisks to newlines
-        return docString?
-            .Replace("/*", "//")
-            .Replace("*/", "")
-            .Replace("\n", $"\n{indent} * ");
-    }
-
     public string GetDesiredFilepath(string root)
     {
         string namespacePath = Path.Join(Namespace.Split("."));
         string canonicalName = mr.GetString(typeDef.Name);
 
         return Path.Join(root, namespacePath, $"{canonicalName}.ahk");
+    }
+
+    protected virtual void AppendImports(StringBuilder sb)
+    {
+        foreach (string import in GetReferencedTypes().Distinct())
+        {
+            List<string> parts = [.. import.Split(".")];
+            string importNamespace = string.Join(".", parts[0..^1]);    // All but last
+            string importName = parts.Last();
+
+            string sbPath = AhkStruct.RelativePathBetweenNamespaces(Namespace, importNamespace);
+            sb.AppendLine($"#Include {sbPath}{importName}.ahk");
+        }
+    }
+
+    protected virtual List<string> GetReferencedTypes()
+    {
+        List<string> imports = [];
+
+        extensions?.ForEach(e => imports.AddRange(e.Requirements));
+
+        return imports;
+    }
+
+    protected string GetExtensionCodeTokenized(AhkExtension ex)
+    {
+        return ex.GetCodeIndented(1)
+            .Replace("$Class", Name);
     }
 
     protected virtual MemberFlags GetFlags()
@@ -154,5 +174,19 @@ public abstract class AhkType : IAhkEmitter
         return Namespace.Split(".")
             .Select(val => $"..{Path.DirectorySeparatorChar}")
             .Aggregate((agg, cur) => agg + cur);
+    }
+
+    public static string? EscapeDocs(string? docString, string? indent = " ")
+    {
+        // Remove comments from documentation and add asterisks to newlines
+        return docString?
+            .Replace("/*", "//")
+            .Replace("*/", "")
+            .Replace("\n", $"\n{indent} * ");
+    }
+
+    public static string GetFqn(MetadataReader reader, TypeDefinition td)
+    {
+        return reader.GetString(td.Namespace) + "." + reader.GetString(td.Name);
     }
 }

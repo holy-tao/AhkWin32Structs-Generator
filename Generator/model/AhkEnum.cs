@@ -7,7 +7,7 @@ public class AhkEnum : AhkType
 {
     private readonly List<ConstantInfo> constants;
 
-    public AhkEnum(MetadataReader mr, TypeDefinition typeDef, Dictionary<string, ApiDetails> apiDocs) : base(mr, typeDef, apiDocs)
+    public AhkEnum(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
     {
         constants = new List<ConstantInfo>();
 
@@ -39,6 +39,8 @@ public class AhkEnum : AhkType
             MaybeAddConstDocumentation(sb, constant);
             sb.AppendLine($"    static {constant.Name} => {constant.ValueAsAhkLiteral}");
         }
+
+        extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
 
         sb.AppendLine("}");
     }
