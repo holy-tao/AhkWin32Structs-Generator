@@ -331,27 +331,19 @@ class AhkMethod
     private protected bool ShouldThrowForReturnValue()
     {
         // If the method doesn't return an HRESULT, this is always no
-        if (parameters[0].FieldInfo.Kind != SimpleFieldKind.HRESULT)
+        if (!parameters[0].IsHRESULT)
         {
             return false;
         }
 
+        // If [PreserveSig] exists and is false, don't check HRESULTS
         CAInfo attr = CustomAttributes.SingleOrDefault(c => c.Name is "PreserveSigAttribute");
         if (attr != default)
         {
-            bool hasPreserveSig = ((bool?)attr.Attr.FixedArguments[0].Value) ?? true;
-
-            // https://github.com/microsoft/win32metadata/issues/1315#issuecomment-1281559120
-            if (!hasPreserveSig)
-            {
-                return false;
-            }
-            else
-            {
-                return !CustomAttributes.Any(c => c.Name is "CanReturnMultipleSuccessValuesAttribute" or "CanReturnErrorsAsSuccessAttribute");
-            }
+            return ((bool?)attr.Attr.FixedArguments[0].Value) ?? true;
         }
 
-        return true;
+        // Otherwise, check for [CanReturnMultipleSuccessValues] or [CanReturnErrorsAsSuccess]
+        return !CustomAttributes.Any(c => c.Name is "CanReturnMultipleSuccessValuesAttribute" or "CanReturnErrorsAsSuccessAttribute");
     }
 }
