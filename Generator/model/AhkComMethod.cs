@@ -1,4 +1,5 @@
 
+using System.Net.Http.Headers;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Text;
@@ -10,9 +11,12 @@ class AhkComMethod : AhkMethod
 
     public bool HasStringParam => parameters[1..].Any(p => p.GetTypeDefName(mr) is "BSTR");
 
-    public AhkComMethod(MetadataReader mr, MethodDefinition methodDef, int vTableIndex) : base(mr, methodDef)
+    private readonly AhkComInterface parent;
+
+    public AhkComMethod(AhkComInterface parent, MetadataReader mr, MethodDefinition methodDef, int vTableIndex) : base(mr, methodDef)
     {
         VTableIndex = vTableIndex;
+        this.parent = parent;
     }
 
     //TODO: handle [RetVal] parameters
@@ -21,7 +25,7 @@ class AhkComMethod : AhkMethod
     public override void ToAhk(StringBuilder sb)
     {
         MaybeAppendDocumentation(sb);
-        sb.AppendLine($"    {Name}({BuildMethodArgumentList()}) {{");
+        sb.AppendLine($"    {GetDeduplicatedName()}({BuildMethodArgumentList()}) {{");
 
         List<AhkParameter> reservedParams = [.. parameters.Where(p => p.Reserved)];
         if (reservedParams.Count > 0)
@@ -49,14 +53,6 @@ class AhkComMethod : AhkMethod
             // Inspect last error for errors
             sb.AppendLine($"        if(A_LastError)");
             sb.AppendLine($"            throw OSError()");
-            sb.AppendLine();
-        }
-
-        if (HasReturnValue && ShouldThrowForReturnValue())
-        {
-            // The function returns an HRESULT that we must check to see if we need to throw
-            sb.AppendLine($"        if(result != 0)");
-            sb.AppendLine($"            throw OSError(result)");
             sb.AppendLine();
         }
 
@@ -96,9 +92,52 @@ class AhkComMethod : AhkMethod
             sb.AppendLine();
     }
 
-    private protected override void AppendAhkEntryPoint(StringBuilder sb, string entryPoint = "")
+    private protected override string BuildDllCallCall(string entry)
     {
+        StringBuilder sb = new();
+
+        // ComCall can check HRESULTs for us
+        if (HasReturnValue)
+            sb.Append("result := ");
+
         // https://www.autohotkey.com/docs/v2/lib/ComCall.htm
         sb.Append($"ComCall({VTableIndex}, this");
+
+        if (parameters.Count > 1)
+        {
+            sb.Append(", ");
+            sb.Append(BuildDllCallArgumentList());
+        }
+
+        // Calling convention / return type
+        if (CallingConvention == MethodImportAttributes.CallingConventionCDecl || HasReturnValue)
+        {
+            sb.Append(", \"");
+            if (CallingConvention == MethodImportAttributes.CallingConventionCDecl)
+            {
+                sb.Append("CDecl ");
+            }
+
+            if (HasReturnValue)
+                sb.Append(ShouldThrowForReturnValue()? "HRESULT" : parameters[0].FieldInfo.GetDllCallType(false));
+
+            sb.Append('"');
+        }
+
+        return sb.Append(')').ToString();
+    }
+
+    /// <summary>
+    /// Some interfaces have overloaded methods. AHK doesn't support this, class members need to
+    /// have unique names. So we append a counter to overloads for uniqueness
+    /// </summary>
+    /// <returns></returns>
+    private string GetDeduplicatedName()
+    {
+        int counter = parent.Methods
+            .Where(m => (m.Name == Name) && (m.VTableIndex < VTableIndex))
+            .Count();
+
+        return counter > 0? Name + counter : Name;
     }
 }

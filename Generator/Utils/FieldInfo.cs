@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
 
@@ -61,17 +62,15 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         {
             if (!useNakedPointer && UnderlyingType != null)
             {
-                if (UnderlyingType.Kind == SimpleFieldKind.Pointer)
+                return UnderlyingType.Kind switch
                 {
-                    return UnderlyingType.GetDllCallType(useNakedPointer);
-                }
-                else if (UnderlyingType.Kind == SimpleFieldKind.Primitive)
-                {
-                    if (UnderlyingType.TypeName.ToLowerInvariant() != "void")
-                    {
-                        return UnderlyingType.GetDllCallType(useNakedPointer) + '*';
-                    }
-                }
+                    SimpleFieldKind.Pointer => UnderlyingType.GetDllCallType(useNakedPointer),
+                    SimpleFieldKind.COM => "ptr*",
+                    SimpleFieldKind.Primitive => UnderlyingType.TypeName.Equals("void", StringComparison.InvariantCultureIgnoreCase) ?
+                        "ptr" :
+                        UnderlyingType.GetDllCallType(useNakedPointer) + '*',
+                    _ => "ptr"
+                };
             }
             
             return "ptr";

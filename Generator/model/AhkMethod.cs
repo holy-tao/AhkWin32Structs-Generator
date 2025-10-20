@@ -193,13 +193,13 @@ class AhkMethod
     /// Builds the actual DllCall call, like [result := ] DllCall("dll\function", "ptr", ..)
     /// </summary>
     /// <returns></returns>
-    private protected string BuildDllCallCall(string entry)
+    private protected virtual string BuildDllCallCall(string entry)
     {
         StringBuilder sb = new();
         if (HasReturnValue)
             sb.Append("result := ");
 
-        AppendAhkEntryPoint(sb, entry);
+        sb.Append($"DllCall({entry}");
 
         if (parameters.Count > 1)
         {
@@ -223,17 +223,6 @@ class AhkMethod
         }
 
         return sb.Append(')').ToString();
-    }
-
-    /// <summary>
-    /// Appends the starting stub snippet of the DllCall. Exists so that AhkComMethod can override
-    /// this to append ComCall instead of DllCall
-    /// </summary>
-    /// <param name="sb"></param>
-    /// <param name="entryPoint"></param>
-    private protected virtual void AppendAhkEntryPoint(StringBuilder sb, string entryPoint = "")
-    {
-        sb.Append($"DllCall({entryPoint}");
     }
 
     private protected string BuildMethodArgumentList()
