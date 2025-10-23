@@ -125,7 +125,7 @@ public class CustomAttributeDecoder
             .Select(parent => reader.GetTypeReference((TypeReferenceHandle)parent));
     }
 
-    private static List<CAInfo> DecodeAll(MetadataReader reader, CustomAttributeHandleCollection handles)
+    public static List<CAInfo> DecodeAll(MetadataReader reader, CustomAttributeHandleCollection handles)
     {
         List<CAInfo> infos = [];
         CaTypeProvider provider = new();

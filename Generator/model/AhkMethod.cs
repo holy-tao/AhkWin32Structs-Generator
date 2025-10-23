@@ -38,7 +38,7 @@ class AhkMethod
         this.methodDef = methodDef;
         CustomAttributes = CustomAttributeDecoder.DecodeAll(mr, methodDef);
 
-        Program.ApiDocs.TryGetValue(Name, out apiDetails);
+        apiDetails = DocumentationUtils.GetApiDetails(mr, methodDef);
 
         import = methodDef.GetImport();
         parameters = ParameterDecoder.DecodeParameters(mr, methodDef);

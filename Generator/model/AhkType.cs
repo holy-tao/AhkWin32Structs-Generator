@@ -52,7 +52,7 @@ public abstract class AhkType : IAhkEmitter
 
         flags = GetFlags();
 
-        Program.ApiDocs.TryGetValue(Name, out apiDetails);
+        apiDetails = DocumentationUtils.GetApiDetails(mr, typeDef);
         Program.Extensions.TryGetValue(GetFqn(mr,typeDef), out extensions);
     }
 
