@@ -141,6 +141,8 @@ class AhkComInterface : AhkType
             sb.AppendLine();
             method.ToAhk(sb);
         }
+        
+        extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
 
         sb.AppendLine("}");
     }
