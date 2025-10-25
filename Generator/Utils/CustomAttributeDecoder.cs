@@ -1,22 +1,9 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
 
-public readonly record struct CAInfo(string Name, CustomAttributeValue<string> Attr);
+public readonly record struct CAInfo(string Namespace, string Name, CustomAttributeValue<string> Attr);
 
 public class CustomAttributeDecoder
 {
-    public static IEnumerable<TypeReference> GetAll(MetadataReader reader, TypeDefinition def)
-        => GetAllCustomAttributeTypeRefs(reader, def.GetCustomAttributes());
-
-    public static IEnumerable<TypeReference> GetAll(MetadataReader reader, FieldDefinition def)
-        => GetAllCustomAttributeTypeRefs(reader, def.GetCustomAttributes());
-
-    public static IEnumerable<TypeReference> GetAll(MetadataReader reader, MethodDefinition def)
-        => GetAllCustomAttributeTypeRefs(reader, def.GetCustomAttributes());
-
-    public static IEnumerable<TypeReference> GetAll(MetadataReader reader, Parameter def)
-        => GetAllCustomAttributeTypeRefs(reader, def.GetCustomAttributes());
-
     public static CustomAttribute? GetAttribute(MetadataReader reader, FieldDefinition def, string targetAttr)
         => GetAttributeFromCollection(reader, def.GetCustomAttributes(), targetAttr);
 
@@ -55,22 +42,37 @@ public class CustomAttributeDecoder
 
     public static IEnumerable<string> GetAllNames(MetadataReader reader, TypeDefinition typeDef)
     {
-        return GetAll(reader, typeDef).Select(td => reader.GetString(td.Name));
+        return GetAllNamesFromCollection(reader, typeDef.GetCustomAttributes());
     }
 
     public static IEnumerable<string> GetAllNames(MetadataReader reader, FieldDefinition fieldDef)
     {
-        return GetAll(reader, fieldDef).Select(td => reader.GetString(td.Name));
+        return GetAllNamesFromCollection(reader, fieldDef.GetCustomAttributes());
     }
 
     public static IEnumerable<string> GetAllNames(MetadataReader reader, MethodDefinition methodDef)
     {
-        return GetAll(reader, methodDef).Select(td => reader.GetString(td.Name));
+        return GetAllNamesFromCollection(reader, methodDef.GetCustomAttributes());
     }
 
     public static IEnumerable<string> GetAllNames(MetadataReader reader, Parameter param)
     {
-        return GetAll(reader, param).Select(td => reader.GetString(td.Name));
+        return GetAllNamesFromCollection(reader, param.GetCustomAttributes());
+    }
+
+    private static List<string> GetAllNamesFromCollection(MetadataReader reader, CustomAttributeHandleCollection handles)
+    {
+        List<string> names = [];
+
+        foreach (var attrHandle in handles)
+        {
+            var attr = reader.GetCustomAttribute(attrHandle);
+            (string _, string attrName) = GetAttributeTypeName(reader, attr);
+
+            names.Add(attrName);
+        }
+
+        return names;
     }
 
     private static CustomAttribute? GetAttributeFromCollection(MetadataReader reader, CustomAttributeHandleCollection handles, string targetAttr)
@@ -78,11 +80,7 @@ public class CustomAttributeDecoder
         foreach (var attrHandle in handles)
         {
             var attr = reader.GetCustomAttribute(attrHandle);
-            var ctorHandle = attr.Constructor;
-            // Get the attribute type
-            var attrTypeHandle = reader.GetMemberReference((MemberReferenceHandle)ctorHandle).Parent;
-            var attrTypeRef = reader.GetTypeReference((TypeReferenceHandle)attrTypeHandle);
-            var attrName = reader.GetString(attrTypeRef.Name);
+            (string _, string attrName) = GetAttributeTypeName(reader, attr);
 
             if (attrName == targetAttr)
             {
@@ -99,12 +97,8 @@ public class CustomAttributeDecoder
 
         foreach (var attrHandle in handles)
         {
-            var attr = reader.GetCustomAttribute(attrHandle);
-            var ctorHandle = attr.Constructor;
-            // Get the attribute type
-            var attrTypeHandle = reader.GetMemberReference((MemberReferenceHandle)ctorHandle).Parent;
-            var attrTypeRef = reader.GetTypeReference((TypeReferenceHandle)attrTypeHandle);
-            var attrName = reader.GetString(attrTypeRef.Name);
+            var attr = reader.GetCustomAttribute(attrHandle);            
+            (string _, string attrName) = GetAttributeTypeName(reader, attr);
 
             if (attrName == targetAttr)
             {
@@ -115,16 +109,6 @@ public class CustomAttributeDecoder
         return foundAttrs;
     }
 
-    private static IEnumerable<TypeReference> GetAllCustomAttributeTypeRefs(MetadataReader reader, CustomAttributeHandleCollection handles)
-    {
-        return handles
-            .Select(hAttr => reader.GetCustomAttribute(hAttr).Constructor)
-            .Where(ctor => ctor.Kind == HandleKind.MemberReference)
-            .Select(ctor => reader.GetMemberReference((MemberReferenceHandle)ctor).Parent)
-            .Where(parent => parent.Kind == HandleKind.TypeReference)
-            .Select(parent => reader.GetTypeReference((TypeReferenceHandle)parent));
-    }
-
     public static List<CAInfo> DecodeAll(MetadataReader reader, CustomAttributeHandleCollection handles)
     {
         List<CAInfo> infos = [];
@@ -133,15 +117,45 @@ public class CustomAttributeDecoder
         foreach (var attrHandle in handles)
         {
             var attr = reader.GetCustomAttribute(attrHandle);
-            var ctorHandle = attr.Constructor;
-            // Get the attribute type
-            var attrTypeHandle = reader.GetMemberReference((MemberReferenceHandle)ctorHandle).Parent;
-            var attrTypeRef = reader.GetTypeReference((TypeReferenceHandle)attrTypeHandle);
-            var attrName = reader.GetString(attrTypeRef.Name);
+            (string attrNamespace, string attrName) = GetAttributeTypeName(reader, attr);
 
-            infos.Add(new(attrName, attr.DecodeValue(provider)));
+            infos.Add(new(attrNamespace, attrName, attr.DecodeValue(provider)));
         }
 
         return infos;
     }
+
+    private static (string Namespace, string Name) GetAttributeTypeName(MetadataReader reader, CustomAttribute attr)
+    {
+        switch (attr.Constructor.Kind)
+        {
+            case HandleKind.MemberReference:
+                {
+                    var mr = reader.GetMemberReference((MemberReferenceHandle)attr.Constructor);
+                    var parent = mr.Parent;
+
+                    if (parent.Kind == HandleKind.TypeReference)
+                    {
+                        var tr = reader.GetTypeReference((TypeReferenceHandle)parent);
+                        return (reader.GetString(tr.Namespace), reader.GetString(tr.Name));
+                    }
+                    else if (parent.Kind == HandleKind.TypeDefinition)
+                    {
+                        var td = reader.GetTypeDefinition((TypeDefinitionHandle)parent);
+                        return (reader.GetString(td.Namespace), reader.GetString(td.Name));
+                    }
+                    break;
+                }
+
+            case HandleKind.MethodDefinition:
+                {
+                    var md = reader.GetMethodDefinition((MethodDefinitionHandle)attr.Constructor);
+                    var td = reader.GetTypeDefinition(md.GetDeclaringType());
+                    return (reader.GetString(td.Namespace), reader.GetString(td.Name));
+                }
+        }
+
+        throw new NotSupportedException(attr.Constructor.Kind.ToString());
+    }
+
 }

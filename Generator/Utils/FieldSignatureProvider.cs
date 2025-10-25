@@ -52,11 +52,9 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
             }
         }
 
-        // No resolution context provided - resolve globally
-        var resolved = FieldSignatureDecoder.ResolveTypeReference(_reader, handle);
-        return resolved != null
-            ? FieldSignatureDecoder.DecodeTypeDef(_reader, resolved.Value)
-            : new(SimpleFieldKind.Pointer, _reader.GetString(_reader.GetTypeReference(handle).Name));
+        // No resolution context provided or failed to resolve in it - resolve globally
+        var resolved = FieldSignatureDecoder.ResolveTypeReference(_reader, handle, out MetadataReader targetReader);
+        return FieldSignatureDecoder.DecodeTypeDef(targetReader, resolved);
     }
 
     public FieldInfo GetTypeFromSpecification(TypeSpecificationHandle handle, GenericContext genericContext)
@@ -77,10 +75,10 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
         if (elemName is "char" or "tchar" or "wchar" ||
             (elemName == "sbyte" && elementType.TypeDef != null && _reader.GetString(elementType.TypeDef.Value.Name) == "CHAR"))
         {
-            return new(SimpleFieldKind.String, elementType.TypeName, len, elementType.TypeDef, elementType);
+            return new(SimpleFieldKind.String, elementType.TypeName, len, elementType.TypeDef, elementType, _reader);
         }
 
-        return new(SimpleFieldKind.Array, elementType.TypeName, len, elementType.TypeDef, elementType);
+        return new(SimpleFieldKind.Array, elementType.TypeName, len, elementType.TypeDef, elementType, _reader);
     }
 
     public FieldInfo GetPointerType(FieldInfo elementType)
@@ -112,8 +110,6 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
 
     public FieldInfo GetPrimitiveType(SignatureTypeCode typeCode)
     {
-        if (typeCode == SignatureTypeCode.Void)
-            return new(SimpleFieldKind.Pointer, "Void");
         return new(SimpleFieldKind.Primitive, typeCode.ToString());
     }
 

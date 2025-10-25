@@ -1,11 +1,8 @@
-using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection.Metadata;
 
-public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, TypeDefinition? TypeDef = null, FieldInfo? UnderlyingType = null)
+public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, TypeDefinition? TypeDef = null, FieldInfo? UnderlyingType = null, [NotNullIfNotNull(nameof(TypeDef))] MetadataReader? Reader = null)
 {
-    public static int POINTER_SIZE = 8;
-
     // 
     /// <summary>
     /// Get the DllCall type of the field. See: <see cref="https://www.autohotkey.com/docs/v2/lib/DllCall.htm"/>
@@ -54,17 +51,23 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         {
             return "int";   // 32-bit integers under the hood
         }
-        else if(Kind == SimpleFieldKind.NativeTypedef)
+        else if (Kind == SimpleFieldKind.NativeTypedef)
         {
             return UnderlyingType?.GetDllCallType(useNakedPointer) ?? throw new NullReferenceException();
         }
-        else if (Kind == SimpleFieldKind.Pointer || Kind == SimpleFieldKind.COM)
+        else if (Kind == SimpleFieldKind.COM)
+        {
+            return "ptr";
+        }
+        else if (Kind == SimpleFieldKind.Pointer)
         {
             if (!useNakedPointer && UnderlyingType != null)
             {
                 return UnderlyingType.Kind switch
                 {
-                    SimpleFieldKind.Pointer => UnderlyingType.GetDllCallType(useNakedPointer),
+                    SimpleFieldKind.Pointer => UnderlyingType.Kind == SimpleFieldKind.Pointer ?
+                        "ptr*" :
+                        UnderlyingType.GetDllCallType(useNakedPointer),
                     SimpleFieldKind.COM => "ptr*",
                     SimpleFieldKind.Primitive => UnderlyingType.TypeName.Equals("void", StringComparison.InvariantCultureIgnoreCase) ?
                         "ptr" :
@@ -72,7 +75,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                     _ => "ptr"
                 };
             }
-            
+
             return "ptr";
         }
         else
@@ -129,7 +132,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         {
             return 4;
         }
-        else if(Kind == SimpleFieldKind.NativeTypedef)
+        else if (Kind == SimpleFieldKind.NativeTypedef)
         {
             return UnderlyingType?.GetWidth(ansi) ?? throw new NullReferenceException();
         }
@@ -139,7 +142,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
             return 8;
         }
     }
-    
+
     // Get the name of the AHK type that's used here, for documentation purposes only
     public string AhkType
     {
@@ -166,9 +169,10 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                         return "Integer";
                     case "uintptr":
                     case "intptr":
-                    case "void":
                     case "ptr":
                         return "Pointer";
+                    case "void":
+                        return "Void";
                     default:
                         throw new NotSupportedException(TypeName);
                 }
@@ -181,9 +185,13 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
             {
                 return $"Array<{TypeName}>";
             }
-            else if (Kind == SimpleFieldKind.Pointer || Kind == SimpleFieldKind.COM)
+            else if (Kind == SimpleFieldKind.Pointer)
             {
-                return $"Pointer<{TypeName}>";
+                return UnderlyingType == null ? $"Pointer<{TypeName}>" : $"Pointer<{UnderlyingType?.AhkType}>";
+            }
+            else if (Kind == SimpleFieldKind.COM)
+            {
+                return TypeName;
             }
             else if (Kind == SimpleFieldKind.HRESULT)
             {
@@ -199,5 +207,17 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                 return "Pointer";
             }
         }
+    }
+
+    public string GetTypeDefName()
+    {
+        return Reader?.GetString(TypeDef?.Name ?? throw new NullReferenceException(nameof(TypeDef)))
+            ?? throw new NullReferenceException(nameof(Reader));
+    }
+
+    public string GetTypeDefNamespace()
+    {
+        return Reader?.GetString(TypeDef?.Namespace ?? throw new NullReferenceException(nameof(TypeDef)))
+            ?? throw new NullReferenceException(nameof(Reader));
     }
 }

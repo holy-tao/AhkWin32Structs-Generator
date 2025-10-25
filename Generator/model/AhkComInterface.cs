@@ -56,7 +56,7 @@ class AhkComInterface : AhkType
             .Select(iface => iface.Kind switch
                 {
                     // Resolve type reference, asserting that it's not null, then resolve the handle
-                    HandleKind.TypeReference => mr.GetTypeDefinition(FieldSignatureDecoder.ResolveTypeReference(mr, (TypeReferenceHandle)iface) ?? throw new NullReferenceException()),
+                    HandleKind.TypeReference => mr.GetTypeDefinition(FieldSignatureDecoder.ResolveTypeReference(mr, (TypeReferenceHandle)iface, out _)),
                     HandleKind.TypeDefinition => mr.GetTypeDefinition((TypeDefinitionHandle)iface),
                     _ => throw new NotSupportedException($"{iface.Kind} for interface {Namespace}.{Name}")
                 }
