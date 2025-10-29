@@ -110,6 +110,9 @@ class AhkComInterface : AhkType
         MaybeAddTypeDocumentation(sb);
         sb.AppendLine($"class {Name} extends {(BaseInterface.HasValue ? mr.GetString(BaseInterface.Value.Name) : "Win32ComInterface")}{{");
 
+        sb.AppendLine();
+        sb.AppendLine("    static sizeof => A_PtrSize");
+
         if (iid.HasValue)
         {
             sb.AppendLine("    /**");
@@ -136,6 +139,9 @@ class AhkComInterface : AhkType
         sb.AppendLine("     */");
         sb.AppendLine($"    static vTableOffset => {VTableOffset}");
 
+        sb.AppendLine();
+        AppendVTableList(sb);
+
         foreach (AhkComMethod method in Methods)
         {
             sb.AppendLine();
@@ -147,12 +153,24 @@ class AhkComInterface : AhkType
         sb.AppendLine("}");
     }
 
+    private void AppendVTableList(StringBuilder sb)
+    {
+        sb.AppendLine("    /**");
+        sb.AppendLine("     * @readonly used when implementing interfaces to order function pointers");
+        sb.AppendLine("     * @type {Array<String>}");
+        sb.AppendLine("     */");
+
+        sb.Append("    static VTableNames => [");
+        sb.Append(string.Join(", ", Methods.Select(m => $"\"{m.GetDeduplicatedName()}\"")));
+        sb.AppendLine("]");
+    }
+
     protected override List<string> GetReferencedTypes()
     {
         var imports = base.GetReferencedTypes();
 
         // Check for methods with String parameters
-        if(Methods.Any(m => m.HasStringParam))
+        if (Methods.Any(m => m.HasStringParam))
         {
             imports.Add("Windows.Win32.Foundation.BSTR");
         }

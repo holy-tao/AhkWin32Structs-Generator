@@ -132,7 +132,7 @@ class AhkComMethod : AhkMethod
     /// have unique names. So we append a counter to overloads for uniqueness
     /// </summary>
     /// <returns></returns>
-    private string GetDeduplicatedName()
+    public string GetDeduplicatedName()
     {
         int counter = parent.Methods
             .Where(m => (m.Name == Name) && (m.VTableIndex < VTableIndex))
