@@ -53,6 +53,7 @@ public class AhkStructMember
     // flags.HasFlag(MemberFlags.Union) || flags.HasFlag(MemberFlags.Anonymous) || 
     public bool IsNested => embeddedStruct?.typeDef.IsNested ?? false;
 
+    // TODO REALLY need to improve handling for arrays of types defined in other assemblies (Read: GUIDs)
     public AhkStructMember(AhkStruct parent, MetadataReader mr, FieldDefinition fieldDef, Dictionary<string, string>? apiFields, int offset = 0)
     {
         this.parent = parent;
@@ -69,17 +70,33 @@ public class AhkStructMember
         {
             TypeDefinition fieldTypeDef = fieldInfo.TypeDef ??
                 throw new NullReferenceException($"Null TypeDef for Class or Struct field {Name}");
-            embeddedStruct = AhkStruct.Get(mr, fieldTypeDef) ?? throw new NullReferenceException();
-            Size = embeddedStruct.Size;
+
+            if (!fieldTypeDef.IsNested && !fieldInfo.GetTypeDefNamespace().StartsWith("Windows.Win32"))
+            {
+                // Embedded type is not in our namespace so not emitted - use a raw pointer
+                // TODO would be better to generate #Includes for empty types and hand-write them
+                fieldInfo = new(SimpleFieldKind.Pointer, fieldInfo.Reader?.GetString(fieldTypeDef.Name) ?? throw new NullReferenceException());
+                Size = fieldInfo.GetWidth(parent.IsAnsi);
+            }
+            else
+            {
+                embeddedStruct = AhkStruct.Get(mr, fieldTypeDef) ?? throw new NullReferenceException();
+                Size = embeddedStruct.Size;
+            }
         }
         else if (fieldInfo.Kind == SimpleFieldKind.Array)
         {
             FieldInfo arrayElementType = fieldInfo.UnderlyingType ??
                 throw new NullReferenceException($"Null array element for Array field {Name}");
-            Size = fieldInfo.Length * arrayElementType.GetWidth(parent.IsAnsi);
 
-            if (arrayElementType.TypeDef != null)
-                embeddedStruct = AhkStruct.Get(mr, (TypeDefinition)arrayElementType.TypeDef);
+            Size = fieldInfo.Length * arrayElementType.GetWidth(parent.IsAnsi);
+            if(arrayElementType.Kind == SimpleFieldKind.Struct)
+            {
+                if((arrayElementType.TypeDef?.IsNested ?? false) || arrayElementType.GetTypeDefNamespace().StartsWith("Windows.Win32"))
+                {
+                    embeddedStruct = AhkStruct.Get(mr, arrayElementType.TypeDef ?? throw new NullReferenceException());
+                }
+            }
         }
         else
         {
@@ -253,7 +270,15 @@ public class AhkStructMember
 
     private void ToAhkArray(StringBuilder sb, int offset)
     {
-        FieldInfo arrTypeInfo = fieldInfo.UnderlyingType ?? throw new NullReferenceException($"Null ArrayType for {Name}");
+        FieldInfo arrUnderlying = fieldInfo.UnderlyingType ?? throw new NullReferenceException($"Null ArrayType for {Name}");
+        FieldInfo arrTypeInfo = arrUnderlying;
+        if(arrTypeInfo.Kind == SimpleFieldKind.Struct)
+        {
+            if(!(arrUnderlying.TypeDef?.IsNested ?? false) && !arrUnderlying.GetTypeDefNamespace().StartsWith("Windows.Win32"))
+            {
+                arrTypeInfo = new(SimpleFieldKind.Primitive, "ptr");
+            }
+        }
 
         string ahkElementType = arrTypeInfo.Kind switch
         {

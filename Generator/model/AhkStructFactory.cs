@@ -116,30 +116,7 @@ public partial class AhkStruct : AhkType
             _ => throw new NotSupportedException($"Unknown Type Layout attribute: {attr}")
         };
     }
-
-    public static string NamespaceToPath(string ns)
-    {
-        // Replace dots with directory separators
-        return ns.Replace('.', Path.DirectorySeparatorChar);
-    }
-
-    public static string RelativePathBetweenNamespaces(string fromNs, string? toNs)
-    {
-        if (string.IsNullOrEmpty(toNs))
-        {
-            // Assume current directory
-            return $".{Path.DirectorySeparatorChar}";
-        }
-
-        string fromDir = NamespaceToPath(fromNs);
-        string toDir = NamespaceToPath(toNs);
-
-        string relativePath = Path.GetRelativePath(fromDir, toDir);
-        if (!relativePath.EndsWith(Path.DirectorySeparatorChar))
-            relativePath += Path.DirectorySeparatorChar;
-        return relativePath;
-    }
-
+    
     public bool HasCustomAttribute(params string[] attrs)
     {
         return CustomAttributes.Any(c => attrs.Contains(c.Name));

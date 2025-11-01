@@ -8,11 +8,11 @@ class AhkMethod
 {
     public string Name => mr.GetString(methodDef.Name);
 
-    private readonly MetadataReader mr;
-    private readonly MethodDefinition methodDef;
-    private readonly ApiDetails? apiDetails;
+    private protected readonly MetadataReader mr;
+    private protected readonly MethodDefinition methodDef;
+    private protected readonly ApiDetails? apiDetails;
 
-    private readonly MethodImport import;
+    private protected readonly MethodImport import;
 
     public MethodImportAttributes CallingConvention => import.Attributes & MethodImportAttributes.CallingConventionMask;
 
@@ -20,15 +20,15 @@ class AhkMethod
 
     public bool SetsLastError => import.Attributes.HasFlag(MethodImportAttributes.SetLastError);
 
-    public string DLLName => mr.GetString(mr.GetModuleReference(import.Module).Name);
+    public string DLLName => import.Module.IsNil? "" : mr.GetString(mr.GetModuleReference(import.Module).Name);
 
     // The entry point for the DLL, that is, the actual value that gets looked up in the symbol table
     // This will almost always be identical to Name, but isn't required to be
-    public string EntryPoint => mr.GetString(import.Name);
+    public string EntryPoint => import.Name.IsNil? "" : mr.GetString(import.Name);
 
     public bool HasReturnValue => !(parameters[0].FieldInfo.Kind == SimpleFieldKind.Primitive && parameters[0].FieldInfo.TypeName == "Void");
 
-    private readonly List<AhkParameter> parameters = [];
+    private protected readonly List<AhkParameter> parameters = [];
 
     private readonly List<CAInfo> CustomAttributes;
 
@@ -38,13 +38,13 @@ class AhkMethod
         this.methodDef = methodDef;
         CustomAttributes = CustomAttributeDecoder.DecodeAll(mr, methodDef);
 
-        Program.ApiDocs.TryGetValue(Name, out apiDetails);
+        apiDetails = DocumentationUtils.GetApiDetails(mr, methodDef);
 
         import = methodDef.GetImport();
         parameters = ParameterDecoder.DecodeParameters(mr, methodDef);
     }
 
-    public void ToAhk(StringBuilder sb)
+    public virtual void ToAhk(StringBuilder sb)
     {
         MaybeAppendDocumentation(sb);
         sb.AppendLine($"    static {Name}({BuildMethodArgumentList()}) {{");
@@ -193,13 +193,11 @@ class AhkMethod
     /// Builds the actual DllCall call, like [result := ] DllCall("dll\function", "ptr", ..)
     /// </summary>
     /// <returns></returns>
-    private string BuildDllCallCall(string entry)
+    private protected virtual string BuildDllCallCall(string entry)
     {
         StringBuilder sb = new();
         if (HasReturnValue)
             sb.Append("result := ");
-
-        // Entry point is an ordinal, which means we need to manually load the dll and 
 
         sb.Append($"DllCall({entry}");
 
@@ -227,16 +225,16 @@ class AhkMethod
         return sb.Append(')').ToString();
     }
 
-    private string BuildMethodArgumentList()
+    private protected string BuildMethodArgumentList()
     {
         return string.Join(", ", parameters
-            .Slice(1, parameters.Count - 1)     // Skip param 0, the return value
-            .Where(p => !p.Reserved)            // Skip reserved params
+            .Slice(1, parameters.Count - 1)                 // Skip param 0, the return value
+            .Where(p => !p.Reserved)   // Skip reserved params and explicit return values
             .Select(p => p.Name)
         );
     }
 
-    private string BuildDllCallArgumentList()
+    private protected virtual string BuildDllCallArgumentList()
     {
         StringBuilder argList = new();
 
@@ -261,7 +259,7 @@ class AhkMethod
         return argList.ToString();
     }
 
-    private void MaybeAppendDocumentation(StringBuilder sb)
+    private protected void MaybeAppendDocumentation(StringBuilder sb)
     {
         sb.AppendLine("    /**");
         sb.AppendLine("     * " + AhkType.EscapeDocs(apiDetails?.Description, "    "));
@@ -330,30 +328,22 @@ class AhkMethod
     ///     2.  [CanReturnErrorsAsSuccess] is present
     /// </summary>
     /// <returns></returns>
-    private bool ShouldThrowForReturnValue()
+    private protected bool ShouldThrowForReturnValue()
     {
         // If the method doesn't return an HRESULT, this is always no
-        if (parameters[0].FieldInfo.Kind != SimpleFieldKind.HRESULT)
+        if (!parameters[0].IsHRESULT)
         {
             return false;
         }
 
+        // If [PreserveSig] exists and is false, don't check HRESULTS
         CAInfo attr = CustomAttributes.SingleOrDefault(c => c.Name is "PreserveSigAttribute");
         if (attr != default)
         {
-            bool hasPreserveSig = ((bool?)attr.Attr.FixedArguments[0].Value) ?? true;
-
-            // https://github.com/microsoft/win32metadata/issues/1315#issuecomment-1281559120
-            if (!hasPreserveSig)
-            {
-                return false;
-            }
-            else
-            {
-                return !CustomAttributes.Any(c => c.Name is "CanReturnMultipleSuccessValuesAttribute" or "CanReturnErrorsAsSuccessAttribute");
-            }
+            return ((bool?)attr.Attr.FixedArguments[0].Value) ?? true;
         }
 
-        return true;
+        // Otherwise, check for [CanReturnMultipleSuccessValues] or [CanReturnErrorsAsSuccess]
+        return !CustomAttributes.Any(c => c.Name is "CanReturnMultipleSuccessValuesAttribute" or "CanReturnErrorsAsSuccessAttribute");
     }
 }

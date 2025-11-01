@@ -1,0 +1,40 @@
+add-to:
+  - Windows.Win32.System.Com.IUnknown
+requires: []
+code: |
+    /**
+     * Determines whether or not this interface and some other interface refer to the
+     * same underlying object by comparing the pointers retrieved from QueryInterface
+     * @param {IUnknown | ComObject} other the interface to compare this one to. If 
+     *          other is a native AHK ComObject, its IUnknown pointer is retrieved via
+     *          `ComObjQuery`
+     * @returns 1 if this and other refer to the same object, 0 if they don't
+     */
+    Equals(other){
+        if(!(other is IUnknown || other is ComObject)){
+            throw TypeError("Expected a Win32ComInterface extending IUnknown or a ComObject, but got a(n) " . type(other))
+        }
+
+        thisPtrBuf := Buffer(A_PtrSize)
+        this.QueryInterface(IUnknown.IID, thisPtrBuf)
+        thisPtr := NumGet(thisPtrBuf, "ptr")
+        
+        otherPtr := 0
+
+        if(other is IUnknown){
+            other.QueryInterface(IUnknown.IID, &otherPtr)
+            otherInterface := IUnknown(otherPtr)  ; This object will release the pointer when it falls out of scope
+        }
+        else{
+            ;Native AHK ComObject, use ComObjQuery
+            otherPtr := ComObjQuery(other, String(IUnknown.IID)).ptr
+        }
+
+        return thisPtr == otherPtr
+    }
+
+    __Delete(){
+        if(!this.owned){
+            this.Release()
+        }
+    }

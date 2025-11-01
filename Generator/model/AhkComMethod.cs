@@ -1,0 +1,143 @@
+
+using System.Net.Http.Headers;
+using System.Reflection;
+using System.Reflection.Metadata;
+using System.Text;
+using Microsoft.Windows.SDK.Win32Docs;
+
+class AhkComMethod : AhkMethod
+{
+    public int VTableIndex { get; private set; }
+
+    public bool HasStringParam => parameters[1..].Any(p => p.GetTypeDefName(mr) is "BSTR");
+
+    private readonly AhkComInterface parent;
+
+    public AhkComMethod(AhkComInterface parent, MetadataReader mr, MethodDefinition methodDef, int vTableIndex) : base(mr, methodDef)
+    {
+        VTableIndex = vTableIndex;
+        this.parent = parent;
+    }
+
+    //TODO: handle [RetVal] parameters
+    //TODO: Related to above, wrap ahk literals as ComValues where possible - https://www.autohotkey.com/docs/v2/lib/ComValue.htm
+
+    public override void ToAhk(StringBuilder sb)
+    {
+        MaybeAppendDocumentation(sb);
+        sb.AppendLine($"    {GetDeduplicatedName()}({BuildMethodArgumentList()}) {{");
+
+        List<AhkParameter> reservedParams = [.. parameters.Where(p => p.Reserved)];
+        if (reservedParams.Count > 0)
+        {
+            sb.Append("        static ");
+            sb.Append(string.Join(", ", reservedParams.Select(p => $"{p.Name} := 0")));
+            sb.Append(" ;Reserved parameters must always be NULL");
+
+            sb.AppendLine();
+            sb.AppendLine();
+        }
+
+        AppendParameterConversions(sb);
+
+        if (SetsLastError)
+        {
+            sb.AppendLine($"        A_LastError := 0");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"        {BuildDllCallCall("")}");
+
+        if (SetsLastError)
+        {
+            // Inspect last error for errors
+            sb.AppendLine($"        if(A_LastError)");
+            sb.AppendLine($"            throw OSError()");
+            sb.AppendLine();
+        }
+
+        if (HasReturnValue)
+        {
+            sb.AppendLine($"        return result");
+        }
+        sb.AppendLine($"    }}");
+    }
+
+    private void AppendParameterConversions(StringBuilder sb)
+    {
+        bool addedConversions = false;
+        foreach (AhkParameter param in parameters[1..])
+        {
+            string? typeName = param.GetTypeDefName(mr);
+
+            if (typeName is "BSTR")
+            {
+                sb.AppendLine($"        {param.Name} := {param.Name} is String ? BSTR.Alloc({param.Name}).Value : {param.Name}");
+                addedConversions = true;
+            }
+            else if (typeName is "PWSTR")
+            {
+                sb.AppendLine($"        {param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}");
+                addedConversions = true;
+            }
+            else if (param.IsHandle(mr))
+            {
+                sb.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
+                addedConversions = true;
+            }
+            //TODO other ahk literal types that may need to be converted to variants?
+        }
+
+        if (addedConversions)
+            sb.AppendLine();
+    }
+
+    private protected override string BuildDllCallCall(string entry)
+    {
+        StringBuilder sb = new();
+
+        // ComCall can check HRESULTs for us
+        if (HasReturnValue)
+            sb.Append("result := ");
+
+        // https://www.autohotkey.com/docs/v2/lib/ComCall.htm
+        sb.Append($"ComCall({VTableIndex}, this");
+
+        if (parameters.Count > 1)
+        {
+            sb.Append(", ");
+            sb.Append(BuildDllCallArgumentList());
+        }
+
+        // Calling convention / return type
+        if (CallingConvention == MethodImportAttributes.CallingConventionCDecl || HasReturnValue)
+        {
+            sb.Append(", \"");
+            if (CallingConvention == MethodImportAttributes.CallingConventionCDecl)
+            {
+                sb.Append("CDecl ");
+            }
+
+            if (HasReturnValue)
+                sb.Append(ShouldThrowForReturnValue()? "HRESULT" : parameters[0].FieldInfo.GetDllCallType(false));
+
+            sb.Append('"');
+        }
+
+        return sb.Append(')').ToString();
+    }
+
+    /// <summary>
+    /// Some interfaces have overloaded methods. AHK doesn't support this, class members need to
+    /// have unique names. So we append a counter to overloads for uniqueness
+    /// </summary>
+    /// <returns></returns>
+    public string GetDeduplicatedName()
+    {
+        int counter = parent.Methods
+            .Where(m => (m.Name == Name) && (m.VTableIndex < VTableIndex))
+            .Count();
+
+        return counter > 0? Name + counter : Name;
+    }
+}

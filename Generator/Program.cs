@@ -48,11 +48,10 @@ public class Program
         {
             TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
 
-            if (typeDef.BaseType.Kind != HandleKind.TypeReference)
-                continue;
-
             string typeNamespace = mr.GetString(typeDef.Namespace);
-            if (ShouldSkipType(mr, hTypeDef, out string typeName, out string baseTypeName))
+            string typeName = mr.GetString(typeDef.Name);
+
+            if (ShouldSkipType(mr, hTypeDef))
                 continue;
 
             try
@@ -60,7 +59,7 @@ public class Program
                 IAhkEmitter? emitter = ParseType(mr, typeDef);
                 if (emitter == null)
                 {
-                    Debug.WriteLine($"Non-explicit skip for {baseTypeName} {mr.GetString(typeDef.Namespace)}.{typeName}");
+                    Debug.WriteLine($"Non-explicit skip for {mr.GetString(typeDef.Namespace)}.{typeName}");
                     continue;
                 }
 
@@ -90,11 +89,17 @@ public class Program
 
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef)
     {
+        if ((typeDef.Attributes & TypeAttributes.Interface) != 0)
+        {
+            // COM Interface
+            return new AhkComInterface(mr, typeDef);
+        }
+
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
         string typeName = mr.GetString(typeDef.Name);
         string baseTypeName = mr.GetString(baseTypeRef.Name);
 
-        if (typeName == "Apis")
+        if (baseTypeName == "Object" && typeName == "Apis")
         {
             // This is the generic type that global functions and constants wind up in
             return new AhkApiType(mr, typeDef);
@@ -108,17 +113,21 @@ public class Program
         };
     }
 
-    private static bool ShouldSkipType(MetadataReader mr, TypeDefinitionHandle typeDefHandle, out string typeName, out string baseTypeName)
+    private static bool ShouldSkipType(MetadataReader mr, TypeDefinitionHandle typeDefHandle)
     {
-        TypeDefinition typeDef = mr.GetTypeDefinition((TypeDefinitionHandle)typeDefHandle);
+        TypeDefinition typeDef = mr.GetTypeDefinition(typeDefHandle);
+
+        if (typeDef.BaseType.Kind != HandleKind.TypeReference)
+            return false;
+
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-        baseTypeName = mr.GetString(baseTypeRef.Name);
-        typeName = mr.GetString(typeDef.Name);
+        string baseTypeName = mr.GetString(baseTypeRef.Name);
 
         // MultiCastDelegate means function pointer
         if (baseTypeName is "MulticastDelegate" or "Attribute")
             return true;
 
+        // Handled in their parents
         if (typeDef.IsNested)
             return true;
 
@@ -161,5 +170,3 @@ public class Program
         File.WriteAllText(Path.Join(outputDirectory, "version.ini"), sb.ToString());
     }
 }
-
-// For enums, value__ is the base type of the enum

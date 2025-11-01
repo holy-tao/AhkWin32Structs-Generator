@@ -52,7 +52,7 @@ public abstract class AhkType : IAhkEmitter
 
         flags = GetFlags();
 
-        Program.ApiDocs.TryGetValue(Name, out apiDetails);
+        apiDetails = DocumentationUtils.GetApiDetails(mr, typeDef);
         Program.Extensions.TryGetValue(GetFqn(mr,typeDef), out extensions);
     }
 
@@ -188,5 +188,28 @@ public abstract class AhkType : IAhkEmitter
     public static string GetFqn(MetadataReader reader, TypeDefinition td)
     {
         return reader.GetString(td.Namespace) + "." + reader.GetString(td.Name);
+    }
+    
+    public static string NamespaceToPath(string ns)
+    {
+        // Replace dots with directory separators
+        return ns.Replace('.', Path.DirectorySeparatorChar);
+    }
+
+    public static string RelativePathBetweenNamespaces(string fromNs, string? toNs)
+    {
+        if (string.IsNullOrEmpty(toNs))
+        {
+            // Assume current directory
+            return $".{Path.DirectorySeparatorChar}";
+        }
+
+        string fromDir = NamespaceToPath(fromNs);
+        string toDir = NamespaceToPath(toNs);
+
+        string relativePath = Path.GetRelativePath(fromDir, toDir);
+        if (!relativePath.EndsWith(Path.DirectorySeparatorChar))
+            relativePath += Path.DirectorySeparatorChar;
+        return relativePath;
     }
 }
