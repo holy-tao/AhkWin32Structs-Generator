@@ -38,7 +38,15 @@ class AhkComMethod : AhkMethod
             sb.AppendLine();
         }
 
-        AppendParameterConversions(sb);
+        StringBuilder paramConversions = GetParameterConversions();
+        sb.Append(paramConversions);
+        if (paramConversions.Length > 0)
+            sb.AppendLine();
+
+        StringBuilder marshalCode = GetParameterMarshallingCode();
+        sb.Append(marshalCode);
+        if (marshalCode.Length > 0)
+            sb.AppendLine();
 
         if (SetsLastError)
         {
@@ -63,33 +71,29 @@ class AhkComMethod : AhkMethod
         sb.AppendLine($"    }}");
     }
 
-    private void AppendParameterConversions(StringBuilder sb)
+    private protected override StringBuilder GetParameterConversions()
     {
-        bool addedConversions = false;
+        StringBuilder conversions = new();
+
         foreach (AhkParameter param in parameters[1..])
         {
             string? typeName = param.GetTypeDefName(mr);
 
             if (typeName is "BSTR")
             {
-                sb.AppendLine($"        {param.Name} := {param.Name} is String ? BSTR.Alloc({param.Name}).Value : {param.Name}");
-                addedConversions = true;
+                conversions.AppendLine($"        {param.Name} := {param.Name} is String ? BSTR.Alloc({param.Name}).Value : {param.Name}");
             }
-            else if (typeName is "PWSTR")
+            else if (typeName is "PSTR" or "PWSTR")
             {
-                sb.AppendLine($"        {param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}");
-                addedConversions = true;
+                conversions.AppendLine($"        {param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}");
             }
             else if (param.IsHandle(mr))
             {
-                sb.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
-                addedConversions = true;
+                conversions.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
             }
-            //TODO other ahk literal types that may need to be converted to variants?
         }
 
-        if (addedConversions)
-            sb.AppendLine();
+        return conversions;
     }
 
     private protected override string BuildDllCallCall(string entry)

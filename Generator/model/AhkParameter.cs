@@ -59,7 +59,7 @@ public readonly record struct AhkParameter
     public bool IsClass => FieldInfo.Kind == SimpleFieldKind.Class;
     public bool IsOther => FieldInfo.Kind == SimpleFieldKind.Other;
 
-    public bool IsPtrToPrimitive => IsPtr && FieldInfo?.Kind == SimpleFieldKind.Primitive;
+    public bool IsPtrToPrimitive => IsPtr && FieldInfo.UnderlyingType?.Kind == SimpleFieldKind.Primitive;
 
     public bool IsHandle(MetadataReader mr)
     {

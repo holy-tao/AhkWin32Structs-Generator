@@ -71,18 +71,16 @@ class AhkMethod
             sb.AppendLine();
         }
 
-        // Allow string literals and dereference handles
-        var stringParams = parameters[1..].Where(p => p.GetTypeDefName(mr) is "PWSTR" or "PSTR").ToList();
-        var handleParams = parameters[1..].Where(p => p.IsHandle(mr)).ToList();
-
-        stringParams.ForEach(param => sb.AppendLine($"        {param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}"));
-        handleParams.ForEach(param => sb.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}"));
-
-        if (stringParams.Count > 0 || handleParams.Count > 0)
-        {
+        StringBuilder paramConversions = GetParameterConversions();
+        sb.Append(paramConversions);
+        if (paramConversions.Length > 0)
             sb.AppendLine();
-        }
-        
+
+        StringBuilder marshalCode = GetParameterMarshallingCode();
+        sb.Append(marshalCode);
+        if (marshalCode.Length > 0)
+            sb.AppendLine();
+
         bool epIsOrd = EntryPoint.StartsWith('#');  //Is the EntryPoint and ordinal?
 
         if (SetsLastError)
@@ -159,6 +157,46 @@ class AhkMethod
         {
             sb.AppendLine("        return result");
         }
+    }
+
+    private protected virtual StringBuilder GetParameterConversions()
+    {
+        StringBuilder conversions = new();
+
+        foreach (AhkParameter param in parameters[1..])
+        {
+            string? typeName = param.GetTypeDefName(mr);
+
+            if (typeName is "PSTR" or "PWSTR")
+            {
+                conversions.AppendLine($"        {param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}");
+            }
+            else if (param.IsHandle(mr))
+            {
+                conversions.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
+            }
+        }
+
+        return conversions;
+    }
+
+    private protected virtual StringBuilder GetParameterMarshallingCode()
+    {
+        StringBuilder code = new();
+
+        foreach (AhkParameter param in parameters[1..].Where(p => !p.Reserved))
+        {
+            // Allow pointers to primitives to be either VarRefs or raw pointers. If we only use asterisk marshalling, it's
+            // impossible to ever pass null to a method, and users may want to pass pointers to e.g. buffers
+            //      variable name is {param.Name}Marshal
+            if (param.IsPtrToPrimitive)
+            {
+                string dllCallType = param.FieldInfo.GetDllCallType(false);
+                code.AppendLine($"        {param.Name}Marshal := {param.Name} is VarRef ? \"{dllCallType}\" : \"ptr\"");
+            }
+        }
+
+        return code;
     }
 
     /// <summary>
@@ -246,7 +284,9 @@ class AhkMethod
             bool isString = param.FieldInfo.TypeDef.HasValue && mr.GetString(param.FieldInfo.TypeDef.Value.Name) is "PWSTR" or "PSTR";
             string dllCallType = isString ? "ptr" : param.FieldInfo.GetDllCallType(false);
 
-            argList.Append($"\"{dllCallType}\"");
+            string marshalAs = (param.IsPtrToPrimitive && !param.Reserved) ? $"{param.Name}Marshal" : $"\"{dllCallType}\"";
+
+            argList.Append(marshalAs);
             argList.Append(", ");
             argList.Append(param.Name);
 
