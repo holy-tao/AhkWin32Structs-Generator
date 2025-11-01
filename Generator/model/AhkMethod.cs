@@ -75,7 +75,12 @@ class AhkMethod
         sb.Append(paramConversions);
         if (paramConversions.Length > 0)
             sb.AppendLine();
-        
+
+        StringBuilder marshalCode = GetParameterMarshallingCode();
+        sb.Append(marshalCode);
+        if (marshalCode.Length > 0)
+            sb.AppendLine();
+
         bool epIsOrd = EntryPoint.StartsWith('#');  //Is the EntryPoint and ordinal?
 
         if (SetsLastError)
@@ -175,6 +180,25 @@ class AhkMethod
         return conversions;
     }
 
+    private protected virtual StringBuilder GetParameterMarshallingCode()
+    {
+        StringBuilder code = new();
+
+        foreach (AhkParameter param in parameters[1..].Where(p => !p.Reserved))
+        {
+            // Allow pointers to primitives to be either VarRefs or raw pointers. If we only use asterisk marshalling, it's
+            // impossible to ever pass null to a method, and users may want to pass pointers to e.g. buffers
+            //      variable name is {param.Name}Marshal
+            if (param.IsPtrToPrimitive)
+            {
+                string dllCallType = param.FieldInfo.GetDllCallType(false);
+                code.AppendLine($"        {param.Name}Marshal := {param.Name} is VarRef ? \"{dllCallType}\" : \"ptr\"");
+            }
+        }
+
+        return code;
+    }
+
     /// <summary>
     /// Get a list of the types referenced in the method - this is currently only the 
     /// LibraryLoader and Foundations APIs for ordinal methods, but in the future might
@@ -260,7 +284,9 @@ class AhkMethod
             bool isString = param.FieldInfo.TypeDef.HasValue && mr.GetString(param.FieldInfo.TypeDef.Value.Name) is "PWSTR" or "PSTR";
             string dllCallType = isString ? "ptr" : param.FieldInfo.GetDllCallType(false);
 
-            argList.Append($"\"{dllCallType}\"");
+            string marshalAs = (param.IsPtrToPrimitive && !param.Reserved) ? $"{param.Name}Marshal" : $"\"{dllCallType}\"";
+
+            argList.Append(marshalAs);
             argList.Append(", ");
             argList.Append(param.Name);
 

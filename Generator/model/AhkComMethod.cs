@@ -43,6 +43,11 @@ class AhkComMethod : AhkMethod
         if (paramConversions.Length > 0)
             sb.AppendLine();
 
+        StringBuilder marshalCode = GetParameterMarshallingCode();
+        sb.Append(marshalCode);
+        if (marshalCode.Length > 0)
+            sb.AppendLine();
+
         if (SetsLastError)
         {
             sb.AppendLine($"        A_LastError := 0");
