@@ -17,7 +17,7 @@ public class ParameterDecoder
         {
             // Return type might be parameter at sequenceNumber 0
             result.Add(new AhkParameter(
-                retParam.Name.IsNil ? "" : reader.GetString(retParam.Name),
+                "result",
                 0,
                 sig.ReturnType,
                 retParam.Attributes,
@@ -27,7 +27,7 @@ public class ParameterDecoder
         else
         {
             result.Add(new AhkParameter(
-                "Return Value",
+                "result",
                 0,
                 sig.ReturnType,
                 System.Reflection.ParameterAttributes.None,

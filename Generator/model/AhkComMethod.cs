@@ -54,6 +54,7 @@ class AhkComMethod : AhkMethod
             sb.AppendLine();
         }
 
+        AppendOutputParamMarshallingCode(sb);
         sb.AppendLine($"        {BuildDllCallCall("")}");
 
         if (SetsLastError)
@@ -64,10 +65,7 @@ class AhkComMethod : AhkMethod
             sb.AppendLine();
         }
 
-        if (HasReturnValue)
-        {
-            sb.AppendLine($"        return result");
-        }
+        AppendReturnStatement(sb);
         sb.AppendLine($"    }}");
     }
 
@@ -101,7 +99,7 @@ class AhkComMethod : AhkMethod
         StringBuilder sb = new();
 
         // ComCall can check HRESULTs for us
-        if (HasReturnValue)
+        if (FuncHasReturnValue)
             sb.Append("result := ");
 
         // https://www.autohotkey.com/docs/v2/lib/ComCall.htm
@@ -114,7 +112,7 @@ class AhkComMethod : AhkMethod
         }
 
         // Calling convention / return type
-        if (CallingConvention == MethodImportAttributes.CallingConventionCDecl || HasReturnValue)
+        if (CallingConvention == MethodImportAttributes.CallingConventionCDecl || FuncHasReturnValue)
         {
             sb.Append(", \"");
             if (CallingConvention == MethodImportAttributes.CallingConventionCDecl)
@@ -122,7 +120,7 @@ class AhkComMethod : AhkMethod
                 sb.Append("CDecl ");
             }
 
-            if (HasReturnValue)
+            if (FuncHasReturnValue)
                 sb.Append(ShouldThrowForReturnValue()? "HRESULT" : parameters[0].FieldInfo.GetDllCallType(false));
 
             sb.Append('"');
@@ -142,6 +140,30 @@ class AhkComMethod : AhkMethod
             .Where(m => (m.Name == Name) && (m.VTableIndex < VTableIndex))
             .Count();
 
-        return counter > 0? Name + counter : Name;
+        return counter > 0 ? Name + counter : Name;
+    }
+
+    private protected override AhkParameter? GetOutputParameter()
+    {
+        if (!parameters[0].IsHRESULT || CanReturnErrorsAsSuccess)
+        {
+            return null;
+        }
+
+        AhkParameter outParam = default;
+        outParam = parameters.SingleOrDefault(p => p.IsReturnValue);
+
+        if(outParam == default)
+        {
+            IEnumerable<AhkParameter> candidateParams = parameters
+                .Where(p => p.IsOutParam && !p.IsInParam)
+                .Where(p => p.IsPtrToPrimitive || p.IsPtrToStruct || p.IsPtrToCom || p.IsPtrToHandle(mr));
+            if (candidateParams.Count() == 1)
+            {
+                outParam = candidateParams.Single();
+            }
+        }
+
+        return (outParam == default) ? null : outParam;
     }
 }

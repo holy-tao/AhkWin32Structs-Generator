@@ -72,6 +72,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                     SimpleFieldKind.Primitive => UnderlyingType.TypeName.Equals("void", StringComparison.InvariantCultureIgnoreCase) ?
                         "ptr" :
                         UnderlyingType.GetDllCallType(useNakedPointer) + '*',
+                    SimpleFieldKind.NativeTypedef or SimpleFieldKind.HRESULT => UnderlyingType.GetDllCallType(true) + "*",
                     _ => "ptr"
                 };
             }

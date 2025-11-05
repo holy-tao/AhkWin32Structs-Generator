@@ -26,9 +26,23 @@ class AhkMethod
     // This will almost always be identical to Name, but isn't required to be
     public string EntryPoint => import.Name.IsNil? "" : mr.GetString(import.Name);
 
-    public bool HasReturnValue => !(parameters[0].FieldInfo.Kind == SimpleFieldKind.Primitive && parameters[0].FieldInfo.TypeName == "Void");
+    public bool PreserveSig => CustomAttributes.Any(c => c.Name is "PreserveSigAttribute");
+
+    public bool CanReturnErrorsAsSuccess => CustomAttributes.Any(c => c.Name is "CanReturnErrorsAsSuccessAttribute");
+
+    /// <summary>
+    /// Does the function have a non-void return value? Note that it may not, but we could
+    /// still have an output parameter
+    /// </summary>
+    public bool FuncHasReturnValue => !(parameters[0].FieldInfo.Kind == SimpleFieldKind.Primitive && parameters[0].FieldInfo.TypeName == "Void");
 
     private protected readonly List<AhkParameter> parameters = [];
+
+    /// <summary>
+    /// The logical return value of the function, if any (e.g. the [RetVal] param for Com methods,
+    /// or an [out] param if we're confident that we don't want the user to allocate it)
+    /// </summary>
+    private protected AhkParameter? outputParameter;
 
     private readonly List<CAInfo> CustomAttributes;
 
@@ -42,6 +56,7 @@ class AhkMethod
 
         import = methodDef.GetImport();
         parameters = ParameterDecoder.DecodeParameters(mr, methodDef);
+        outputParameter = GetOutputParameter();
     }
 
     public virtual void ToAhk(StringBuilder sb)
@@ -99,6 +114,7 @@ class AhkMethod
             sb.AppendLine();
         }
 
+        AppendOutputParamMarshallingCode(sb);
         sb.AppendLine($"        {BuildDllCallCall(epIsOrd? "procAddr" : $"\"{DLLName}\\{EntryPoint}\"")}");
 
         if (epIsOrd)
@@ -116,46 +132,83 @@ class AhkMethod
             sb.AppendLine();
         }
 
-        if (HasReturnValue)
-            AppendReturnStatement(sb, parameters[0]);
+        AppendReturnStatement(sb);
 
         sb.AppendLine($"    }}");
     }
 
-    private void AppendReturnStatement(StringBuilder sb, AhkParameter returnValue)
+    private protected void AppendOutputParamMarshallingCode(StringBuilder sb)
+    {
+        if (!outputParameter.HasValue)
+        {
+            return;
+        }
+
+        AhkParameter outParam = outputParameter.Value;
+        if (outParam.CustomAttributes.HasFlag(CustomParamAttributes.SizedBuffer))
+        {
+            // We need to create a buffer with some size
+            Parameter param = methodDef.GetParameters()
+                .Select(mr.GetParameter)
+                .Single(p => mr.StringComparer.Equals(p.Name, outParam.Name));
+            CAInfo memSize = CustomAttributeDecoder.DecodeAll(mr, param)
+                .Single(p => p.Name == "MemorySizeAttribute");
+            short bytesParamIndex = (short)(memSize.Attr.NamedArguments.Single(arg => arg.Name == "BytesParamIndex").Value ?? throw new NullReferenceException());
+
+            // bytesParamIndex + 1 because we include the return value as a param
+            sb.AppendLine($"        {outParam.Name} := Buffer({parameters[bytesParamIndex + 1].Name}, 0)");
+        }
+        else if (outParam.IsPtrToStruct || outParam.IsPtrToHandle(mr))
+        {
+            sb.AppendLine($"        {outParam.Name} := {outParam.FieldInfo.UnderlyingType?.TypeName}()");
+        }
+    }
+
+    private protected void AppendReturnStatement(StringBuilder sb)
     {
         // The function returns an HRESULT and we should check to see if we need to throw
-        if (ShouldThrowForReturnValue())
+        if (ShouldThrowForReturnValue() && this is not AhkComMethod)
         {
             sb.AppendLine($"        if(result != 0)");
             sb.AppendLine($"            throw OSError(result)");
             sb.AppendLine();
         }
 
-        // We need to wrap handles and decide ownership & validity
-        if (returnValue.IsHandle(mr))
+        if (!FuncHasReturnValue && outputParameter is null)
         {
-            TypeDefinition returnValueType = returnValue.FieldInfo.TypeDef ?? throw new NullReferenceException();
+            return;
+        }
 
-            if (returnValue.HasIgnoreIfReturn)
+        AhkParameter fnRetVal = outputParameter ?? parameters[0];
+
+        // We need to wrap handles and decide ownership & validity
+        if (fnRetVal.IsHandle(mr))
+        {
+            TypeDefinition returnValueType = fnRetVal.FieldInfo.TypeDef ?? throw new NullReferenceException();
+
+            if (fnRetVal.HasIgnoreIfReturn)
             {
                 var conditions = CustomAttributeDecoder.DecodeAll(mr, returnValueType)
                     .Where(attr => attr.Name == "IgnoreIfReturnAttribute")
                     .Select(info => info.Attr.FixedArguments[0].Value)
-                    .Select(v => $"result == {(long)(v ?? throw new NullReferenceException())}");
+                    .Select(v => $"{fnRetVal.Name} == {(long)(v ?? throw new NullReferenceException())}");
                 string orStatement = string.Join(" || ", conditions);
 
                 sb.AppendLine($"        if({orStatement})");
-                sb.AppendLine($"            return {returnValue.Name}.Invalid()");
+                sb.AppendLine($"            return {fnRetVal.Name}.Invalid()");
                 sb.AppendLine();
             }
 
             string fieldName = mr.GetString(mr.GetFieldDefinition(returnValueType.GetFields().First()).Name);
-            sb.AppendLine($"        return {returnValue.GetTypeDefName(mr)}({{{fieldName}: result}}, {returnValue.ScriptOwned})");
+            sb.AppendLine($"        return {fnRetVal.GetTypeDefName(mr)}({{{fieldName}: {fnRetVal.Name}}}, {fnRetVal.ScriptOwned})");
+        }
+        else if (fnRetVal.IsPtrToCom)
+        {
+            sb.AppendLine($"        return {fnRetVal.FieldInfo.UnderlyingType?.TypeName}({fnRetVal.Name})");
         }
         else
         {
-            sb.AppendLine("        return result");
+            sb.AppendLine($"        return {fnRetVal.Name}");
         }
     }
 
@@ -163,7 +216,7 @@ class AhkMethod
     {
         StringBuilder conversions = new();
 
-        foreach (AhkParameter param in parameters[1..])
+        foreach (AhkParameter param in parameters[1..].Where(p => !p.Reserved && p != outputParameter))
         {
             string? typeName = param.GetTypeDefName(mr);
 
@@ -184,7 +237,7 @@ class AhkMethod
     {
         StringBuilder code = new();
 
-        foreach (AhkParameter param in parameters[1..].Where(p => !p.Reserved))
+        foreach (AhkParameter param in parameters[1..].Where(p => !p.Reserved && p != outputParameter))
         {
             // Allow pointers to primitives to be either VarRefs or raw pointers. If we only use asterisk marshalling, it's
             // impossible to ever pass null to a method, and users may want to pass pointers to e.g. buffers
@@ -197,6 +250,27 @@ class AhkMethod
         }
 
         return code;
+    }
+
+    private protected virtual AhkParameter? GetOutputParameter()
+    {
+        // If we have PreserveSig OR the function doesn't return an HRESULT, don't collapse
+        // [out] parameters
+        if(PreserveSig || CanReturnErrorsAsSuccess || !parameters[0].IsHRESULT)
+        {
+            return null;
+        }
+
+        AhkParameter outParam = default;
+        IEnumerable<AhkParameter> candidateParams = parameters
+            .Where(p => p.IsOutParam && !p.IsInParam)
+            .Where(p => p.IsPtrToPrimitive || p.IsPtrToHandle(mr) || p.IsPtrToCom);     // Only consider scalar, handle, and com output pointers
+        if (candidateParams.Count() == 1)
+        {
+            outParam = candidateParams.Single();
+        }
+
+        return (outParam == default) ? null : outParam;
     }
 
     /// <summary>
@@ -219,9 +293,24 @@ class AhkMethod
         }
 
         // If the return type is a handle, we need to import the handle
-        if (HasReturnValue && parameters[0].IsHandle(mr))
+        if (FuncHasReturnValue && parameters[0].IsHandle(mr))
         {
-            referencedTypes.Add(AhkStruct.GetFqn(mr, parameters[0].FieldInfo.TypeDef ?? throw new NullReferenceException()));
+            referencedTypes.Add(AhkType.GetFqn(mr, parameters[0].FieldInfo.TypeDef 
+                ?? throw new NullReferenceException()));
+        }
+
+        // If we have an output parameter, import its type if it's in the Win32Metadata
+        if(outputParameter != null)
+        {
+            FieldInfo? underlying = outputParameter?.FieldInfo.UnderlyingType;
+            bool mustImport = underlying?.Kind is SimpleFieldKind.Struct or SimpleFieldKind.COM;
+
+            if(mustImport && (underlying?.Reader == null || underlying?.Reader == mr))
+            {
+                TypeDefinition? td = underlying?.TypeDef;
+                if(td.HasValue)
+                    referencedTypes.Add(AhkType.GetFqn(mr, td.Value));
+            }
         }
 
         return referencedTypes;
@@ -234,7 +323,7 @@ class AhkMethod
     private protected virtual string BuildDllCallCall(string entry)
     {
         StringBuilder sb = new();
-        if (HasReturnValue)
+        if (FuncHasReturnValue)
             sb.Append("result := ");
 
         sb.Append($"DllCall({entry}");
@@ -246,7 +335,7 @@ class AhkMethod
         }
 
         // Calling convention / return type
-        if (CallingConvention == MethodImportAttributes.CallingConventionCDecl || HasReturnValue)
+        if (CallingConvention == MethodImportAttributes.CallingConventionCDecl || FuncHasReturnValue)
         {
             sb.Append(", \"");
             if (CallingConvention == MethodImportAttributes.CallingConventionCDecl)
@@ -254,8 +343,8 @@ class AhkMethod
                 sb.Append("CDecl ");
             }
 
-            if (HasReturnValue)
-                sb.Append(parameters[0].FieldInfo.GetDllCallType(false));
+            if (FuncHasReturnValue)
+                sb.Append(parameters[0].FieldInfo.GetDllCallType(true));
 
             sb.Append('"');
         }
@@ -268,6 +357,7 @@ class AhkMethod
         return string.Join(", ", parameters
             .Slice(1, parameters.Count - 1)                 // Skip param 0, the return value
             .Where(p => !p.Reserved)   // Skip reserved params and explicit return values
+            .Where(p => p != outputParameter)
             .Select(p => p.Name)
         );
     }
@@ -284,11 +374,12 @@ class AhkMethod
             bool isString = param.FieldInfo.TypeDef.HasValue && mr.GetString(param.FieldInfo.TypeDef.Value.Name) is "PWSTR" or "PSTR";
             string dllCallType = isString ? "ptr" : param.FieldInfo.GetDllCallType(false);
 
-            string marshalAs = (param.IsPtrToPrimitive && !param.Reserved) ? $"{param.Name}Marshal" : $"\"{dllCallType}\"";
+            string marshalAs = (param.IsPtrToPrimitive && !param.Reserved && param != outputParameter) ? $"{param.Name}Marshal" : $"\"{dllCallType}\"";
+            string passAs = (param == outputParameter && (param.IsPtrToPrimitive || param.IsPtrToCom)) ? $"&{param.Name} := 0" : param.Name;
 
             argList.Append(marshalAs);
             argList.Append(", ");
-            argList.Append(param.Name);
+            argList.Append(passAs);
 
             // TODO default value, optional values
 
@@ -314,7 +405,7 @@ class AhkMethod
         {
             AhkParameter param = parameters[i];
 
-            if (param.Reserved)
+            if (param.Reserved || param == outputParameter)
                 continue;
 
             sb.Append($"     * @param {{{param.FieldInfo.AhkType}}} {param.Name} ");
@@ -325,9 +416,23 @@ class AhkMethod
             sb.AppendLine();
         }
 
-        if (HasReturnValue)
+        if (FuncHasReturnValue || outputParameter != null)
         {
-            sb.AppendLine($"     * @returns {{{parameters[0].FieldInfo.AhkType}}} {AhkType.EscapeDocs(apiDetails?.ReturnValue, "    ")}");
+            if (outputParameter != null)
+            {
+                AhkParameter param = outputParameter.Value;
+                string? actualValueName = param.IsPtr ? param.FieldInfo.UnderlyingType?.AhkType : param.FieldInfo.AhkType;
+                sb.Append($"     * @returns {{{actualValueName}}} ");
+                if (apiDetails?.Parameters.TryGetValue(param.Name, out string? docString) ?? false)
+                {
+                    sb.Append(AhkType.EscapeDocs(docString, "    "));
+                }
+                sb.AppendLine();
+            }
+            else
+            {
+                sb.AppendLine($"     * @returns {{{parameters[0].FieldInfo.AhkType}}} {AhkType.EscapeDocs(apiDetails?.ReturnValue, "    ")}");
+            }
         }
         else
         {

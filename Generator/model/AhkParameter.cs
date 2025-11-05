@@ -59,7 +59,22 @@ public readonly record struct AhkParameter
     public bool IsClass => FieldInfo.Kind == SimpleFieldKind.Class;
     public bool IsOther => FieldInfo.Kind == SimpleFieldKind.Other;
 
-    public bool IsPtrToPrimitive => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.Primitive or SimpleFieldKind.Pointer);
+    public bool IsPtrToPrimitive => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.Primitive or SimpleFieldKind.Pointer or SimpleFieldKind.NativeTypedef or SimpleFieldKind.HRESULT);
+
+    public bool IsPtrToCom => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.COM);
+
+    public bool IsPtrToNativeTypedef => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.NativeTypedef);
+    public bool IsPtrToStruct => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.Struct);
+
+    public bool IsPtrToString => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.String);
+
+    public bool IsPtrToHandle(MetadataReader mr)
+    {
+        if (!IsPtr || FieldInfo.UnderlyingType?.TypeDef == null)
+            return false;
+
+        return AhkStruct.IsHandle(mr, FieldInfo.UnderlyingType?.TypeDef ?? throw new NullReferenceException());
+    }
 
     public bool IsHandle(MetadataReader mr)
     {
