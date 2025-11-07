@@ -12,6 +12,13 @@ public static class FieldSignatureDecoder
     /// </summary>
     private static readonly Dictionary<string, MetadataReader> _assemblyReaders = [];
 
+    /// <summary>
+    /// List of namespaces of types which we are external to Windows.Win32 and which we don't
+    /// want to resolve. These are all WinRT types, the only place this is ever applicable is in
+    /// the WinRT Interop Apis
+    /// </summary>
+    private static readonly string[] excludeNamespaces = ["Windows.UI", "Windows.Foundation", "Windows.Graphics", "Windows.Storage"];
+
     public static FieldInfo DecodeFieldType(MetadataReader reader, FieldDefinition fieldDef)
     {
         var blob = reader.GetBlobReader(fieldDef.Signature);
@@ -26,8 +33,14 @@ public static class FieldSignatureDecoder
     {
         var td = reader.GetTypeDefinition(tdHandle);
         string typeName = reader.GetString(td.Name);
+        string typeNamespace = reader.GetString(td.Namespace);
 
-        if (typeName == "HRESULT")
+        if(excludeNamespaces.Any(typeNamespace.StartsWith))
+        {
+            Debug.WriteLine($"Treating Win32 external {typeNamespace}.{typeName} as a pointer");
+            return new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td);
+        }
+        else if (typeName == "HRESULT")
         {
             return new FieldInfo(SimpleFieldKind.HRESULT, "HRESULT", 0, td, null, reader);
         }
