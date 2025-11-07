@@ -96,7 +96,7 @@ public abstract class AhkType : IAhkEmitter
 
         if (fieldDescription != null)
         {
-            sb.AppendLine("     * " + fieldDescription.Replace("\n", "\n * "));
+            sb.AppendLine("     * " + EscapeDocs(fieldDescription, "    "));
         }
 
         if (CustomAttributes.Any(c => c.Name is "ObsoleteAttribute"))
