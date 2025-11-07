@@ -68,7 +68,7 @@ public abstract class AhkType : IAhkEmitter
             if (apiDetails.Remarks != null)
             {
                 sb.AppendLine(" * @remarks");
-                sb.AppendLine(" * " + EscapeDocs(apiDetails.Remarks));
+                sb.AppendLine(" * " + EscapeDocs(apiDetails.Remarks, ""));
             }
             sb.AppendLine($" * @see {apiDetails.HelpLink}");
         }
