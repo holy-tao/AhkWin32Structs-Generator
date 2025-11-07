@@ -68,7 +68,7 @@ public abstract class AhkType : IAhkEmitter
             if (apiDetails.Remarks != null)
             {
                 sb.AppendLine(" * @remarks");
-                sb.AppendLine(" * " + EscapeDocs(apiDetails.Remarks));
+                sb.AppendLine(" * " + EscapeDocs(apiDetails.Remarks, ""));
             }
             sb.AppendLine($" * @see {apiDetails.HelpLink}");
         }
@@ -96,7 +96,7 @@ public abstract class AhkType : IAhkEmitter
 
         if (fieldDescription != null)
         {
-            sb.AppendLine("     * " + fieldDescription.Replace("\n", "\n * "));
+            sb.AppendLine("     * " + EscapeDocs(fieldDescription, "    "));
         }
 
         if (CustomAttributes.Any(c => c.Name is "ObsoleteAttribute"))
