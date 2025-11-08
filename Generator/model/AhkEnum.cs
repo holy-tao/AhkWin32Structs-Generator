@@ -5,24 +5,17 @@ using Microsoft.Windows.SDK.Win32Docs;
 
 public class AhkEnum : AhkType
 {
-    private readonly List<ConstantInfo> constants;
+    private readonly List<AhkConstant> constants;
 
     public AhkEnum(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
     {
-        constants = new List<ConstantInfo>();
+        ApiDetails? apiDetails = DocumentationUtils.GetApiDetails(mr, typeDef);
 
-        foreach (FieldDefinitionHandle fieldDefhandle in typeDef.GetFields())
-        {
-            FieldDefinition fieldDef = mr.GetFieldDefinition(fieldDefhandle);
-            if (mr.GetString(fieldDef.Name) == "value__")
-            {
-                //value__ contains the struct's underlying data type
-            }
-            else
-            {
-                constants.Add(ConstantDecoder.DecodeConstant(mr, fieldDef));
-            }
-        }
+        constants = typeDef.GetFields()
+            .Select(mr.GetFieldDefinition)
+            .Where(fd => !mr.StringComparer.Equals(fd.Name, "value__"))
+            .Select(fd => new AhkConstant(mr, fd, apiDetails))
+            .ToList();
     }
 
     public override void ToAhk(StringBuilder sb)
@@ -33,11 +26,10 @@ public class AhkEnum : AhkType
         MaybeAddTypeDocumentation(sb);
         sb.AppendLine($"class {Name}{{");
 
-        foreach (ConstantInfo constant in constants)
+        foreach (AhkConstant constant in constants)
         {
             sb.AppendLine();
-            MaybeAddConstDocumentation(sb, constant);
-            sb.AppendLine($"    static {constant.Name} => {constant.ValueAsAhkLiteral}");
+            constant.ToAhk(sb);
         }
 
         extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));

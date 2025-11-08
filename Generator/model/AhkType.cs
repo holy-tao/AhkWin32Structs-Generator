@@ -87,25 +87,6 @@ public abstract class AhkType : IAhkEmitter
         sb.AppendLine(" */");
     }
 
-    private protected void MaybeAddConstDocumentation(StringBuilder sb, ConstantInfo constant)
-    {
-        string? fieldDescription = null;
-        apiDetails?.Fields.TryGetValue(constant.Name, out fieldDescription);
-
-        sb.AppendLine("    /**");
-
-        if (fieldDescription != null)
-        {
-            sb.AppendLine("     * " + EscapeDocs(fieldDescription, "    "));
-        }
-
-        if (CustomAttributes.Any(c => c.Name is "ObsoleteAttribute"))
-            sb.AppendLine($"     * @deprecated");
-
-        sb.AppendLine($"     * @type {{{constant.Ahktype}}}");
-        sb.AppendLine("     */");
-    }
-
     public string GetDesiredFilepath(string root)
     {
         string namespacePath = Path.Join(Namespace.Split("."));
