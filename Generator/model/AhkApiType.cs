@@ -48,14 +48,14 @@ class AhkApiType : AhkType
     {
         sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
         sb.AppendLine($"#Include {GetPathToBase()}Win32Handle.ahk");
-        if(constants.Any(c => c.IsGuid))
+        if(constants.Any(c => c.NeedsGuid()))
             sb.AppendLine($"#Include {GetPathToBase()}Guid.ahk");
 
         AppendImports(sb);
         sb.AppendLine();
     }
 
-    protected override List<string> GetReferencedTypes()
+    public override List<string> GetReferencedTypes()
     {
         var imports = base.GetReferencedTypes();
         methods.ForEach(m => imports.AddRange(m.GetReferencedTypes()));

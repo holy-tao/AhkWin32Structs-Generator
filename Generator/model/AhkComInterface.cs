@@ -165,7 +165,7 @@ class AhkComInterface : AhkType
         sb.AppendLine("]");
     }
 
-    protected override List<string> GetReferencedTypes()
+    public override List<string> GetReferencedTypes()
     {
         var imports = base.GetReferencedTypes();
 

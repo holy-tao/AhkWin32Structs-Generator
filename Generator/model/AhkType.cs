@@ -108,7 +108,7 @@ public abstract class AhkType : IAhkEmitter
         }
     }
 
-    protected virtual List<string> GetReferencedTypes()
+    public virtual List<string> GetReferencedTypes()
     {
         List<string> imports = [];
 
