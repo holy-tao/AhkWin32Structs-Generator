@@ -9,33 +9,19 @@ using System.Reflection;
 /// </summary>
 class AhkApiType : AhkType
 {
-    List<ConstantInfo> constants = [];
+    List<AhkConstant> constants = [];
     List<AhkMethod> methods = [];
 
     public AhkApiType(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
     {
-        // Constants
-        foreach (FieldDefinitionHandle fieldDefHandle in typeDef.GetFields())
-        {
-            FieldDefinition fieldDef = mr.GetFieldDefinition(fieldDefHandle);
-            if (ConstantDecoder.IsConstant(mr, fieldDef))
-            {
-                constants.Add(ConstantDecoder.DecodeConstant(mr, fieldDef));
-            }
-            else
-            {
-                /**
-                Inline functions or macros. See https://github.com/microsoft/win32metadata/issues/436
-                Parsing is going to be hell in most cases
-                
-                E.g. this:
-                    [Constant("{497408003, 54418, 20189, 140, 35, 224, 192, 255, 238, 127, 14}, 0")]
-                    public static PROPERTYKEY PKEY_AudioEndpoint_FormFactor;
-                Means to create a PROPERTYKEY struct with a GUID and an integer value. But 
-                */
-                //Console.WriteLine(mr.GetString(fieldDef.Name));
-            }
-        }
+        ApiDetails? apiDetails = DocumentationUtils.GetApiDetails(mr, typeDef);
+
+        constants = typeDef.GetFields()
+            .Select(mr.GetFieldDefinition)
+            .Where(fd => !mr.StringComparer.Equals(fd.Name, "value__"))
+            .Select(fd => new AhkConstant(mr, fd, apiDetails))
+            .ToList();
+
 
         methods = typeDef.GetMethods()
             .Select(handle => new AhkMethod(mr, mr.GetMethodDefinition(handle)))
@@ -62,14 +48,18 @@ class AhkApiType : AhkType
     {
         sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
         sb.AppendLine($"#Include {GetPathToBase()}Win32Handle.ahk");
+        if(constants.Any(c => c.NeedsGuid()))
+            sb.AppendLine($"#Include {GetPathToBase()}Guid.ahk");
+
         AppendImports(sb);
         sb.AppendLine();
     }
 
-    protected override List<string> GetReferencedTypes()
+    public override List<string> GetReferencedTypes()
     {
         var imports = base.GetReferencedTypes();
         methods.ForEach(m => imports.AddRange(m.GetReferencedTypes()));
+        constants.ForEach(c => imports.AddRange(c.GetReferencedTypes()));
 
         return [.. imports.Distinct()];
     }
@@ -78,11 +68,10 @@ class AhkApiType : AhkType
     {
         sb.AppendLine(";@region Constants");
 
-        foreach (ConstantInfo constant in constants)
+        foreach (AhkConstant constant in constants)
         {
             sb.AppendLine();
-            MaybeAddConstDocumentation(sb, constant);
-            sb.AppendLine($"    static {constant.Name} => {AhkEscape(constant.ValueAsAhkLiteral)}");
+            constant.ToAhk(sb);
         }
 
         sb.AppendLine(";@endregion Constants");
@@ -105,29 +94,5 @@ class AhkApiType : AhkType
     {
         // We don't want the name to just be "Apis"
         return Namespace.Split(".").Last();
-    }
-
-    private static string AhkEscape(string val)
-    {
-        StringBuilder sb = new();
-
-        foreach (char c in val)
-        {
-            if (char.IsControl(c))
-            {
-                sb.Append($"\\u{((int)c).ToString("x4")}");
-                continue;
-            }
-
-            sb.Append(c switch
-            {
-                '\n' => "`n",
-                '\t' => "`t",
-                '\r' => "`r",
-                _ => c
-            });
-        }
-
-        return sb.ToString();
     }
 }

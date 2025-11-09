@@ -32,6 +32,32 @@ class GuidDecoder
     }
 
     /// <summary>
+    /// Decodes a Guid by dequeuing values from a queue of strings. This is used
+    /// primarilly to parse [Constant("...")] attributes
+    /// </summary>
+    /// <param name="values"></param>
+    /// <returns></returns>
+    public static Guid DecodeFromQueue(Queue<string> values)
+    {
+        if (values.Count < 10)
+            throw new ArgumentException($"Queue has {values.Count} elements, Guids require 10");
+
+        return new Guid(
+            (int)uint.Parse(values.Dequeue()),
+            (short)ushort.Parse(values.Dequeue()),
+            (short)ushort.Parse(values.Dequeue()),
+            byte.Parse(values.Dequeue()),
+            byte.Parse(values.Dequeue()),
+            byte.Parse(values.Dequeue()),
+            byte.Parse(values.Dequeue()),
+            byte.Parse(values.Dequeue()),
+            byte.Parse(values.Dequeue()),
+            byte.Parse(values.Dequeue()),
+            byte.Parse(values.Dequeue())
+        );
+    }
+
+    /// <summary>
     /// Decodes a the Guid of a Type Definition of it has a GuidAttribute
     /// </summary>
     /// <param name="reader">reader for metadata</param>

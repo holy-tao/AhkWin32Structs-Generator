@@ -38,7 +38,7 @@ public partial class AhkStruct : AhkType
         AppendImports(sb);
     }
 
-    protected override List<string> GetReferencedTypes()
+    public override List<string> GetReferencedTypes()
     {
         var imports = base.GetReferencedTypes();
 

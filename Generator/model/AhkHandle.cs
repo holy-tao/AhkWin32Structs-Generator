@@ -52,7 +52,7 @@ class AhkHandle : AhkStruct
         sb.AppendLine("}");
     }
 
-    protected override List<string> GetReferencedTypes()
+    public override List<string> GetReferencedTypes()
     {
         List<string> imports = base.GetReferencedTypes();
         

@@ -47,7 +47,7 @@ public partial class AhkStruct : AhkType
         return foundStruct;
     }
 
-    protected IEnumerable<AhkStructMember> Members { get; private set; }
+    public IEnumerable<AhkStructMember> Members { get; private set; }
 
     private readonly LayoutKind Layout;
 
