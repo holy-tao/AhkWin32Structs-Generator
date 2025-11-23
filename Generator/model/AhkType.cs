@@ -82,7 +82,11 @@ public abstract class AhkType : IAhkEmitter
             sb.AppendLine(" * @charset Unicode");
 
         if (Deprecated)
-            sb.AppendLine(" * @deprecated");
+        {
+            string message = DocumentationUtils.GetDeprecationMessage(mr, typeDef);
+            sb.AppendLine($" * @deprecated {message}");
+        }
+            
 
         sb.AppendLine(" */");
     }

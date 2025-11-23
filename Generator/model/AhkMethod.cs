@@ -453,7 +453,10 @@ class AhkMethod
             sb.AppendLine($"     * @charset Unicode");
 
         if (CustomAttributes.Any(c => c.Name is "ObsoleteAttribute"))
-            sb.AppendLine($"     * @deprecated");
+        {
+            string message = DocumentationUtils.GetDeprecationMessage(mr, methodDef);
+            sb.AppendLine($"     * @deprecated {message}");
+        }
 
         CAInfo osPlatform = CustomAttributes.SingleOrDefault(c => c.Name is "SupportedOSPlatformAttribute");
         if (osPlatform != default)

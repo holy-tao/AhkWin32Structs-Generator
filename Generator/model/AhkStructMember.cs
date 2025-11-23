@@ -208,7 +208,10 @@ public class AhkStructMember
         }
 
         if (flags.HasFlag(MemberFlags.Deprecated))
-            sb.AppendLine("     * @deprecated");
+        {
+            string message = DocumentationUtils.GetDeprecationMessage(mr, def);
+            sb.AppendLine($"     * @deprecated {message}");
+        }
 
         sb.AppendLine($"     * @type {{{(fieldInfo.Kind == SimpleFieldKind.Struct ? embeddedStruct?.Name : fieldInfo.AhkType)}}}");
         sb.AppendLine("     */");
