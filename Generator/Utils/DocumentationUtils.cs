@@ -31,4 +31,32 @@ class DocumentationUtils
 
         return details;
     }
+
+    public static string GetDeprecationMessage(MetadataReader mr, TypeDefinition td)
+    {
+        CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(mr, td, "ObsoleteAttribute");
+        return attr.HasValue ? GetDeprecationMessage((CustomAttribute)attr) : string.Empty;
+    }
+
+    public static string GetDeprecationMessage(MetadataReader mr, MethodDefinition def)
+    {
+        CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(mr, def, "ObsoleteAttribute");
+        return attr.HasValue ? GetDeprecationMessage((CustomAttribute)attr) : string.Empty;
+    }
+
+    public static string GetDeprecationMessage(MetadataReader mr, FieldDefinition def)
+    {
+        CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(mr, def, "ObsoleteAttribute");
+        return attr.HasValue ? GetDeprecationMessage((CustomAttribute)attr) : string.Empty;
+    }
+
+    public static string GetDeprecationMessage(CustomAttribute attr)
+    {
+        var decoded = attr.DecodeValue(new CaTypeProvider());
+
+        string? message = (string?)decoded.FixedArguments.FirstOrDefault().Value;
+        message ??= string.Empty;
+
+        return message;
+    }
 }
