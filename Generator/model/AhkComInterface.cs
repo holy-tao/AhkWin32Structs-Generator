@@ -153,6 +153,30 @@ class AhkComInterface : AhkType
         sb.AppendLine($"class {Name} extends {(BaseInterface.HasValue ? mr.GetString(BaseInterface.Value.Name) : "Win32ComInterface")}{{");
 
         sb.AppendLine();
+        AppendStaticCode(sb);
+
+        sb.AppendLine();
+        AppendVTableList(sb);
+
+        foreach (AhkComProperty prop in Properties)
+        {
+            sb.AppendLine();
+            prop.ToAhk(sb);
+        }
+
+        foreach (AhkComMethod method in Methods)
+        {
+            sb.AppendLine();
+            method.ToAhk(sb);
+        }
+        
+        extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
+
+        sb.AppendLine("}");
+    }
+
+    private void AppendStaticCode(StringBuilder sb)
+    {
         sb.AppendLine("    static sizeof => A_PtrSize");
 
         if (iid.HasValue)
@@ -180,25 +204,6 @@ class AhkComInterface : AhkType
         sb.AppendLine("     * @type {Integer}");
         sb.AppendLine("     */");
         sb.AppendLine($"    static vTableOffset => {VTableOffset}");
-
-        sb.AppendLine();
-        AppendVTableList(sb);
-
-        foreach (AhkComProperty prop in Properties)
-        {
-            sb.AppendLine();
-            prop.ToAhk(sb);
-        }
-
-        foreach (AhkComMethod method in Methods)
-        {
-            sb.AppendLine();
-            method.ToAhk(sb);
-        }
-        
-        extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
-
-        sb.AppendLine("}");
     }
 
     private void AppendVTableList(StringBuilder sb)
