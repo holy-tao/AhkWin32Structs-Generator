@@ -1,8 +1,35 @@
 
-using System.Diagnostics;
 using System.Reflection.Metadata;
 using System.Text;
-using Microsoft.Windows.SDK.Win32Docs;
+
+/// <summary>
+/// A COM property, represented by its getter and/or setter methods
+/// </summary>
+/// <param name="Name">Name of the property</param>
+/// <param name="Getter">Getter method for the property, if any</param>
+/// <param name="Setter">Setter method for the property, if any</param>
+record struct AhkComProperty(string Name, AhkComMethod? Getter, AhkComMethod? Setter)
+{
+    public void ToAhk(StringBuilder sb)
+    {
+        sb.AppendLine($"    {Name} {{");
+
+        if (Getter is not null)
+            sb.AppendLine($"        get => this.{Getter.GetDeduplicatedName()}()");
+
+        if (Setter is not null)
+            sb.AppendLine($"        set => this.{Setter.GetDeduplicatedName()}(value)");
+
+        sb.AppendLine("    }");
+    }
+
+    public override string ToString()
+    {
+        StringBuilder sb = new();
+        ToAhk(sb);
+        return sb.ToString();
+    }
+}
 
 class AhkComInterface : AhkType
 {
@@ -15,6 +42,8 @@ class AhkComInterface : AhkType
     public readonly TypeDefinition? BaseInterface;
 
     public readonly List<AhkComMethod> Methods;
+
+    public readonly List<AhkComProperty> Properties;
 
     public readonly int VTableOffset;
 
@@ -29,6 +58,19 @@ class AhkComInterface : AhkType
         Methods = typeDef.GetMethods()
             .Select((handle, i) => new AhkComMethod(this, mr, mr.GetMethodDefinition(handle), i + VTableOffset))
             .ToList();
+
+        // Collect properties from special-name methods
+        Properties = [];
+        foreach(AhkComMethod method in Methods.Where(m => m.IsSpecialName))
+        {
+            string normalizedName = method.GetDeduplicatedName()[4..]; // Remove "get_" or "put_"
+            if(Properties.Any(p => p.Name == normalizedName))
+                continue;
+
+            AhkComMethod? getter = Methods.FirstOrDefault(m => m!.IsSpecialName && m.GetDeduplicatedName() == "get_" + normalizedName, null);
+            AhkComMethod? setter = Methods.FirstOrDefault(m => m!.IsSpecialName && m.GetDeduplicatedName() == "put_" + normalizedName, null);
+            Properties.Add(new AhkComProperty(normalizedName, getter, setter));
+        }
     }
 
     private TypeDefinition? GetBaseTypeDef(TypeDefinition forType)
@@ -141,6 +183,12 @@ class AhkComInterface : AhkType
 
         sb.AppendLine();
         AppendVTableList(sb);
+
+        foreach (AhkComProperty prop in Properties)
+        {
+            sb.AppendLine();
+            prop.ToAhk(sb);
+        }
 
         foreach (AhkComMethod method in Methods)
         {
