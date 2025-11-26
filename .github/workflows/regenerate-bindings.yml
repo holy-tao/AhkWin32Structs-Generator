@@ -49,7 +49,7 @@ jobs:
       - name: Run Generator
         shell: pwsh
         run: |
-          $generatorExe = "./Generator/bin/release/net9.0/AhkWin32Structs.exe"
+          $generatorExe = Join-Path "generator" "Generator/bin/release/net9.0/AhkWin32Structs.exe"
           & $generatorExe "./metadata" "./bindings"
 
       - name: Determine new metadata version
