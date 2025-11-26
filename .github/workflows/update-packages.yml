@@ -2,8 +2,17 @@ name: Update Packages
 
 on: 
   workflow_dispatch:
-  schedule:
-    - cron: '0 0 * * 1'   # Every Monday at 00:00 UTC
+  workflow_call:
+    outputs:
+      metadata-version:
+        description: 'The new version of the win32 metadata package'
+        value: ${{ jobs.metadata.outputs.version }}
+      apidocs-version:
+        description: 'The new version of the win32 apidocs package'
+        value: ${{ jobs.docs.outputs.version }}
+      did-update:
+        description: 'Whether any packages were updated'
+        value: ${{ jobs.metadata.outputs.did-update || jobs.docs.outputs.did-update }}
 
 permissions:
   contents: write
@@ -12,6 +21,9 @@ jobs:
   metadata:
     name: Update Win32Metadata
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.commit-metadata.outputs.version }}
+      did-update: ${{ steps.commit-metadata.outputs.did-update }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -39,14 +51,19 @@ jobs:
           $version = (Get-Content ./metadata/Microsoft.Windows.SDK.Win32Metadata.version -Raw).Trim()
           $branchName = "update-win32metadata-$version"
 
+          Write-Output "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
           git add ./metadata/*.winmd
           git add ./metadata/*.version
 
           if (-not (git diff-index --quiet HEAD --)) {
+              Write-Output "did-update=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
               git commit -m "Update Win32Metadata to $version"
               git pull
               git push -f
           } else {
+              Write-Output "did-update=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
               Write-Host "No changes to commit for Win32Metadata"
               exit 0
           }
@@ -54,6 +71,9 @@ jobs:
   docs:
     name: Update Win32Docs
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.commit-docs.outputs.version }}
+      did-update: ${{ steps.commit-docs.outputs.did-update }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -81,14 +101,19 @@ jobs:
           $version = (Get-Content ./metadata/Microsoft.Windows.SDK.Win32Docs.version -Raw).Trim()
           $branchName = "update-win32docs-$version"
 
+          Write-Output "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
           git add ./metadata/*.msgpack
           git add ./metadata/*.version
 
           if (-not (git diff-index --quiet HEAD --)) {
+              Write-Output "did-update=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
               git commit -m "Update Win32Docs to $version"
               git pull
               git push -f
           } else {
+              Write-Output "did-update=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append              
               Write-Host "No changes to commit for Win32Docs"
               exit 0
           }
