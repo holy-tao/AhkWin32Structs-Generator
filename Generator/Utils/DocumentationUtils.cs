@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Reflection.Metadata;
 using Microsoft.Windows.SDK.Win32Docs;
 
@@ -10,9 +11,29 @@ class DocumentationUtils
         return GetApiDetails(mr.GetString(typeDef.Name), CustomAttributeDecoder.GetAttribute(mr, typeDef, "DocumentationAttribute"));
     }
 
-    public static ApiDetails? GetApiDetails(MetadataReader mr, MethodDefinition typeDef)
+    public static ApiDetails? GetApiDetails(MetadataReader mr, MethodDefinition def)
     {
-        return GetApiDetails(mr.GetString(typeDef.Name), CustomAttributeDecoder.GetAttribute(mr, typeDef, "DocumentationAttribute"));
+        string methodName = mr.GetString(def.Name);
+        CustomAttribute? documentationAttr = CustomAttributeDecoder.GetAttribute(mr, def, "DocumentationAttribute");
+        ApiDetails? details = null;
+
+        // First check parent to see if method is an interface method
+        TypeDefinitionHandle handle = def.GetDeclaringType();
+        if (!handle.IsNil)
+        {
+            TypeDefinition parentTypeDef = mr.GetTypeDefinition(handle);
+            if ((parentTypeDef.Attributes & TypeAttributes.ClassSemanticsMask) == TypeAttributes.Interface)
+            {
+                string interfaceName = mr.GetString(parentTypeDef.Name);
+                string qualifiedName = interfaceName + "." + methodName;
+                details = GetApiDetails(qualifiedName, documentationAttr);
+            }
+        }
+
+        // Fallback to method name only
+        details ??= GetApiDetails(methodName, documentationAttr);
+
+        return details;
     }
 
     public static ApiDetails? GetApiDetails(string forName, CustomAttribute? documentationAttr)
