@@ -50,7 +50,7 @@ jobs:
         shell: pwsh
         run: |
           $generatorExe = Join-Path "generator" "Generator/bin/release/net9.0/AhkWin32Structs.exe"
-          & $generatorExe $(Join-Path "generator" "metadata") "./bindings"
+          & $generatorExe $(Join-Path $env:GITHUB_WORKSPACE "generator" "metadata") $(Join-Path $env:GITHUB_WORKSPACE "bindings")
 
       - name: Determine new metadata version
         id: ver
@@ -67,7 +67,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          $branch = "update-metadata-${{ steps.ver.outputs.version }}"
+          $branch = "feature/update-metadata-${{ steps.ver.outputs.version }}"
           git checkout -b $branch
 
           git add -A
@@ -84,7 +84,7 @@ jobs:
           token: ${{ secrets.WIN32_PAT }}
           path: bindings
           base: main
-          branch: update-metadata-${{ steps.ver.outputs.version }}
+          branch: feature/update-metadata-${{ steps.ver.outputs.version }}
           title: "Update Win32 Metadata to ${{ steps.ver.outputs.version }}"
           body: |
             Automated update of generated Win32 bindings.
