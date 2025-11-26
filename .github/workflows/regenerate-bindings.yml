@@ -44,7 +44,7 @@ jobs:
         with:
           repository: holy-tao/AhkWin32Projection
           path: bindings
-          ssh-key: ${{ secrets.BINDINGS_DEPLOY_KEY }}
+          token: ${{ secrets.WIN32_PAT }}
           fetch-depth: 0
 
       - name: Run Generator
@@ -61,25 +61,6 @@ jobs:
           $version = (Get-Content ./metadata/Microsoft.Windows.SDK.Win32Metadata.version -Raw).Trim()
           Write-Output "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      - name: Create Branch for PR
-        shell: pwsh
-        working-directory: bindings
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          $branch = "feature/update-metadata-${{ steps.ver.outputs.version }}"
-          git checkout -b $branch
-
-          git add -A
-          if (git diff --cached --quiet) {
-              Write-Host "No changes in bindings; exiting."
-              exit 0
-          }
-
-          git commit -m "Update Win32 metadata to ${{ steps.ver.outputs.version }}"
-          git push origin -u $branch
-
       - name: Open Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
@@ -87,8 +68,13 @@ jobs:
           path: bindings
           base: main
           branch: feature/update-metadata-${{ steps.ver.outputs.version }}
+          commit-message: "Update Win32 Metadata to ${{ steps.ver.outputs.version }}"
           title: "Update Win32 Metadata to ${{ steps.ver.outputs.version }}"
           body: |
             Automated update of generated Win32 bindings.
             - Metadata version: **${{ steps.ver.outputs.version }}**
-            - Triggered by update-packages workflow.
+            - ApiDocs version: **${{ needs.update-packages.outputs.apidocs-version }}**
+
+            See the win32metadata [releases](https://github.com/microsoft/win32metadata/releases/tag/${{ steps.ver.outputs.version }}) page for details.
+
+            Triggered by update-packages workflow.
