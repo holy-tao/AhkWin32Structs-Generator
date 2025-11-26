@@ -49,8 +49,8 @@ jobs:
       - name: Run Generator
         shell: pwsh
         run: |
-          $generatorDll = Join-Path "generator" "bin/Release/net8.0/AhkWin32Structs-Generator.dll"
-          & dotnet $generatorDll "./generator/metadata" "./bindings"
+          $generatorExe = "Generator/bin/release/net9.0/AhkWin32Structs.exe"
+          & $generatorExe "./metadata" "./bindings"
 
       - name: Determine new metadata version
         id: ver
