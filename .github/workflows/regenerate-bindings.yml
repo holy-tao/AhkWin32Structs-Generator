@@ -70,11 +70,12 @@ jobs:
           branch: feature/update-metadata-${{ steps.ver.outputs.version }}
           commit-message: "Update Win32 Metadata to ${{ steps.ver.outputs.version }}"
           title: "Update Win32 Metadata to ${{ steps.ver.outputs.version }}"
+          assignees: holy-tao
           body: |
             Automated update of generated Win32 bindings.
             - Metadata version: **${{ steps.ver.outputs.version }}**
             - ApiDocs version: **${{ needs.update-packages.outputs.apidocs-version }}**
 
-            See the win32metadata [releases](https://github.com/microsoft/win32metadata/releases/tag/${{ steps.ver.outputs.version }}) page for details.
+            See the win32metadata [releases](https://github.com/microsoft/win32metadata/releases/tag/v${{ steps.ver.outputs.version }}) page for details.
 
             Triggered by update-packages workflow.
