@@ -1,0 +1,87 @@
+name: Regenerate Bindings
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 1 * * 1'  # every Monday 01:00 UTC
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-packages:
+    uses: ./.github/workflows/update-packages.yml  # your existing workflow
+    secrets: inherit
+
+
+  generate-bindings:
+    needs: update-packages
+    if: ${{ needs.update-packages.outputs.did-update == 'true' }}
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Generator Repo
+        uses: actions/checkout@v4
+        with:
+          repository: holy-tao/AhkWin32Structs-Generator
+          path: generator
+          ssh-key: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Generator
+        shell: pwsh
+        working-directory: generator
+        run: dotnet build -c Release
+
+      - name: Checkout Bindings Repo
+        uses: actions/checkout@v4
+        with:
+          repository: holy-tao/AhkWin32Projection
+          path: bindings
+          ssh-key: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Run Generator
+        shell: pwsh
+        run: |
+          $generatorDll = Join-Path "generator" "bin/Release/net8.0/AhkWin32Structs-Generator.dll"
+          & dotnet $generatorDll "./generator/metadata" "./bindings"
+
+      - name: Determine new metadata version
+        id: ver
+        shell: pwsh
+        working-directory: generator
+        run: |
+          $version = (Get-Content ./metadata/Microsoft.Windows.SDK.Win32Metadata.version -Raw).Trim()
+          Write-Output "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Create Branch for PR
+        shell: pwsh
+        working-directory: bindings
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          $branch = "update-metadata-${{ steps.ver.outputs.version }}"
+          git checkout -b $branch
+
+          git add -A
+          if (git diff --cached --quiet) {
+              Write-Host "No changes in bindings; exiting."
+              exit 0
+          }
+
+          git commit -m "Update Win32 metadata to ${{ steps.ver.outputs.version }}"
+
+      - name: Open Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.WIN32_PAT }}
+          path: bindings
+          base: main
+          branch: update-metadata-${{ steps.ver.outputs.version }}
+          title: "Update Win32 Metadata to ${{ steps.ver.outputs.version }}"
+          body: |
+            Automated update of generated Win32 bindings.
+            - Metadata version: **${{ steps.ver.outputs.version }}**
+            - Triggered by update-packages workflow.

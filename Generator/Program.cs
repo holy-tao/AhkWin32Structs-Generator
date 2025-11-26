@@ -13,12 +13,12 @@ public class Program
 
     public static Dictionary<string, List<AhkExtension>> Extensions = [];
 
-    public static void Main(string[] args)
+    public static int Main(string[] args)
     {
         if (args.Length != 2)
         {
             Console.Error.WriteLine("Usage: AhkWin32Structs.exe <metadata-directory> <output-root>");
-            return;
+            return -1;
         }
 
         string metadataDir = args[0];
@@ -38,7 +38,7 @@ public class Program
         ApiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
         Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(metadataDir, "extensions"));
 
-        int total = 0;
+        int total = 0, errors = 0;
 
         Console.WriteLine("Generating bindings...");
 
@@ -72,6 +72,7 @@ public class Program
             }
             catch (Exception ex)
             {
+                errors++;
                 Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
                 Console.Error.WriteLine(ex.Message);
                 Console.Error.WriteLine(ex.StackTrace);
@@ -84,7 +85,8 @@ public class Program
             }
         }
 
-        Console.WriteLine($"Done! Emitted {total} files in {stopwatch.Elapsed.TotalSeconds} seconds");
+        Console.WriteLine($"Done! Emitted {total} files with {errors} errors in {stopwatch.Elapsed.TotalSeconds} seconds");
+        return -errors;
     }
 
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef)
