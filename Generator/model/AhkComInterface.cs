@@ -1,6 +1,7 @@
 
 using System.Reflection.Metadata;
 using System.Text;
+using Microsoft.Windows.SDK.Win32Docs;
 
 /// <summary>
 /// A COM property, represented by its getter and/or setter methods
@@ -8,10 +9,11 @@ using System.Text;
 /// <param name="Name">Name of the property</param>
 /// <param name="Getter">Getter method for the property, if any</param>
 /// <param name="Setter">Setter method for the property, if any</param>
-record struct AhkComProperty(string Name, AhkComMethod? Getter, AhkComMethod? Setter)
+record struct AhkComProperty(AhkComInterface Interface, string Name, AhkComMethod? Getter, AhkComMethod? Setter)
 {
     public void ToAhk(StringBuilder sb)
     {
+        MaybeAppendDocumentation(sb);
         sb.AppendLine($"    {Name} {{");
 
         if (Getter is not null)
@@ -21,6 +23,42 @@ record struct AhkComProperty(string Name, AhkComMethod? Getter, AhkComMethod? Se
             sb.AppendLine($"        set => this.{Setter.GetDeduplicatedName()}(value)");
 
         sb.AppendLine("    }");
+    }
+
+    public void MaybeAppendDocumentation(StringBuilder sb)
+    {
+        // Doesn't seem like ApiDocs have anything for properties or getters / setters
+        // Keeping this here in case that changes in the future
+        sb.AppendLine("    /**");
+
+        if(Interface.apiDetails != null)
+        {
+            ApiDetails apiDetails = Interface.apiDetails;
+            if(apiDetails.Fields.TryGetValue(Name, out string? fieldDetails))
+            {
+                sb.AppendLine($"     * {AhkType.EscapeDocs(fieldDetails, "     ")}");
+            }
+        }
+
+        // Type is getter's return type if it exists, otherwise setter's parameter type
+        AhkParameter? param = null;
+        if (Getter is not null)
+        {
+            param = Getter.outputParameter;
+        }
+        else if (Setter is not null)
+        {
+            param = Setter.parameters.First(p => !p.Reserved);
+        }
+
+        if(param is not null)
+        {
+            AhkParameter typeParam = (AhkParameter)param;
+            string? actualValueName = typeParam.IsPtr ? typeParam.FieldInfo.UnderlyingType?.AhkType : typeParam.FieldInfo.AhkType;
+            sb.AppendLine($"     * @type {{{actualValueName}}} ");
+        }
+
+        sb.AppendLine("     */");
     }
 
     public override string ToString()
@@ -69,7 +107,7 @@ class AhkComInterface : AhkType
 
             AhkComMethod? getter = Methods.FirstOrDefault(m => m!.IsSpecialName && m.GetDeduplicatedName() == "get_" + normalizedName, null);
             AhkComMethod? setter = Methods.FirstOrDefault(m => m!.IsSpecialName && m.GetDeduplicatedName() == "put_" + normalizedName, null);
-            Properties.Add(new AhkComProperty(normalizedName, getter, setter));
+            Properties.Add(new AhkComProperty(this, normalizedName, getter, setter));
         }
     }
 

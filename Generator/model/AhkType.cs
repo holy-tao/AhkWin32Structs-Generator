@@ -12,7 +12,7 @@ public abstract class AhkType : IAhkEmitter
     private protected readonly MetadataReader mr;
     public readonly TypeDefinition typeDef;
 
-    private protected readonly ApiDetails? apiDetails;
+    public readonly ApiDetails? apiDetails;
 
     private protected readonly List<AhkExtension>? extensions;
 
