@@ -36,13 +36,13 @@ class AhkMethod
     /// </summary>
     public bool FuncHasReturnValue => !(parameters[0].FieldInfo.Kind == SimpleFieldKind.Primitive && parameters[0].FieldInfo.TypeName == "Void");
 
-    private protected readonly List<AhkParameter> parameters = [];
+    public readonly List<AhkParameter> parameters = [];
 
     /// <summary>
     /// The logical return value of the function, if any (e.g. the [RetVal] param for Com methods,
     /// or an [out] param if we're confident that we don't want the user to allocate it)
     /// </summary>
-    private protected AhkParameter? outputParameter;
+    public readonly AhkParameter? outputParameter;
 
     private readonly List<CAInfo> CustomAttributes;
 

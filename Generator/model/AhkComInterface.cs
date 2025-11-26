@@ -1,8 +1,73 @@
 
-using System.Diagnostics;
 using System.Reflection.Metadata;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
+
+/// <summary>
+/// A COM property, represented by its getter and/or setter methods
+/// </summary>
+/// <param name="Name">Name of the property</param>
+/// <param name="Getter">Getter method for the property, if any</param>
+/// <param name="Setter">Setter method for the property, if any</param>
+record struct AhkComProperty(AhkComInterface Interface, string Name, AhkComMethod? Getter, AhkComMethod? Setter)
+{
+    public void ToAhk(StringBuilder sb)
+    {
+        MaybeAppendDocumentation(sb);
+        sb.AppendLine($"    {Name} {{");
+
+        if (Getter is not null)
+            sb.AppendLine($"        get => this.{Getter.GetDeduplicatedName()}()");
+
+        if (Setter is not null)
+            sb.AppendLine($"        set => this.{Setter.GetDeduplicatedName()}(value)");
+
+        sb.AppendLine("    }");
+    }
+
+    public void MaybeAppendDocumentation(StringBuilder sb)
+    {
+        // Doesn't seem like ApiDocs have anything for properties or getters / setters
+        // Keeping this here in case that changes in the future
+        sb.AppendLine("    /**");
+
+        if(Interface.apiDetails != null)
+        {
+            ApiDetails apiDetails = Interface.apiDetails;
+            if(apiDetails.Fields.TryGetValue(Name, out string? fieldDetails))
+            {
+                sb.AppendLine($"     * {AhkType.EscapeDocs(fieldDetails, "     ")}");
+            }
+        }
+
+        // Type is getter's return type if it exists, otherwise setter's parameter type
+        AhkParameter? param = null;
+        if (Getter is not null)
+        {
+            param = Getter.outputParameter;
+        }
+        else if (Setter is not null)
+        {
+            param = Setter.parameters.First(p => !p.Reserved);
+        }
+
+        if(param is not null)
+        {
+            AhkParameter typeParam = (AhkParameter)param;
+            string? actualValueName = typeParam.IsPtr ? typeParam.FieldInfo.UnderlyingType?.AhkType : typeParam.FieldInfo.AhkType;
+            sb.AppendLine($"     * @type {{{actualValueName}}} ");
+        }
+
+        sb.AppendLine("     */");
+    }
+
+    public override string ToString()
+    {
+        StringBuilder sb = new();
+        ToAhk(sb);
+        return sb.ToString();
+    }
+}
 
 class AhkComInterface : AhkType
 {
@@ -15,6 +80,8 @@ class AhkComInterface : AhkType
     public readonly TypeDefinition? BaseInterface;
 
     public readonly List<AhkComMethod> Methods;
+
+    public readonly List<AhkComProperty> Properties;
 
     public readonly int VTableOffset;
 
@@ -29,6 +96,19 @@ class AhkComInterface : AhkType
         Methods = typeDef.GetMethods()
             .Select((handle, i) => new AhkComMethod(this, mr, mr.GetMethodDefinition(handle), i + VTableOffset))
             .ToList();
+
+        // Collect properties from special-name methods
+        Properties = [];
+        foreach(AhkComMethod method in Methods.Where(m => m.IsSpecialName))
+        {
+            string normalizedName = method.GetDeduplicatedName()[4..]; // Remove "get_" or "put_"
+            if(Properties.Any(p => p.Name == normalizedName))
+                continue;
+
+            AhkComMethod? getter = Methods.FirstOrDefault(m => m!.IsSpecialName && m.GetDeduplicatedName() == "get_" + normalizedName, null);
+            AhkComMethod? setter = Methods.FirstOrDefault(m => m!.IsSpecialName && m.GetDeduplicatedName() == "put_" + normalizedName, null);
+            Properties.Add(new AhkComProperty(this, normalizedName, getter, setter));
+        }
     }
 
     private TypeDefinition? GetBaseTypeDef(TypeDefinition forType)
@@ -111,6 +191,30 @@ class AhkComInterface : AhkType
         sb.AppendLine($"class {Name} extends {(BaseInterface.HasValue ? mr.GetString(BaseInterface.Value.Name) : "Win32ComInterface")}{{");
 
         sb.AppendLine();
+        AppendStaticCode(sb);
+
+        sb.AppendLine();
+        AppendVTableList(sb);
+
+        foreach (AhkComProperty prop in Properties)
+        {
+            sb.AppendLine();
+            prop.ToAhk(sb);
+        }
+
+        foreach (AhkComMethod method in Methods)
+        {
+            sb.AppendLine();
+            method.ToAhk(sb);
+        }
+        
+        extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
+
+        sb.AppendLine("}");
+    }
+
+    private void AppendStaticCode(StringBuilder sb)
+    {
         sb.AppendLine("    static sizeof => A_PtrSize");
 
         if (iid.HasValue)
@@ -138,19 +242,6 @@ class AhkComInterface : AhkType
         sb.AppendLine("     * @type {Integer}");
         sb.AppendLine("     */");
         sb.AppendLine($"    static vTableOffset => {VTableOffset}");
-
-        sb.AppendLine();
-        AppendVTableList(sb);
-
-        foreach (AhkComMethod method in Methods)
-        {
-            sb.AppendLine();
-            method.ToAhk(sb);
-        }
-        
-        extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
-
-        sb.AppendLine("}");
     }
 
     private void AppendVTableList(StringBuilder sb)

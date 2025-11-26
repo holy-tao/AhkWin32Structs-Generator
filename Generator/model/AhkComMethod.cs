@@ -11,6 +11,8 @@ class AhkComMethod : AhkMethod
 
     public bool HasStringParam => parameters[1..].Any(p => p.GetTypeDefName(mr) is "BSTR");
 
+    public bool IsSpecialName => methodDef.Attributes.HasFlag(MethodAttributes.SpecialName);
+
     private readonly AhkComInterface parent;
 
     public AhkComMethod(AhkComInterface parent, MetadataReader mr, MethodDefinition methodDef, int vTableIndex) : base(mr, methodDef)
@@ -20,8 +22,6 @@ class AhkComMethod : AhkMethod
     }
 
     //TODO: handle [RetVal] parameters
-    //TODO: Related to above, wrap ahk literals as ComValues where possible - https://www.autohotkey.com/docs/v2/lib/ComValue.htm
-
     public override void ToAhk(StringBuilder sb)
     {
         MaybeAppendDocumentation(sb);
