@@ -5,7 +5,6 @@ using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Diagnostics;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 
 public class Program
 {
@@ -24,6 +23,10 @@ public class Program
         string metadataDir = args[0];
         string ahkOutputDir = args[1];
 
+        Console.WriteLine("Starting AhkWin32Structs Generator...");
+        Console.WriteLine($"\tMetadata Directory: {metadataDir}");
+        Console.WriteLine($"\tOutput Directory: {ahkOutputDir}");
+
         Console.WriteLine("Reading metadata...");
 
         Stopwatch stopwatch = new();
@@ -38,11 +41,11 @@ public class Program
         ApiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
         Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(metadataDir, "extensions"));
 
-        int total = 0, errors = 0;
+        CreateVersionFile(mr, args[0], ahkOutputDir);
 
         Console.WriteLine("Generating bindings...");
 
-        CreateVersionFile(mr, args[0], ahkOutputDir);
+        int total = 0, errors = 0;
 
         foreach (TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
         {
@@ -118,6 +121,8 @@ public class Program
     private static bool ShouldSkipType(MetadataReader mr, TypeDefinitionHandle typeDefHandle)
     {
         TypeDefinition typeDef = mr.GetTypeDefinition(typeDefHandle);
+        if(typeDef.BaseType.IsNil)
+            return true;
 
         if (typeDef.BaseType.Kind != HandleKind.TypeReference)
             return false;
