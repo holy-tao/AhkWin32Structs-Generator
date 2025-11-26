@@ -78,6 +78,7 @@ jobs:
           }
 
           git commit -m "Update Win32 metadata to ${{ steps.ver.outputs.version }}"
+          git push origin -u $branch
 
       - name: Open Pull Request
         uses: peter-evans/create-pull-request@v6
