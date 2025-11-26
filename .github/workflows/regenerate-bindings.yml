@@ -43,7 +43,7 @@ jobs:
         with:
           repository: holy-tao/AhkWin32Projection
           path: bindings
-          ssh-key: ${{ secrets.WIN32_PAT }}
+          ssh-key: ${{ secrets.BINDINGS_DEPLOY_KEY }}
           fetch-depth: 0
 
       - name: Run Generator
