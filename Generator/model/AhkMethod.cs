@@ -126,8 +126,13 @@ class AhkMethod
 
         if (SetsLastError)
         {
-            // Inspect last error for errors
-            sb.AppendLine($"        if(A_LastError)");
+            // Older functions that return BOOLs will sometimes succeed but still set LastError; in that case
+            // only check LastError on failure
+            string condition = "A_LastError";
+            if(parameters[0].FieldInfo.TypeName == "BOOL")
+                condition = "!result && " + condition;
+            
+            sb.AppendLine($"        if({condition})");
             sb.AppendLine($"            throw OSError()");
             sb.AppendLine();
         }
