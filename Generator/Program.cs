@@ -32,22 +32,66 @@ public class Program
         Stopwatch stopwatch = new();
         stopwatch.Start();
 
-        using FileStream metaDataFileStream = File.OpenRead(Path.Join(metadataDir, "Windows.Win32.winmd"));
         using FileStream apiDocFileStream = File.OpenRead(Path.Join(metadataDir, "apidocs.msgpack"));
-
-        using PEReader peReader = new(metaDataFileStream);
-        MetadataReader mr = peReader.GetMetadataReader();
 
         ApiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
         Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(metadataDir, "extensions"));
 
-        CreateVersionFile(mr, args[0], ahkOutputDir);
+        IEnumerable<FileStream> winmdFiles = CollectWinmdFiles(metadataDir);
+
+        StringBuilder versionInfo = new();
+        versionInfo.AppendLine("[Assemblies]");
 
         Console.WriteLine("Generating bindings...");
 
         int total = 0, errors = 0;
+        foreach(FileStream fileStream in winmdFiles)
+        {
+            PEReader peReader = new(fileStream);
+            MetadataReader reader = peReader.GetMetadataReader();
+            
+            // Pull version info
+            AssemblyName assemblyName = reader.GetAssemblyDefinition().GetAssemblyName();
+            versionInfo.AppendLine($"{assemblyName.Name?.TrimEnd(".winmd")} = {assemblyName.Version}");
+            Console.Write($"\t{assemblyName.Name?.TrimEnd(".winmd")} v{assemblyName.Version}... ");
 
-        foreach (TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
+            (int fileTotal, int fileErrors) = GenerateBindings(reader, ahkOutputDir);
+
+            Console.WriteLine($"done. {fileTotal} files generated with {fileErrors} errors.");
+            total += fileTotal;
+            errors += fileErrors;
+
+            peReader.Dispose();
+            fileStream.Dispose();
+        }
+    
+        // Finalize version.ini with package info
+        Console.WriteLine("Finalizing version.ini file...");
+        versionInfo.AppendLine();
+        versionInfo.AppendLine("[Packages]");
+
+        Directory.EnumerateFiles(metadataDir, "*.version")
+            .Select(fullPath => new string[] {
+                Path.GetFileNameWithoutExtension(fullPath),
+                File.ReadAllText(fullPath).Trim()
+            })
+            .ToList()
+            .ForEach(info => {
+                versionInfo.AppendLine($"{info[0]} = {info[1]}");
+                Console.WriteLine($"\t{info[0]}: {info[1]}");
+            });
+
+        File.WriteAllText(Path.Join(ahkOutputDir, "version.ini"), versionInfo.ToString());
+        
+        Console.WriteLine($"Done! Emitted {total} files with {errors} errors in {stopwatch.Elapsed.TotalSeconds} seconds");
+        return -errors;
+    }
+
+    private static (int total, int errors) GenerateBindings(MetadataReader mr, string outputDir)
+    {
+        int total = 0, errors = 0;
+
+        foreach(TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
         {
             TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
 
@@ -66,7 +110,7 @@ public class Program
                     continue;
                 }
 
-                string filepath = emitter.GetDesiredFilepath(ahkOutputDir);
+                string filepath = emitter.GetDesiredFilepath(outputDir);
                 string dirPath = Path.GetDirectoryName(filepath) ?? throw new NullReferenceException($"Null directory path: {filepath}");
 
                 Directory.CreateDirectory(dirPath);
@@ -88,8 +132,18 @@ public class Program
             }
         }
 
-        Console.WriteLine($"Done! Emitted {total} files with {errors} errors in {stopwatch.Elapsed.TotalSeconds} seconds");
-        return -errors;
+        return (total, errors);
+    }
+
+    private static IEnumerable<FileStream> CollectWinmdFiles(string directoryPath)
+    {
+        Console.WriteLine($"Scanning '{directoryPath}' for .winmd files...");
+
+        return Directory.EnumerateFiles(directoryPath)
+            .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".winmd")
+            .Select(path => { Console.WriteLine($"\t{path}"); return path; })
+            .Select(File.OpenRead)
+            .ToList();
     }
 
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef)
@@ -150,30 +204,5 @@ public class Program
             sb.Append(' ');
         }
         return sb.ToString();
-    }
-
-    private static void CreateVersionFile(MetadataReader mr, string metadataDirectory, string outputDirectory)
-    {
-        StringBuilder sb = new();
-
-        sb.AppendLine("# The metadata version as reported in the actual metadata file");
-        sb.AppendLine($"metadata = {mr.MetadataVersion}");
-        sb.AppendLine();
-
-        sb.AppendLine("# NuGet package versions used to generate files");
-        sb.AppendLine("[Packages]");
-
-        Directory.EnumerateFiles(metadataDirectory, "*.version")
-            .Select(fullPath => new string[] {
-                Path.GetFileNameWithoutExtension(fullPath),
-                File.ReadAllText(fullPath).Trim()
-            })
-            .ToList()
-            .ForEach(info => {
-                sb.AppendLine($"{info[0]} = {info[1]}");
-                Console.WriteLine($"\t{info[0]}: {info[1]}");
-            });
-
-        File.WriteAllText(Path.Join(outputDirectory, "version.ini"), sb.ToString());
     }
 }
