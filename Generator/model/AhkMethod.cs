@@ -153,7 +153,27 @@ class AhkMethod
         }
 
         sb.AppendLine($"        if({string.Join(" || ", conditions)}) {{");
-        // TODO: free [FreeWith] values on failure before throwing
+                
+        // Free any [FreeWith] output parameters before throwing
+        foreach(AhkParameter param in parameters.Where(p => p.HasFreeWith))
+        {
+            string methodName = param.FreeWith ?? throw new NullReferenceException(nameof(param.FreeWith));
+
+            // https://stackoverflow.com/a/1993398
+            TypeDefinition declarer = mr.TypeDefinitions
+                .Select(mr.GetTypeDefinition)
+                .Where(h => mr.StringComparer.Equals(h.Name, "Apis"))
+                .Single(td => td.GetMethods()
+                    .Select(mr.GetMethodDefinition)
+                    .Where(method => mr.StringComparer.Equals(method.Name, methodName))
+                    .Take(2).Count() 
+                == 1
+            );
+
+            string declarerTypeName = mr.GetString(declarer.Namespace).Split(".").Last();
+            sb.AppendLine($"            {declarerTypeName}.{methodName}({param.Name})");
+        }
+
         sb.AppendLine($"            throw OSError({(FuncHasReturnValue? "A_LastError || result" : "A_LastError")})");
         sb.AppendLine($"        }}");
         sb.AppendLine();
