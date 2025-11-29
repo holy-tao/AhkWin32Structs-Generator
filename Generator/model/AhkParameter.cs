@@ -20,7 +20,8 @@ public enum CustomParamAttributes
 public readonly record struct AhkParameter
 {
     // For sanitizing parameter names
-    public static string[] ReservedNames = ["in", "as", "is", "contains", "not", "and", "or", "this", "return", "throw", "loop", "do", "while"];
+    public static string[] ReservedNames = ["in", "as", "is", "contains", "not", "and", "or", "this", "return", 
+        "throw", "loop", "do", "while", "float", "number", "integer", "object", "class", "buffer"];
 
     public readonly string Name;
     public readonly int SequenceNumber;
