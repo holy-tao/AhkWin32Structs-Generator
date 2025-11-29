@@ -21,7 +21,10 @@ public class ParameterDecoder
                 0,
                 sig.ReturnType,
                 retParam.Attributes,
-                CustomAttrsForParam(reader, retParam)
+                CustomAttrsForParam(reader, retParam),
+                MaybeGetParamAttrValue(reader, retParam, "RAIIFreeAttribute"),
+                MaybeGetParamAttrValue(reader, retParam, "FreeWithAttribute"),
+                GetIgnoreIfReturnValues(reader, retParam)
             ));
         }
         else
@@ -53,7 +56,10 @@ public class ParameterDecoder
                 param.SequenceNumber,
                 fieldInfo,
                 param.Attributes,
-                custAttrs
+                custAttrs,
+                MaybeGetParamAttrValue(reader, param, "RAIIFreeAttribute"),
+                MaybeGetParamAttrValue(reader, param, "FreeWithAttribute"),
+                GetIgnoreIfReturnValues(reader, param)
             ));
         }
 
@@ -87,10 +93,36 @@ public class ParameterDecoder
                 "RetValAttribute" => CustomParamAttributes.RetVal,
                 "DoNotReleaseAttribute" => CustomParamAttributes.DoNotRelease,
                 "IgnoreIfReturnAttribute" => CustomParamAttributes.HasIgnoreIfReturn,
+                "RAIIFreeAttribute" => CustomParamAttributes.HasRAIIFree,
+                "FreeWithAttribute" => CustomParamAttributes.HasFreeWith,
                 _ => 0
             };
         }
 
         return attrs;
+    }
+
+    private static string? MaybeGetParamAttrValue(MetadataReader reader, Parameter param, string attrName)
+    {
+        CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(reader, param, attrName);
+        if (attr.HasValue)
+        {
+            var decoded = attr.Value.DecodeValue(new CaTypeProvider());
+            return (string)(decoded.FixedArguments[0].Value 
+                ?? throw new NullReferenceException(nameof(decoded.FixedArguments)));
+        }
+
+        return null;
+    }
+
+    private static List<string>? GetIgnoreIfReturnValues(MetadataReader reader, Parameter param)
+    {
+        var conditions = CustomAttributeDecoder.DecodeAll(reader, param)
+            .Where(attr => attr.Name == "IgnoreIfReturnAttribute")
+            .Select(info => info.Attr.FixedArguments[0].Value)
+            .Select(v => (string)(v ?? throw new NullReferenceException(nameof(v))))
+            .ToList();
+
+        return conditions.Count > 0? conditions : null;
     }
 }

@@ -8,6 +8,8 @@ class AhkMethod
 {
     public string Name => mr.GetString(methodDef.Name);
 
+    public string DeclarerName => mr.GetString(mr.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace).Split(".").Last();
+
     private protected readonly MetadataReader mr;
     private protected readonly MethodDefinition methodDef;
     private protected readonly ApiDetails? apiDetails;
@@ -124,22 +126,57 @@ class AhkMethod
             sb.AppendLine();
         }
 
-        if (SetsLastError)
-        {
-            // Older functions that return BOOLs will sometimes succeed but still set LastError; in that case
-            // only check LastError on failure
-            string condition = "A_LastError";
-            if(parameters[0].FieldInfo.TypeName == "BOOL")
-                condition = "!result && " + condition;
-            
-            sb.AppendLine($"        if({condition})");
-            sb.AppendLine($"            throw OSError()");
-            sb.AppendLine();
-        }
-
+        AppendErrorCheck(sb);
         AppendReturnStatement(sb);
 
         sb.AppendLine($"    }}");
+    }
+
+    private protected virtual void AppendErrorCheck(StringBuilder sb)
+    {
+        // AHK code which will be ORed together
+        List<string> conditions = [];
+
+        if (SetsLastError)
+        {
+            conditions.Add(parameters[0].FieldInfo.TypeName == "BOOL"? "(!result && A_LastError)" : "A_LastError");
+        }
+
+        if(ShouldThrowForReturnValue()) 
+        {
+            conditions.Add("result != 0");
+        }
+
+        if(conditions.Count == 0)
+        {
+            return; // No error checking
+        }
+
+        sb.AppendLine($"        if({string.Join(" || ", conditions)}) {{");
+                
+        // Free any [FreeWith] output parameters before throwing
+        foreach(AhkParameter param in parameters.Where(p => p.HasFreeWith))
+        {
+            string methodName = param.FreeWith ?? throw new NullReferenceException(nameof(param.FreeWith));
+
+            // https://stackoverflow.com/a/1993398
+            TypeDefinition declarer = mr.TypeDefinitions
+                .Select(mr.GetTypeDefinition)
+                .Where(h => mr.StringComparer.Equals(h.Name, "Apis"))
+                .Single(td => td.GetMethods()
+                    .Select(mr.GetMethodDefinition)
+                    .Where(method => mr.StringComparer.Equals(method.Name, methodName))
+                    .Take(2).Count() 
+                == 1
+            );
+
+            string declarerTypeName = mr.GetString(declarer.Namespace).Split(".").Last();
+            sb.AppendLine($"            {declarerTypeName}.{methodName}({param.Name})");
+        }
+
+        sb.AppendLine($"            throw OSError({(FuncHasReturnValue? "A_LastError || result" : "A_LastError")})");
+        sb.AppendLine($"        }}");
+        sb.AppendLine();
     }
 
     private protected void AppendOutputParamMarshallingCode(StringBuilder sb)
@@ -171,14 +208,6 @@ class AhkMethod
 
     private protected void AppendReturnStatement(StringBuilder sb)
     {
-        // The function returns an HRESULT and we should check to see if we need to throw
-        if (ShouldThrowForReturnValue() && this is not AhkComMethod)
-        {
-            sb.AppendLine($"        if(result != 0)");
-            sb.AppendLine($"            throw OSError(result)");
-            sb.AppendLine();
-        }
-
         if (!FuncHasReturnValue && outputParameter is null)
         {
             return;
@@ -193,10 +222,7 @@ class AhkMethod
 
             if (fnRetVal.HasIgnoreIfReturn)
             {
-                var conditions = CustomAttributeDecoder.DecodeAll(mr, returnValueType)
-                    .Where(attr => attr.Name == "IgnoreIfReturnAttribute")
-                    .Select(info => info.Attr.FixedArguments[0].Value)
-                    .Select(v => $"{fnRetVal.Name} == {(long)(v ?? throw new NullReferenceException())}");
+                var conditions = fnRetVal.IgnoreIfReturnValues.Select(v => $"{fnRetVal.Name} == {v}");
                 string orStatement = string.Join(" || ", conditions);
 
                 sb.AppendLine($"        if({orStatement})");
@@ -205,7 +231,14 @@ class AhkMethod
             }
 
             string fieldName = mr.GetString(mr.GetFieldDefinition(returnValueType.GetFields().First()).Name);
-            sb.AppendLine($"        return {fnRetVal.GetTypeDefName(mr)}({{{fieldName}: {fnRetVal.Name}}}, {fnRetVal.ScriptOwned})");
+            sb.AppendLine($"        resultHandle := {fnRetVal.GetTypeDefName(mr)}({{{fieldName}: {fnRetVal.Name}}}, {fnRetVal.ScriptOwned})");
+            if (fnRetVal.HasRAIIFree)
+            {
+                // Destructor for RAIIFree is in this namespace - not necessarily true for FreeWith
+                sb.AppendLine($"        resultHandle.DefineProp(\"Free\", {{Call: {DeclarerName}.{fnRetVal.RAIIFree}}})");
+            }
+
+            sb.AppendLine("        return resultHandle");
         }
         else if (fnRetVal.IsPtrToCom)
         {
@@ -315,6 +348,31 @@ class AhkMethod
                 TypeDefinition? td = underlying?.TypeDef;
                 if(td.HasValue)
                     referencedTypes.Add(AhkType.GetFqn(mr, td.Value));
+            }
+        }
+
+        // If any parameters at all have [FreeWith] attributes, import the types they live in
+        if(parameters.Any(p => p.HasFreeWith))
+        {
+            var apiTypeDefs = mr.TypeDefinitions
+                .Select(mr.GetTypeDefinition)
+                .Where(h => mr.StringComparer.Equals(h.Name, "Apis"));
+
+            foreach(AhkParameter param in parameters.Where(p => p.HasFreeWith))
+            {
+                string methodName = param.FreeWith ?? throw new NullReferenceException(nameof(param.FreeWith));
+
+                // https://stackoverflow.com/a/1993398
+                TypeDefinition declarer = apiTypeDefs.Single(td => 
+                    td.GetMethods()
+                        .Select(mr.GetMethodDefinition)
+                        .Where(method => mr.StringComparer.Equals(method.Name, methodName))
+                        .Take(2).Count() 
+                    == 1
+                );
+
+                // Console.WriteLine($"{DeclarerName}.{Name}::{param.Name} requires {mr.GetString(declarer.Namespace)}.{methodName}");
+                referencedTypes.Add(AhkType.GetFqn(mr, declarer));
             }
         }
 

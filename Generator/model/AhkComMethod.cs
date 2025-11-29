@@ -21,7 +21,6 @@ class AhkComMethod : AhkMethod
         this.parent = parent;
     }
 
-    //TODO: handle [RetVal] parameters
     public override void ToAhk(StringBuilder sb)
     {
         MaybeAppendDocumentation(sb);
@@ -57,14 +56,7 @@ class AhkComMethod : AhkMethod
         AppendOutputParamMarshallingCode(sb);
         sb.AppendLine($"        {BuildDllCallCall("")}");
 
-        if (SetsLastError)
-        {
-            // Inspect last error for errors
-            sb.AppendLine($"        if(A_LastError)");
-            sb.AppendLine($"            throw OSError()");
-            sb.AppendLine();
-        }
-
+        AppendErrorCheck(sb);
         AppendReturnStatement(sb);
         sb.AppendLine($"    }}");
     }
@@ -121,7 +113,7 @@ class AhkComMethod : AhkMethod
             }
 
             if (FuncHasReturnValue)
-                sb.Append(ShouldThrowForReturnValue()? "HRESULT" : parameters[0].FieldInfo.GetDllCallType(false));
+                sb.Append(parameters[0].FieldInfo.GetDllCallType(false));
 
             sb.Append('"');
         }
