@@ -8,6 +8,8 @@ class AhkMethod
 {
     public string Name => mr.GetString(methodDef.Name);
 
+    public string DeclarerName => mr.GetString(mr.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace).Split(".").Last();
+
     private protected readonly MetadataReader mr;
     private protected readonly MethodDefinition methodDef;
     private protected readonly ApiDetails? apiDetails;
@@ -193,10 +195,7 @@ class AhkMethod
 
             if (fnRetVal.HasIgnoreIfReturn)
             {
-                var conditions = CustomAttributeDecoder.DecodeAll(mr, returnValueType)
-                    .Where(attr => attr.Name == "IgnoreIfReturnAttribute")
-                    .Select(info => info.Attr.FixedArguments[0].Value)
-                    .Select(v => $"{fnRetVal.Name} == {(long)(v ?? throw new NullReferenceException())}");
+                var conditions = fnRetVal.IgnoreIfReturnValues.Select(v => $"{fnRetVal.Name} == {v}");
                 string orStatement = string.Join(" || ", conditions);
 
                 sb.AppendLine($"        if({orStatement})");
@@ -205,11 +204,24 @@ class AhkMethod
             }
 
             string fieldName = mr.GetString(mr.GetFieldDefinition(returnValueType.GetFields().First()).Name);
-            sb.AppendLine($"        return {fnRetVal.GetTypeDefName(mr)}({{{fieldName}: {fnRetVal.Name}}}, {fnRetVal.ScriptOwned})");
+            sb.AppendLine($"        resultHandle := {fnRetVal.GetTypeDefName(mr)}({{{fieldName}: {fnRetVal.Name}}}, {fnRetVal.ScriptOwned})");
+            if (fnRetVal.HasRAIIFree)
+            {
+                // Destructor for RAIIFree is in this namespace - not necessarily true for FreeWith
+                sb.AppendLine($"        resultHandle.DefineProp(\"Free\", {{Call: {DeclarerName}.{fnRetVal.RAIIFree}}})");
+            }
+
+            sb.AppendLine("        return resultHandle");
         }
         else if (fnRetVal.IsPtrToCom)
         {
             sb.AppendLine($"        return {fnRetVal.FieldInfo.UnderlyingType?.TypeName}({fnRetVal.Name})");
+        }
+        else if (fnRetVal.HasFreeWith)
+        {
+            Console.WriteLine($"\tFound FreeWith return value: {Name}::{fnRetVal.Name}");
+            // TODO search "Apis" types for method with this name, wrap return value in handle-like object
+            sb.AppendLine($"        return {fnRetVal.Name}");
         }
         else
         {
@@ -286,6 +298,7 @@ class AhkMethod
     /// <returns></returns>
     public List<string> GetReferencedTypes()
     {
+        // TODO add types for FreeWith output parameters
         List<string> referencedTypes = [];
 
         // Methods with ordinal EntryPoints need APIs for Dll loading and unloadings
