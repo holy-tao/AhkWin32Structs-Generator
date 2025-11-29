@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Metadata;
 
@@ -11,7 +12,9 @@ public enum CustomParamAttributes
     ComOutPtr = 8,
     RetVal = 16,
     DoNotRelease = 32,
-    HasIgnoreIfReturn = 64  // Caller will need to decode the value but we can indicate that it exists
+    HasIgnoreIfReturn = 64,  // Caller will need to decode the value but we can indicate that it exists
+    HasRAIIFree = 128,
+    HasFreeWith = 256
 }
 
 public readonly record struct AhkParameter
@@ -25,7 +28,14 @@ public readonly record struct AhkParameter
     public readonly ParameterAttributes Attributes;
     public readonly CustomParamAttributes CustomAttributes;
 
-    public AhkParameter(string Name, int SequenceNumber, FieldInfo FieldInfo, ParameterAttributes Attributes, CustomParamAttributes CustomAttributes)
+    public readonly string? RAIIFree;
+
+    public readonly string? FreeWith;
+
+    public readonly List<string>? IgnoreIfReturnValues;
+
+    public AhkParameter(string Name, int SequenceNumber, FieldInfo FieldInfo, ParameterAttributes Attributes, 
+        CustomParamAttributes CustomAttributes, string? RAIIFree = null, string? FreeWith = null, List<string>? IgnoreIfReturnValues = null)
     {
         if (ReservedNames.Contains(Name.ToLowerInvariant()))
         {
@@ -37,6 +47,10 @@ public readonly record struct AhkParameter
         this.FieldInfo = FieldInfo;
         this.Attributes = Attributes;
         this.CustomAttributes = CustomAttributes;
+
+        this.RAIIFree = RAIIFree;
+        this.FreeWith = FreeWith;
+        this.IgnoreIfReturnValues = IgnoreIfReturnValues;
     }
 
     public bool IsInParam => Attributes.HasFlag(ParameterAttributes.In);
@@ -47,7 +61,15 @@ public readonly record struct AhkParameter
     public bool IsReturnValue => CustomAttributes.HasFlag(CustomParamAttributes.RetVal);
     public bool IsComOutPtr => CustomAttributes.HasFlag(CustomParamAttributes.ComOutPtr);
     public bool ScriptOwned => !CustomAttributes.HasFlag(CustomParamAttributes.DoNotRelease);
+
+    [MemberNotNullWhen(true, nameof(IgnoreIfReturnValues))]
     public bool HasIgnoreIfReturn => CustomAttributes.HasFlag(CustomParamAttributes.HasIgnoreIfReturn);
+
+    [MemberNotNullWhen(true, nameof(RAIIFree))]
+    public bool HasRAIIFree => CustomAttributes.HasFlag(CustomParamAttributes.HasRAIIFree);
+
+    [MemberNotNullWhen(true, nameof(FreeWith))]
+    public bool HasFreeWith => CustomAttributes.HasFlag(CustomParamAttributes.HasFreeWith);
 
     public bool IsPtr => FieldInfo.Kind == SimpleFieldKind.Pointer;
     public bool IsPrimitive => FieldInfo.Kind == SimpleFieldKind.Primitive;
