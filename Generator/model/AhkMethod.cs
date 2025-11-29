@@ -126,22 +126,37 @@ class AhkMethod
             sb.AppendLine();
         }
 
-        if (SetsLastError)
-        {
-            // Older functions that return BOOLs will sometimes succeed but still set LastError; in that case
-            // only check LastError on failure
-            string condition = "A_LastError";
-            if(parameters[0].FieldInfo.TypeName == "BOOL")
-                condition = "!result && " + condition;
-            
-            sb.AppendLine($"        if({condition})");
-            sb.AppendLine($"            throw OSError()");
-            sb.AppendLine();
-        }
-
+        AppendErrorCheck(sb);
         AppendReturnStatement(sb);
 
         sb.AppendLine($"    }}");
+    }
+
+    private protected virtual void AppendErrorCheck(StringBuilder sb)
+    {
+        // AHK code which will be ORed together
+        List<string> conditions = [];
+
+        if (SetsLastError)
+        {
+            conditions.Add(parameters[0].FieldInfo.TypeName == "BOOL"? "(!result && A_LastError)" : "A_LastError");
+        }
+
+        if(ShouldThrowForReturnValue()) 
+        {
+            conditions.Add("result != 0");
+        }
+
+        if(conditions.Count == 0)
+        {
+            return; // No error checking
+        }
+
+        sb.AppendLine($"        if({string.Join(" || ", conditions)}) {{");
+        // TODO: free [FreeWith] values on failure before throwing
+        sb.AppendLine($"            throw OSError({(FuncHasReturnValue? "A_LastError || result" : "A_LastError")})");
+        sb.AppendLine($"        }}");
+        sb.AppendLine();
     }
 
     private protected void AppendOutputParamMarshallingCode(StringBuilder sb)
@@ -173,14 +188,6 @@ class AhkMethod
 
     private protected void AppendReturnStatement(StringBuilder sb)
     {
-        // The function returns an HRESULT and we should check to see if we need to throw
-        if (ShouldThrowForReturnValue() && this is not AhkComMethod)
-        {
-            sb.AppendLine($"        if(result != 0)");
-            sb.AppendLine($"            throw OSError(result)");
-            sb.AppendLine();
-        }
-
         if (!FuncHasReturnValue && outputParameter is null)
         {
             return;
@@ -216,12 +223,6 @@ class AhkMethod
         else if (fnRetVal.IsPtrToCom)
         {
             sb.AppendLine($"        return {fnRetVal.FieldInfo.UnderlyingType?.TypeName}({fnRetVal.Name})");
-        }
-        else if (fnRetVal.HasFreeWith)
-        {
-            Console.WriteLine($"\tFound FreeWith return value: {Name}::{fnRetVal.Name}");
-            // TODO search "Apis" types for method with this name, wrap return value in handle-like object
-            sb.AppendLine($"        return {fnRetVal.Name}");
         }
         else
         {
