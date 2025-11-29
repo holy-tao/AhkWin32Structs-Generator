@@ -82,7 +82,7 @@ public partial class AhkStruct : AhkType
         var mNameComarer = EqualityComparer<AhkStructMember>.Create((left, right) => left?.Name.Equals(right?.Name, StringComparison.CurrentCultureIgnoreCase) ?? false);
 
         IEnumerable<AhkStruct> embeddedAnonymousStructs = Members
-            .Where(m => m.IsNested && !m.flags.HasFlag(MemberFlags.Union) && !m.flags.HasFlag(MemberFlags.Anonymous))
+            .Where(m => m.IsNested && !m.flags.HasFlag(MemberFlags.Anonymous))
             .Where(m => m.Name is not "Reserved")
             .Select(m => m.embeddedStruct ??
                 throw new NullReferenceException($"{Name}.{m.Name} has no nested type information"))
@@ -93,8 +93,8 @@ public partial class AhkStruct : AhkType
         {
             sb.AppendLine();
             sb.AppendLine($"    class {embedded.Name} extends Win32Struct {{");
-            sb.AppendLine($"        static sizeof => {Size}");
-            sb.AppendLine($"        static packingSize => {PackingSize}");
+            sb.AppendLine($"        static sizeof => {embedded.Size}");
+            sb.AppendLine($"        static packingSize => {embedded.PackingSize}");
 
             // TODO: This is a hack for pretty nesting, we should just take nesting level as a parameter
             StringBuilder embeddedSb = new();
@@ -110,8 +110,8 @@ public partial class AhkStruct : AhkType
             if (m.flags.HasFlag(MemberFlags.Reserved) || m.flags.HasFlag(MemberFlags.Alignment))
                 continue;
 
-            // Flatten unions
-            if (m.IsNested && (m.flags.HasFlag(MemberFlags.Union) || m.flags.HasFlag(MemberFlags.Anonymous)))
+            // Flatten anonymous unions
+            if (m.IsNested && m.flags.HasFlag(MemberFlags.Anonymous))
             {
                 if(m.embeddedStruct == null)
                     throw new NullReferenceException($"{Name}.{m.Name} has no nested type information");
