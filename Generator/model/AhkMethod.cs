@@ -298,7 +298,6 @@ class AhkMethod
     /// <returns></returns>
     public List<string> GetReferencedTypes()
     {
-        // TODO add types for FreeWith output parameters
         List<string> referencedTypes = [];
 
         // Methods with ordinal EntryPoints need APIs for Dll loading and unloadings
@@ -328,6 +327,31 @@ class AhkMethod
                 TypeDefinition? td = underlying?.TypeDef;
                 if(td.HasValue)
                     referencedTypes.Add(AhkType.GetFqn(mr, td.Value));
+            }
+        }
+
+        // If any parameters at all have [FreeWith] attributes, import the types they live in
+        if(parameters.Any(p => p.HasFreeWith))
+        {
+            var apiTypeDefs = mr.TypeDefinitions
+                .Select(mr.GetTypeDefinition)
+                .Where(h => mr.StringComparer.Equals(h.Name, "Apis"));
+
+            foreach(AhkParameter param in parameters.Where(p => p.HasFreeWith))
+            {
+                string methodName = param.FreeWith ?? throw new NullReferenceException(nameof(param.FreeWith));
+
+                // https://stackoverflow.com/a/1993398
+                TypeDefinition declarer = apiTypeDefs.Single(td => 
+                    td.GetMethods()
+                        .Select(mr.GetMethodDefinition)
+                        .Where(method => mr.StringComparer.Equals(method.Name, methodName))
+                        .Take(2).Count() 
+                    == 1
+                );
+
+                // Console.WriteLine($"{DeclarerName}.{Name}::{param.Name} requires {mr.GetString(declarer.Namespace)}.{methodName}");
+                referencedTypes.Add(AhkType.GetFqn(mr, declarer));
             }
         }
 
