@@ -53,30 +53,21 @@ jobs:
           $generatorExe = Join-Path "generator" "Generator/bin/release/net9.0/AhkWin32Structs.exe"
           & $generatorExe $(Join-Path $env:GITHUB_WORKSPACE "generator" "metadata") $(Join-Path $env:GITHUB_WORKSPACE "bindings")
 
-      - name: Determine new metadata version
-        id: ver
-        shell: pwsh
-        working-directory: generator
-        run: |
-          $version = (Get-Content ./metadata/Microsoft.Windows.SDK.Win32Metadata.version -Raw).Trim()
-          Write-Output "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-
       - name: Open Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.WIN32_PAT }}
           path: bindings
           base: main
-          branch: feature/update-metadata-${{ steps.ver.outputs.version }}
-          commit-message: "Update Win32 Metadata to ${{ steps.ver.outputs.version }}"
-          title: "Update Win32 Metadata to ${{ steps.ver.outputs.version }}"
+          branch: feature/update-metadata
+          commit-message: "Update Win32 Metadata"
+          title: "Update Win32 Metadata"
           assignees: holy-tao
           reviewers: holy-tao
           body: |
             Automated update of generated Win32 bindings.
-            - Metadata version: **${{ steps.ver.outputs.version }}**
+            - SDK Metadata version: [**${{ needs.update-packages.outputs.metadata-version }}**](https://github.com/microsoft/win32metadata/releases/tag/v${{ needs.update-packages.outputs.metadata-version }})
+            - WDK Metadata version: [**${{ needs.update-packages.outputs.wdk-metadata-version }}**](https://github.com/microsoft/wdkmetadata/releases/tag/v${{ needs.update-packages.outputs.wdk-metadata-version }})
             - ApiDocs version: **${{ needs.update-packages.outputs.apidocs-version }}**
-
-            See the win32metadata [releases](https://github.com/microsoft/win32metadata/releases/tag/v${{ steps.ver.outputs.version }}) page for details.
 
             Triggered by update-packages workflow.

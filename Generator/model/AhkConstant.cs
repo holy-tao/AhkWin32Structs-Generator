@@ -34,8 +34,10 @@ class AhkConstant
 
         if (IsStruct)
         {
-            decodedStruct = AhkStruct.Get(mr, fieldInfo.TypeDef ?? throw new NullReferenceException())
-                ?? throw new NullReferenceException();
+            decodedStruct = AhkStruct.Get(
+                fieldInfo.Reader ?? throw new NullReferenceException(nameof(fieldInfo.Reader)), 
+                fieldInfo.TypeDef ?? throw new NullReferenceException(nameof(fieldInfo.TypeDef))
+            ) ?? throw new NullReferenceException();
         }
     }
 
@@ -66,7 +68,10 @@ class AhkConstant
 
     public void ToAhkStruct(StringBuilder sb)
     {
-        if (AhkStruct.IsHandle(mr, decodedStruct!.typeDef))
+        if(decodedStruct is null)
+            throw new NullReferenceException(nameof(decodedStruct));
+
+        if (decodedStruct.IsHandle)
         {
             // Constant handles are not owned by the caller
             sb.AppendLine($"    static {Name} => {decodedStruct.Name}({{Value: {GetValueAsAhk()}}}, false)");
@@ -219,11 +224,8 @@ class AhkConstant
         List<string> referencedTypes = [];
         if (IsStruct && !IsGuid)
         {
-            TypeDefinition structType = fieldInfo.TypeDef ?? throw new NullReferenceException(nameof(fieldInfo.TypeDef));
-
-            string fqn = AhkType.GetFqn(mr, structType);
-            referencedTypes.AddRange(decodedStruct!.GetReferencedTypes());
-            referencedTypes.Add(fqn);
+            referencedTypes.AddRange(decodedStruct.GetReferencedTypes());
+            referencedTypes.Add(fieldInfo.GetTypeDefFqn());
         }
 
         return referencedTypes;

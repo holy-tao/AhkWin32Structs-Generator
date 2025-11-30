@@ -141,7 +141,7 @@ public static class FieldSignatureDecoder
     public static bool IsNonHandleNativeTypedef(MetadataReader mr, TypeDefinition typeDef)
     {
         return CustomAttributeDecoder.GetAllNames(mr, typeDef).Contains("NativeTypedefAttribute")
-            && !AhkStruct.IsHandle(mr, typeDef)
+            && !AhkStruct.TypeIsHandle(mr, typeDef)
             && typeDef.GetFields().Count == 1;
     }
 
@@ -232,7 +232,10 @@ public static class FieldSignatureDecoder
             Path.Combine(baseDir, $"{assemblyName}.dll"),
             Path.Combine(baseDir, $"{assemblyName}.winmd"),
             Path.Combine(runtimeDir, $"{assemblyName}.dll"),
-            Path.Combine(runtimeDir, $"{assemblyName}.winmd")
+            Path.Combine(runtimeDir, $"{assemblyName}.winmd"),
+            Path.Combine(Program.MetadataDir, assemblyName),
+            Path.Combine(Program.MetadataDir, $"{assemblyName}.winmd"),
+            Path.Combine(Program.MetadataDir, $"{assemblyName}.dll")
         ];
 
         // Probe typical Windows SDK metadata locations
@@ -277,11 +280,24 @@ public static class FieldSignatureDecoder
 
             _assemblyReaders[assemblyName] = reader;
 
-            Debug.WriteLine($"Loaded non-win32metadata assembly '{assemblyName}' from '{path}'");
+            Debug.WriteLine($"Loaded external assembly '{assemblyName}' from '{path}'");
             return reader;
         }
 
         throw new DllNotFoundException($"Failed to load external assembly '{assemblyName}'");
+    }
+
+    /// <summary>
+    /// Register a metadata reader that was loaded by another process
+    /// </summary>
+    /// <param name="asmName"></param>
+    /// <param name="reader"></param>
+    public static void RegisterMetadataReader(string asmName, MetadataReader reader)
+    {
+        if (!_assemblyReaders.ContainsKey(asmName))
+        {
+            _assemblyReaders[asmName] = reader;
+        }
     }
 
     /// <summary>
@@ -336,7 +352,7 @@ public static class FieldSignatureDecoder
         }
 
         string? asmName = reader.GetAssemblyDefinition().GetAssemblyName().Name;
-        throw new NullReferenceException($"Could not resolve reference to '{ns}.{name}' in assembly '{asmName}'");
+        throw new TypeLoadException($"Could not resolve reference to '{ns}.{name}' in assembly '{asmName}'");
     }
 
     private static TypeDefinitionHandle FindForwardedTypeRecursive(MetadataReader reader, EntityHandle handle, string ns, string name, out MetadataReader targetReader)

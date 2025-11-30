@@ -11,6 +11,8 @@ public partial class AhkStruct : AhkType
 
     public bool IsUnion => flags.HasFlag(MemberFlags.Union);
 
+    public bool IsHandle => TypeIsHandle(mr, typeDef);
+
     public virtual void ToAhk(StringBuilder sb, bool headers, List<AhkStructMember> emittedMembers)
     {
         HeadersToAhk(sb);
@@ -42,6 +44,7 @@ public partial class AhkStruct : AhkType
     {
         var imports = base.GetReferencedTypes();
 
+        // TODO need to resolve TypeReferences in here
         IEnumerable<string> embeddedImports = GetAllNonNestedMembers()
             .Where(m => m.embeddedStruct != null)
             .Where(m =>
@@ -52,7 +55,17 @@ public partial class AhkStruct : AhkType
                 !(m.fieldInfo.TypeDef?.IsNested ?? false)
             )
             .GroupBy(m => m.fieldInfo.TypeName) // prevent duplicates
-            .Select(g => GetFqn(mr, g.First().fieldInfo.TypeDef ?? throw new NullReferenceException()));
+            .Select(grp =>
+            {
+                FieldInfo typeInfo = grp.First().fieldInfo;
+                return typeInfo.Kind switch
+                {
+                    SimpleFieldKind.Array => typeInfo.GetUnderlyingTypeFqn(),
+                    _ => typeInfo.GetTypeDefFqn()
+                };
+            });
+
+            //GetFqn(g.First()!.fieldInfo!.Reader!, g.First().fieldInfo.TypeDef ?? throw new NullReferenceException()));
 
         imports.AddRange(embeddedImports.Distinct());
         return imports;

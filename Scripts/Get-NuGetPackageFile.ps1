@@ -24,7 +24,7 @@ New-Item -ItemType Directory -Force -Path $DestDir | Out-Null
 Write-Host "Fetching available versions for $PackageName..."
 $versionsUrl = "$nugetBaseUrl/index.json"
 $versionsResponse = Invoke-RestMethod -Uri $versionsUrl
-$latestVersion = $versionsResponse.versions | Sort-Object -Descending | Select-Object -First 1
+$latestVersion = $versionsResponse.versions | ForEach-Object { [semver]$_ } | Sort-Object | Select-Object -Last 1
 
 Write-Host "Latest version: $latestVersion"
 

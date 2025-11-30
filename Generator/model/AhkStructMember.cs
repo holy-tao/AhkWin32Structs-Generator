@@ -46,6 +46,8 @@ public class AhkStructMember
 
     public string Name;
 
+    public string Namespace => parent.Namespace;
+
     public FieldInfo fieldInfo { get; private set; }
 
     public int Size { get; private set; }
@@ -80,7 +82,7 @@ public class AhkStructMember
             }
             else
             {
-                embeddedStruct = AhkStruct.Get(mr, fieldTypeDef) ?? throw new NullReferenceException();
+                embeddedStruct = AhkStruct.Get(fieldInfo.Reader!, fieldTypeDef) ?? throw new NullReferenceException();
                 Size = embeddedStruct.Size;
             }
         }
@@ -92,9 +94,11 @@ public class AhkStructMember
             Size = fieldInfo.Length * arrayElementType.GetWidth(parent.IsAnsi);
             if(arrayElementType.Kind == SimpleFieldKind.Struct)
             {
-                if((arrayElementType.TypeDef?.IsNested ?? false) || arrayElementType.GetTypeDefNamespace().StartsWith("Windows.Win32"))
+                if((arrayElementType.TypeDef?.IsNested ?? false) || arrayElementType.GetTypeDefNamespace().StartsWith("Windows"))
                 {
-                    embeddedStruct = AhkStruct.Get(mr, arrayElementType.TypeDef ?? throw new NullReferenceException());
+                    embeddedStruct = AhkStruct.Get(
+                        arrayElementType.Reader ?? throw new NullReferenceException(nameof(arrayElementType.Reader)), 
+                        arrayElementType.TypeDef ?? throw new NullReferenceException(nameof(arrayElementType.TypeDef)));
                 }
             }
         }
