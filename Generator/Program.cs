@@ -12,6 +12,8 @@ public class Program
 
     public static Dictionary<string, List<AhkExtension>> Extensions = [];
 
+    public static string MetadataDir = "";
+
     public static int Main(string[] args)
     {
         if (args.Length != 2)
@@ -20,11 +22,11 @@ public class Program
             return -1;
         }
 
-        string metadataDir = args[0];
+        MetadataDir = args[0];
         string ahkOutputDir = args[1];
 
         Console.WriteLine("Starting AhkWin32Structs Generator...");
-        Console.WriteLine($"\tMetadata Directory: {metadataDir}");
+        Console.WriteLine($"\tMetadata Directory: {MetadataDir}");
         Console.WriteLine($"\tOutput Directory: {ahkOutputDir}");
 
         Console.WriteLine("Reading metadata...");
@@ -32,12 +34,12 @@ public class Program
         Stopwatch stopwatch = new();
         stopwatch.Start();
 
-        using FileStream apiDocFileStream = File.OpenRead(Path.Join(metadataDir, "apidocs.msgpack"));
+        using FileStream apiDocFileStream = File.OpenRead(Path.Join(MetadataDir, "apidocs.msgpack"));
 
         ApiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
-        Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(metadataDir, "extensions"));
+        Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(MetadataDir, "extensions"));
 
-        IEnumerable<FileStream> winmdFiles = CollectWinmdFiles(metadataDir);
+        IEnumerable<FileStream> winmdFiles = CollectWinmdFiles(MetadataDir);
 
         StringBuilder versionInfo = new();
         versionInfo.AppendLine("[Assemblies]");
@@ -70,7 +72,7 @@ public class Program
         versionInfo.AppendLine();
         versionInfo.AppendLine("[Packages]");
 
-        Directory.EnumerateFiles(metadataDir, "*.version")
+        Directory.EnumerateFiles(MetadataDir, "*.version")
             .Select(fullPath => new string[] {
                 Path.GetFileNameWithoutExtension(fullPath),
                 File.ReadAllText(fullPath).Trim()
