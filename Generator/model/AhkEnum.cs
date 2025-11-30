@@ -7,6 +7,8 @@ public class AhkEnum : AhkType
 {
     private readonly List<AhkConstant> constants;
 
+    public bool IsFlags => CustomAttributes.Any(attr => attr.Name is "FlagsAttribute");
+
     public AhkEnum(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
     {
         ApiDetails? apiDetails = DocumentationUtils.GetApiDetails(mr, typeDef);
@@ -21,10 +23,11 @@ public class AhkEnum : AhkType
     public override void ToAhk(StringBuilder sb)
     {
         sb.AppendLine("#Requires AutoHotkey v2.0.0 64-bit");
+        sb.AppendLine($"#Include {GetPathToBase()}Win32Enum.ahk");
         sb.AppendLine();
 
         MaybeAddTypeDocumentation(sb);
-        sb.AppendLine($"class {Name}{{");
+        sb.AppendLine($"class {Name} extends {(IsFlags? "Win32BitflagEnum" : "Win32Enum")}{{");
 
         foreach (AhkConstant constant in constants)
         {
