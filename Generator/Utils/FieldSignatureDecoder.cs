@@ -352,7 +352,7 @@ public static class FieldSignatureDecoder
         }
 
         string? asmName = reader.GetAssemblyDefinition().GetAssemblyName().Name;
-        throw new NullReferenceException($"Could not resolve reference to '{ns}.{name}' in assembly '{asmName}'");
+        throw new TypeLoadException($"Could not resolve reference to '{ns}.{name}' in assembly '{asmName}'");
     }
 
     private static TypeDefinitionHandle FindForwardedTypeRecursive(MetadataReader reader, EntityHandle handle, string ns, string name, out MetadataReader targetReader)
