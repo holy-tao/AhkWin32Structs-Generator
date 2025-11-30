@@ -200,7 +200,7 @@ class AhkMethod
             // bytesParamIndex + 1 because we include the return value as a param
             sb.AppendLine($"        {outParam.Name} := Buffer({parameters[bytesParamIndex + 1].Name}, 0)");
         }
-        else if (outParam.IsPtrToStruct || outParam.IsPtrToHandle(mr))
+        else if (outParam.IsPtrToStruct || outParam.IsPtrToHandle())
         {
             sb.AppendLine($"        {outParam.Name} := {outParam.FieldInfo.UnderlyingType?.TypeName}()");
         }
@@ -216,7 +216,7 @@ class AhkMethod
         AhkParameter fnRetVal = outputParameter ?? parameters[0];
 
         // We need to wrap handles and decide ownership & validity
-        if (fnRetVal.IsHandle(mr))
+        if (fnRetVal.IsHandle())
         {
             TypeDefinition returnValueType = fnRetVal.FieldInfo.TypeDef ?? throw new NullReferenceException();
 
@@ -230,8 +230,10 @@ class AhkMethod
                 sb.AppendLine();
             }
 
-            string fieldName = mr.GetString(mr.GetFieldDefinition(returnValueType.GetFields().First()).Name);
-            sb.AppendLine($"        resultHandle := {fnRetVal.GetTypeDefName(mr)}({{{fieldName}: {fnRetVal.Name}}}, {fnRetVal.ScriptOwned})");
+            MetadataReader retValReader = fnRetVal.FieldInfo.Reader ?? throw new NullReferenceException(nameof(FieldInfo.Reader));
+            var handleField = retValReader.GetFieldDefinition(returnValueType.GetFields().First());
+            string fieldName = retValReader.GetString(handleField.Name);
+            sb.AppendLine($"        resultHandle := {fnRetVal.GetTypeDefName()}({{{fieldName}: {fnRetVal.Name}}}, {fnRetVal.ScriptOwned})");
             if (fnRetVal.HasRAIIFree)
             {
                 // Destructor for RAIIFree is in this namespace - not necessarily true for FreeWith
@@ -256,13 +258,13 @@ class AhkMethod
 
         foreach (AhkParameter param in parameters[1..].Where(p => !p.Reserved && p != outputParameter))
         {
-            string? typeName = param.GetTypeDefName(mr);
+            string? typeName = param.GetTypeDefName();
 
             if (typeName is "PSTR" or "PWSTR")
             {
                 conversions.AppendLine($"        {param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}");
             }
-            else if (param.IsHandle(mr))
+            else if (param.IsHandle())
             {
                 conversions.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
             }
@@ -302,7 +304,7 @@ class AhkMethod
         AhkParameter outParam = default;
         IEnumerable<AhkParameter> candidateParams = parameters
             .Where(p => p.IsOutParam && !p.IsInParam)
-            .Where(p => p.IsPtrToPrimitive || p.IsPtrToHandle(mr) || p.IsPtrToCom);     // Only consider scalar, handle, and com output pointers
+            .Where(p => p.IsPtrToPrimitive || p.IsPtrToHandle() || p.IsPtrToCom);     // Only consider scalar, handle, and com output pointers
         if (candidateParams.Count() == 1)
         {
             outParam = candidateParams.Single();
@@ -331,10 +333,12 @@ class AhkMethod
         }
 
         // If the return type is a handle, we need to import the handle
-        if (FuncHasReturnValue && parameters[0].IsHandle(mr))
+        if (FuncHasReturnValue && parameters[0].IsHandle())
         {
-            referencedTypes.Add(AhkType.GetFqn(mr, parameters[0].FieldInfo.TypeDef 
-                ?? throw new NullReferenceException()));
+            referencedTypes.Add(AhkType.GetFqn(
+                parameters[0].FieldInfo.Reader ?? throw new NullReferenceException(nameof(FieldInfo.Reader)),
+                parameters[0].FieldInfo.TypeDef ?? throw new NullReferenceException(nameof(FieldInfo.TypeDef)))
+            );
         }
 
         // If we have an output parameter, import its type if it's in the Win32Metadata
@@ -434,7 +438,7 @@ class AhkMethod
         {
             AhkParameter param = parameters[i];
 
-            bool isString = param.FieldInfo.TypeDef.HasValue && mr.GetString(param.FieldInfo.TypeDef.Value.Name) is "PWSTR" or "PSTR";
+            bool isString = param.GetTypeDefName() is "PWSTR" or "PSTR";
             string dllCallType = isString ? "ptr" : param.FieldInfo.GetDllCallType(false);
 
             string marshalAs = (param.IsPtrToPrimitive && !param.Reserved && param != outputParameter) ? $"{param.Name}Marshal" : $"\"{dllCallType}\"";

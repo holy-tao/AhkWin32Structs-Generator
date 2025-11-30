@@ -23,7 +23,7 @@ public partial class AhkStruct : AhkType
             }
         }
 
-        return IsHandle(reader, typeDef) ?
+        return TypeIsHandle(reader, typeDef) ?
             new AhkHandle(reader, typeDef) :
             new AhkStruct(reader, typeDef);
             
@@ -144,7 +144,7 @@ public partial class AhkStruct : AhkType
     /// Try to figure out whether or not this struct is a handle type.
     /// </summary>
     /// <returns></returns>
-    public static bool IsHandle(MetadataReader mr, TypeDefinition td)
+    public static bool TypeIsHandle(MetadataReader mr, TypeDefinition td)
     {
         IEnumerable<string> attrs = CustomAttributeDecoder.GetAllNames(mr, td);
         return td.GetFields().Count == 1 && attrs.Any(HandleAttrs.Contains);

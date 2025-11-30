@@ -141,7 +141,7 @@ public static class FieldSignatureDecoder
     public static bool IsNonHandleNativeTypedef(MetadataReader mr, TypeDefinition typeDef)
     {
         return CustomAttributeDecoder.GetAllNames(mr, typeDef).Contains("NativeTypedefAttribute")
-            && !AhkStruct.IsHandle(mr, typeDef)
+            && !AhkStruct.TypeIsHandle(mr, typeDef)
             && typeDef.GetFields().Count == 1;
     }
 

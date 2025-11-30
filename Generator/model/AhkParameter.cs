@@ -91,31 +91,35 @@ public readonly record struct AhkParameter
 
     public bool IsPtrToString => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.String);
 
-    public bool IsPtrToHandle(MetadataReader mr)
+    public bool IsPtrToHandle()
     {
-        if (!IsPtr || FieldInfo.UnderlyingType?.TypeDef == null)
+        if (!IsPtr || FieldInfo.UnderlyingType?.TypeDef == null || FieldInfo.Reader == null)
             return false;
 
-        return AhkStruct.IsHandle(mr, FieldInfo.UnderlyingType?.TypeDef ?? throw new NullReferenceException());
+        return AhkStruct.TypeIsHandle(
+            FieldInfo.Reader, 
+            FieldInfo.UnderlyingType?.TypeDef ?? throw new NullReferenceException()
+        );
     }
 
-    public bool IsHandle(MetadataReader mr)
+    public bool IsHandle()
     {
         if (!FieldInfo.TypeDef.HasValue)
             return false;
-        return AhkStruct.IsHandle(mr, FieldInfo.TypeDef.Value);
+        return AhkStruct.TypeIsHandle(FieldInfo.Reader ?? throw new NullReferenceException(nameof(FieldInfo.Reader))
+            , FieldInfo.TypeDef.Value);
     }
 
-    public string? GetTypeDefName(MetadataReader mr)
+    public string? GetTypeDefName()
     {
-        if (FieldInfo == null || FieldInfo.TypeDef == null)
+        if (FieldInfo == null || FieldInfo.TypeDef == null || FieldInfo.Reader == null)
             return null;
-        return mr.GetString(FieldInfo.TypeDef.Value.Name);
+        return FieldInfo.Reader.GetString(FieldInfo.TypeDef.Value.Name);
     }
     
-    public string? GetTypeDefNamespace(MetadataReader mr) {
-        if (FieldInfo == null || FieldInfo.TypeDef == null)
+    public string? GetTypeDefNamespace() {
+        if (FieldInfo == null || FieldInfo.TypeDef == null || FieldInfo.Reader == null)
             return null;
-        return mr.GetString(FieldInfo.TypeDef.Value.Namespace);
+        return FieldInfo.Reader.GetString(FieldInfo.TypeDef.Value.Namespace);
     }
 }

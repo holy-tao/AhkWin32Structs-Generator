@@ -9,7 +9,7 @@ class AhkComMethod : AhkMethod
 {
     public int VTableIndex { get; private set; }
 
-    public bool HasStringParam => parameters[1..].Any(p => p.GetTypeDefName(mr) is "BSTR");
+    public bool HasStringParam => parameters[1..].Any(p => p.GetTypeDefName() is "BSTR");
 
     public bool IsSpecialName => methodDef.Attributes.HasFlag(MethodAttributes.SpecialName);
 
@@ -67,7 +67,7 @@ class AhkComMethod : AhkMethod
 
         foreach (AhkParameter param in parameters[1..])
         {
-            string? typeName = param.GetTypeDefName(mr);
+            string? typeName = param.GetTypeDefName();
 
             if (typeName is "BSTR")
             {
@@ -77,7 +77,7 @@ class AhkComMethod : AhkMethod
             {
                 conversions.AppendLine($"        {param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}");
             }
-            else if (param.IsHandle(mr))
+            else if (param.IsHandle())
             {
                 conversions.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
             }
@@ -149,7 +149,7 @@ class AhkComMethod : AhkMethod
         {
             IEnumerable<AhkParameter> candidateParams = parameters
                 .Where(p => p.IsOutParam && !p.IsInParam)
-                .Where(p => p.IsPtrToPrimitive || p.IsPtrToStruct || p.IsPtrToCom || p.IsPtrToHandle(mr));
+                .Where(p => p.IsPtrToPrimitive || p.IsPtrToStruct || p.IsPtrToCom || p.IsPtrToHandle());
             if (candidateParams.Count() == 1)
             {
                 outParam = candidateParams.Single();

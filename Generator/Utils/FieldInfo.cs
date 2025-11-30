@@ -221,4 +221,21 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         return Reader?.GetString(TypeDef?.Namespace ?? throw new NullReferenceException(nameof(TypeDef)))
             ?? throw new NullReferenceException(nameof(Reader));
     }
+
+    public string GetTypeDefFqn()
+    {
+        if(Reader is null)
+            throw new NullReferenceException(nameof(Reader));
+        if(TypeDef is null)
+            throw new NullReferenceException(nameof(TypeDef));
+
+        return $"{Reader.GetString(TypeDef.Value.Namespace)}.{Reader.GetString(TypeDef.Value.Name)}";
+    }
+
+    public string GetUnderlyingTypeFqn()
+    {
+        if(UnderlyingType is null)
+            throw new NullReferenceException(nameof(UnderlyingType));
+        return UnderlyingType.GetTypeDefFqn();
+    }
 }
