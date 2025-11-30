@@ -235,7 +235,7 @@ class AhkMethod
             if (fnRetVal.HasRAIIFree)
             {
                 // Destructor for RAIIFree is in this namespace - not necessarily true for FreeWith
-                sb.AppendLine($"        resultHandle.DefineProp(\"Free\", {{Call: {DeclarerName}.{fnRetVal.RAIIFree}}})");
+                sb.AppendLine($"        resultHandle.DefineProp(\"Free\", {{ Call: (self) => {DeclarerName}.{fnRetVal.RAIIFree}(self.{fieldName}) }})");
             }
 
             sb.AppendLine("        return resultHandle");
