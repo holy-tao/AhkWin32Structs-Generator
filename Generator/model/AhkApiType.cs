@@ -24,7 +24,28 @@ class AhkApiType : AhkType
 
 
         methods = typeDef.GetMethods()
-            .Select(handle => new AhkMethod(mr, mr.GetMethodDefinition(handle)))
+            .Select(handle =>
+            {
+                MethodDefinition methodDefinition = mr.GetMethodDefinition(handle);
+
+                try
+                {
+                    AhkMethod method = new(mr, methodDefinition);
+                    return method;
+                }
+                catch (Exception ex)
+                {
+                    string methodName = mr.GetString(methodDefinition.Name);
+
+                    Console.Error.WriteLine($"{ex.GetType().Name} parsing {Namespace}.{Name}::{methodName}: {ex.Message}");
+                    Console.Error.WriteLine(ex.Message);
+                    Console.Error.WriteLine(ex.StackTrace);
+                    Console.Error.WriteLine();
+
+                    return null;
+                }
+            })
+            .OfType<AhkMethod>()
             .DistinctBy(method => method.Name)
             .ToList();
     }
@@ -84,7 +105,7 @@ class AhkApiType : AhkType
         foreach (AhkMethod method in methods)
         {
             method.ToAhk(sb);
-            sb.AppendLine();
+            sb.AppendLine();            
         }
 
         sb.AppendLine(";@endregion Methods");
