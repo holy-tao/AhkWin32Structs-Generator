@@ -1,18 +1,23 @@
 
 using System.Reflection.Metadata;
 using System.Text;
-using Microsoft.Windows.SDK.Win32Docs;
 
 class AhkHandle : AhkStruct
 {
-    private readonly string? FreeFunc;
+    private readonly AhkMethod? FreeFunc;
 
     private readonly List<long> InvalidValues;
 
     public AhkHandle(MetadataReader reader, TypeDefinition typeDef) : base(reader, typeDef)
     {
         CAInfo? RAIIFree = MaybeGetCustomAttribute("RAIIFreeAttribute");
-        FreeFunc = (string?)RAIIFree?.Attr.FixedArguments[0].Value;
+        string? freeFuncName = (string?)RAIIFree?.Attr.FixedArguments[0].Value;
+        if(freeFuncName is not null)
+        {
+            AhkMethod candidate = AhkMethod.Get(reader, freeFuncName);
+            if(candidate.parameters.Count == 2)
+                FreeFunc = candidate;
+        }
 
         InvalidValues = CustomAttributes
             .Where(c => c.Name == "InvalidHandleValueAttribute")
@@ -68,7 +73,7 @@ class AhkHandle : AhkStruct
 
         sb.AppendLine();
         sb.AppendLine("    Free(){");
-        sb.AppendLine($"        {apisCls}.{FreeFunc}(this.{Members.First().Name})");
+        sb.AppendLine($"        {apisCls}.{FreeFunc?.Name}(this.{Members.First().Name})");
         sb.AppendLine($"        this.{Members.First().Name} := {InvalidValues.FirstOrDefault()}");
         sb.AppendLine("    }");
     }

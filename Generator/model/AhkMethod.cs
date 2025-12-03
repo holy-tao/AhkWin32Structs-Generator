@@ -3,12 +3,15 @@ using System.Reflection.Metadata;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
 using System.Reflection;
+using System.Dynamic;
 
-class AhkMethod
+public class AhkMethod
 {
     public string Name => mr.GetString(methodDef.Name);
 
-    public string DeclarerName => mr.GetString(mr.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace).Split(".").Last();
+    public string Namespace => mr.GetString(mr.GetTypeDefinition(methodDef.GetDeclaringType()).Namespace);
+
+    public string DeclarerName => Namespace.Split(".").Last();
 
     private protected readonly MetadataReader mr;
     private protected readonly MethodDefinition methodDef;
@@ -59,6 +62,31 @@ class AhkMethod
         import = methodDef.GetImport();
         parameters = ParameterDecoder.DecodeParameters(mr, methodDef);
         outputParameter = GetOutputParameter();
+    }
+
+    /// <summary>
+    /// Get an AhkMethod by name
+    /// </summary>
+    /// <param name="reader">Metadata reader for the assembly to search in</param>
+    /// <param name="name">Name of the method to return</param>
+    /// <returns></returns>
+    public static AhkMethod Get(MetadataReader reader, string name)
+    {
+        IEnumerable<TypeDefinition> apiTypeDefs = reader.TypeDefinitions
+            .Select(reader.GetTypeDefinition)
+            .Where(h => reader.StringComparer.Equals(h.Name, "Apis"));
+
+        MethodDefinition def = apiTypeDefs
+            .Single(td => td.GetMethods()
+                .Select(reader.GetMethodDefinition)
+                .Where(method => reader.StringComparer.Equals(method.Name, name))
+                .Take(2).Count() == 1
+            )
+            .GetMethods()
+            .Select(reader.GetMethodDefinition)
+            .Single(methodDef => reader.StringComparer.Equals(methodDef.Name, name));
+
+        return new AhkMethod(reader, def);
     }
 
     public virtual void ToAhk(StringBuilder sb)
@@ -157,21 +185,8 @@ class AhkMethod
         // Free any [FreeWith] output parameters before throwing
         foreach(AhkParameter param in parameters.Where(p => p.HasFreeWith))
         {
-            string methodName = param.FreeWith ?? throw new NullReferenceException(nameof(param.FreeWith));
-
-            // https://stackoverflow.com/a/1993398
-            TypeDefinition declarer = mr.TypeDefinitions
-                .Select(mr.GetTypeDefinition)
-                .Where(h => mr.StringComparer.Equals(h.Name, "Apis"))
-                .Single(td => td.GetMethods()
-                    .Select(mr.GetMethodDefinition)
-                    .Where(method => mr.StringComparer.Equals(method.Name, methodName))
-                    .Take(2).Count() 
-                == 1
-            );
-
-            string declarerTypeName = mr.GetString(declarer.Namespace).Split(".").Last();
-            sb.AppendLine($"            {declarerTypeName}.{methodName}({param.Name})");
+            AhkMethod freeWith = param.FreeWith ?? throw new NullReferenceException(nameof(param.FreeWith));
+            sb.AppendLine($"            {freeWith.DeclarerName}.{freeWith.Name}({param.Name})");
         }
 
         sb.AppendLine($"            throw OSError({(FuncHasReturnValue? "A_LastError || result" : "A_LastError")})");
@@ -234,10 +249,10 @@ class AhkMethod
             var handleField = retValReader.GetFieldDefinition(returnValueType.GetFields().First());
             string fieldName = retValReader.GetString(handleField.Name);
             sb.AppendLine($"        resultHandle := {fnRetVal.GetTypeDefName()}({{{fieldName}: {fnRetVal.Name}}}, {fnRetVal.ScriptOwned})");
-            if (fnRetVal.HasRAIIFree)
+            if (fnRetVal.RAIIFree is not null)
             {
                 // Destructor for RAIIFree is in this namespace - not necessarily true for FreeWith
-                sb.AppendLine($"        resultHandle.DefineProp(\"Free\", {{ Call: (self) => {DeclarerName}.{fnRetVal.RAIIFree}(self.{fieldName}) }})");
+                sb.AppendLine($"        resultHandle.DefineProp(\"Free\", {{ Call: (self) => {fnRetVal.RAIIFree.DeclarerName}.{fnRetVal.RAIIFree.Name}(self.{fieldName}) }})");
             }
 
             sb.AppendLine("        return resultHandle");
@@ -356,27 +371,16 @@ class AhkMethod
         }
 
         // If any parameters at all have [FreeWith] attributes, import the types they live in
-        if(parameters.Any(p => p.HasFreeWith))
+        if(parameters.Any(p => p.FreeWith is not null))
         {
             var apiTypeDefs = mr.TypeDefinitions
                 .Select(mr.GetTypeDefinition)
                 .Where(h => mr.StringComparer.Equals(h.Name, "Apis"));
 
-            foreach(AhkParameter param in parameters.Where(p => p.HasFreeWith))
+            foreach(AhkParameter param in parameters.Where(p => p.FreeWith is not null))
             {
-                string methodName = param.FreeWith ?? throw new NullReferenceException(nameof(param.FreeWith));
-
-                // https://stackoverflow.com/a/1993398
-                TypeDefinition declarer = apiTypeDefs.Single(td => 
-                    td.GetMethods()
-                        .Select(mr.GetMethodDefinition)
-                        .Where(method => mr.StringComparer.Equals(method.Name, methodName))
-                        .Take(2).Count() 
-                    == 1
-                );
-
-                // Console.WriteLine($"{DeclarerName}.{Name}::{param.Name} requires {mr.GetString(declarer.Namespace)}.{methodName}");
-                referencedTypes.Add(AhkType.GetFqn(mr, declarer));
+                AhkMethod freeWith = param.FreeWith ?? throw new NullReferenceException(nameof(param.FreeWith));
+                referencedTypes.Add($"{freeWith.Namespace}.Apis");
             }
         }
 

@@ -23,36 +23,37 @@ public readonly record struct AhkParameter
     public static string[] ReservedNames = ["in", "as", "is", "contains", "not", "and", "or", "this", "return", 
         "throw", "loop", "do", "while", "float", "number", "integer", "object", "class", "buffer"];
 
-    public readonly string Name;
-    public readonly int SequenceNumber;
+    public readonly MetadataReader? mr;
+
+    public readonly Parameter param;
+
+    public readonly string Name {
+        get
+        {
+            string? nameVal = mr?.GetString(param.Name);
+            if (string.IsNullOrWhiteSpace(nameVal))
+            {
+                return "result";
+            }
+
+            if (ReservedNames.Contains(nameVal, StringComparer.InvariantCultureIgnoreCase))
+            {
+                nameVal += "_R";
+            }
+
+            return nameVal;
+        }
+    }
+    public readonly int SequenceNumber => param.SequenceNumber;
     public readonly FieldInfo FieldInfo;
-    public readonly ParameterAttributes Attributes;
+    public readonly ParameterAttributes Attributes => param.Attributes;
     public readonly CustomParamAttributes CustomAttributes;
 
-    public readonly string? RAIIFree;
+    public readonly AhkMethod? RAIIFree;
 
-    public readonly string? FreeWith;
+    public readonly AhkMethod? FreeWith;
 
     public readonly List<string>? IgnoreIfReturnValues;
-
-    public AhkParameter(string Name, int SequenceNumber, FieldInfo FieldInfo, ParameterAttributes Attributes, 
-        CustomParamAttributes CustomAttributes, string? RAIIFree = null, string? FreeWith = null, List<string>? IgnoreIfReturnValues = null)
-    {
-        if (ReservedNames.Contains(Name.ToLowerInvariant()))
-        {
-            Name += "_R";
-        }
-
-        this.Name = Name;
-        this.SequenceNumber = SequenceNumber;
-        this.FieldInfo = FieldInfo;
-        this.Attributes = Attributes;
-        this.CustomAttributes = CustomAttributes;
-
-        this.RAIIFree = RAIIFree;
-        this.FreeWith = FreeWith;
-        this.IgnoreIfReturnValues = IgnoreIfReturnValues;
-    }
 
     public bool IsInParam => Attributes.HasFlag(ParameterAttributes.In);
     public bool IsOutParam => Attributes.HasFlag(ParameterAttributes.Out);
@@ -66,11 +67,9 @@ public readonly record struct AhkParameter
     [MemberNotNullWhen(true, nameof(IgnoreIfReturnValues))]
     public bool HasIgnoreIfReturn => CustomAttributes.HasFlag(CustomParamAttributes.HasIgnoreIfReturn);
 
-    [MemberNotNullWhen(true, nameof(RAIIFree))]
-    public bool HasRAIIFree => CustomAttributes.HasFlag(CustomParamAttributes.HasRAIIFree);
+    public bool HasRAIIFree => RAIIFree is not null;
 
-    [MemberNotNullWhen(true, nameof(FreeWith))]
-    public bool HasFreeWith => CustomAttributes.HasFlag(CustomParamAttributes.HasFreeWith);
+    public bool HasFreeWith => FreeWith is not null;
 
     public bool IsPtr => FieldInfo.Kind == SimpleFieldKind.Pointer;
     public bool IsPrimitive => FieldInfo.Kind == SimpleFieldKind.Primitive;
@@ -87,9 +86,97 @@ public readonly record struct AhkParameter
     public bool IsPtrToCom => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.COM);
 
     public bool IsPtrToNativeTypedef => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.NativeTypedef);
+    
     public bool IsPtrToStruct => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.Struct);
 
     public bool IsPtrToString => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.String);
+    
+    public AhkParameter(MetadataReader? mr, Parameter param, FieldInfo FieldInfo)
+    {
+        this.mr = mr;
+        this.param = param;
+        this.FieldInfo = FieldInfo;
+
+        CustomAttributes = GetCustomParamAttributes();
+        IgnoreIfReturnValues = GetIgnoreIfReturnValues();
+
+        FreeWith = MaybeGetReleaseMethod("FreeWithAttribute");
+        RAIIFree = MaybeGetReleaseMethod("RAIIFreeAttribute");
+    }
+
+    private CustomParamAttributes GetCustomParamAttributes()
+    {
+        CustomParamAttributes attrs = CustomParamAttributes.None;
+        if(mr is null)
+            return attrs;
+
+        foreach (string attrName in CustomAttributeDecoder.GetAllNames(mr, param))
+        {
+            attrs |= attrName switch
+            {
+                "ReservedAttribute" => CustomParamAttributes.Reserved,
+                "ConstAttribute" => CustomParamAttributes.Constant,
+                "MemorySizeAttribute" => CustomParamAttributes.SizedBuffer,
+                "ComOutPtrAttribute" => CustomParamAttributes.ComOutPtr,
+                "RetValAttribute" => CustomParamAttributes.RetVal,
+                "DoNotReleaseAttribute" => CustomParamAttributes.DoNotRelease,
+                "IgnoreIfReturnAttribute" => CustomParamAttributes.HasIgnoreIfReturn,
+                _ => 0
+            };
+        }
+
+        return attrs;
+    }
+
+    private List<string>? GetIgnoreIfReturnValues()
+    {
+        if(mr is null)
+            return null;
+
+        var conditions = CustomAttributeDecoder.DecodeAll(mr, param)
+            .Where(attr => attr.Name == "IgnoreIfReturnAttribute")
+            .Select(info => info.Attr.FixedArguments[0].Value)
+            .Select(v => (string)(v ?? throw new NullReferenceException(nameof(v))))
+            .ToList();
+
+        return conditions.Count > 0? conditions : null;
+    }
+
+    private AhkMethod? MaybeGetReleaseMethod(string attrName)
+    {
+        if(mr is null)
+            return null;
+
+        string? attrVal = MaybeGetParamAttrValue(attrName);
+        if(attrVal is null)
+        {
+            return null;
+        }
+
+        AhkMethod method = AhkMethod.Get(mr, attrVal);
+        if(method.parameters.Count != 2)
+        {
+            return null;
+        }
+
+        return method;
+    }
+
+    private string? MaybeGetParamAttrValue(string attrName)
+    {
+        if(mr is null)
+            return null;
+
+        CustomAttribute? attr = CustomAttributeDecoder.GetAttribute(mr, param, attrName);
+        if (attr.HasValue)
+        {
+            var decoded = attr.Value.DecodeValue(new CaTypeProvider());
+            return (string)(decoded.FixedArguments[0].Value 
+                ?? throw new NullReferenceException(nameof(decoded.FixedArguments)));
+        }
+
+        return null;
+    }
 
     public bool IsPtrToHandle()
     {
