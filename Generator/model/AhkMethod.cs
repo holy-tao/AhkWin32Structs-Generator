@@ -380,7 +380,7 @@ public class AhkMethod
             foreach(AhkParameter param in parameters.Where(p => p.FreeWith is not null))
             {
                 AhkMethod freeWith = param.FreeWith ?? throw new NullReferenceException(nameof(param.FreeWith));
-                referencedTypes.Add($"{freeWith.Namespace}.{freeWith.DeclarerName}");
+                referencedTypes.Add($"{freeWith.Namespace}.Apis");
             }
         }
 
