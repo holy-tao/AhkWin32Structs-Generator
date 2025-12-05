@@ -56,15 +56,23 @@ Write-Host "Extracting to $extractDir ..."
 Expand-Archive -Path $downloadPath -DestinationPath $extractDir -Force
 
 # 5. Find target file(s)
-$foundFile = Get-ChildItem -Path $extractDir -Recurse -Filter "*$FileExtension" | Select-Object -First 1
-if (-not $foundFile) {
-    Write-Error "No file with extension '$FileExtension' found in package!"
+$totalFiles = 0
+
+Write-Host "Copying $FileExtension files to $DestDir..."
+Get-ChildItem -Path $extractDir -Recurse -Filter "*$FileExtension" | Foreach-Object {
+    Write-Host "`t$($_.Name)"
+    Copy-Item $_.FullName -Destination $DestDir -Force
+    $totalFiles++
+}
+
+if($totalFiles -eq 0){
+    Write-Host "Failed to find files with extension $FileExtension"
     exit 1
 }
 
+Write-Host "Copied $totalFiles file(s)"
+
 # 6. Copy to destination
-Copy-Item $foundFile.FullName -Destination $DestDir -Force
 $latestVersion | Out-File -FilePath $versionFile -Encoding utf8
 
-Write-Host "Downloaded and updated $($foundFile.Name)"
 Write-Host "Version info saved to $versionFile"
