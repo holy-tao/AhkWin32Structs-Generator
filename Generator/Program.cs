@@ -97,32 +97,15 @@ public class Program
         {
             TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
 
-            string typeNamespace = mr.GetString(typeDef.Namespace);
-            string typeName = mr.GetString(typeDef.Name);
-
-            if (ShouldSkipType(mr, hTypeDef))
-                continue;
-
             try
             {
-                IAhkEmitter? emitter = ParseType(mr, typeDef);
-                if (emitter == null)
-                {
-                    Debug.WriteLine($"Non-explicit skip for {mr.GetString(typeDef.Namespace)}.{typeName}");
-                    continue;
-                }
-
-                string filepath = emitter.GetDesiredFilepath(outputDir);
-                string dirPath = Path.GetDirectoryName(filepath) ?? throw new NullReferenceException($"Null directory path: {filepath}");
-
-                Directory.CreateDirectory(dirPath);
-                File.WriteAllText(filepath, emitter.ToAhk());
+                GenerateSingleBinding(mr, typeDef, outputDir);
                 total++;
             }
             catch (Exception ex)
             {
                 errors++;
-                Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
+                Console.Error.WriteLine($"{ex.GetType().Name} parsing {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}: {ex.Message}");
                 Console.Error.WriteLine(ex.Message);
                 Console.Error.WriteLine(ex.StackTrace);
                 Console.Error.WriteLine();
@@ -135,6 +118,25 @@ public class Program
         }
 
         return (total, errors);
+    }
+
+    private static void GenerateSingleBinding(MetadataReader mr, TypeDefinition typeDef, string outputDir)
+    {
+        if (ShouldSkipType(mr, typeDef))
+            return;
+
+        IAhkEmitter? emitter = ParseType(mr, typeDef);
+        if (emitter == null)
+        {
+            Debug.WriteLine($"Non-explicit skip for {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
+            return;
+        }
+
+        string filepath = emitter.GetDesiredFilepath(outputDir);
+        string dirPath = Path.GetDirectoryName(filepath) ?? throw new NullReferenceException($"Null directory path: {filepath}");
+
+        Directory.CreateDirectory(dirPath);
+        File.WriteAllText(filepath, emitter.ToAhk());
     }
 
     private static IEnumerable<FileStream> CollectWinmdFiles(string directoryPath)
@@ -150,7 +152,11 @@ public class Program
 
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef)
     {
-        if ((typeDef.Attributes & TypeAttributes.Interface) != 0)
+        bool isInterface = (typeDef.Attributes & TypeAttributes.Interface) != 0;
+        bool isClass = (typeDef.Attributes & TypeAttributes.Class) != 0;    // Name is deceptive - includes structs, delegates, COM coclasses, etc
+        bool isWinRT = (typeDef.Attributes & TypeAttributes.WindowsRuntime) != 0;
+
+        if (isInterface)
         {
             // COM Interface
             return new AhkComInterface(mr, typeDef);
@@ -174,9 +180,8 @@ public class Program
         };
     }
 
-    private static bool ShouldSkipType(MetadataReader mr, TypeDefinitionHandle typeDefHandle)
+    private static bool ShouldSkipType(MetadataReader mr, TypeDefinition typeDef)
     {
-        TypeDefinition typeDef = mr.GetTypeDefinition(typeDefHandle);
         if(typeDef.BaseType.IsNil)
             return true;
 
