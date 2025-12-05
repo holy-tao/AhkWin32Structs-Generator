@@ -5,6 +5,7 @@ using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 public class Program
 {
@@ -93,50 +94,68 @@ public class Program
     {
         int total = 0, errors = 0;
 
+        // Look through TypeDefinitions
         foreach(TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
         {
-            TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
-
-            try
-            {
-                GenerateSingleBinding(mr, typeDef, outputDir);
-                total++;
-            }
-            catch (Exception ex)
-            {
+            bool success = GenerateSingleBinding(mr, hTypeDef, outputDir);
+            total++;
+            if(!success)
                 errors++;
-                Console.Error.WriteLine($"{ex.GetType().Name} parsing {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}: {ex.Message}");
-                Console.Error.WriteLine(ex.Message);
-                Console.Error.WriteLine(ex.StackTrace);
-                Console.Error.WriteLine();
-            }
+        }
 
-            if (total % 1000 == 0)
-            {
-                Debug.WriteLine($"Emitted: {total}");
-            }
+        // Look through assembly-level type exports (there are a couple of these in windows.winmd)
+        foreach(ExportedTypeHandle hExported in mr.ExportedTypes)
+        {
+            ExportedType exported = mr.GetExportedType(hExported);
+            string ns = mr.GetString(exported.Namespace);
+            string name = mr.GetString(exported.Name);
+
+            TypeDefinitionHandle forwarded = FieldSignatureDecoder.FindForwardedTypeRecursive(
+                mr, hExported, ns, name, out MetadataReader targetReader
+            );
+
+            bool success = GenerateSingleBinding(targetReader, forwarded, outputDir);
+            total++;
+            if(!success)
+                errors++;
         }
 
         return (total, errors);
     }
 
-    private static void GenerateSingleBinding(MetadataReader mr, TypeDefinition typeDef, string outputDir)
+    private static bool GenerateSingleBinding(MetadataReader mr, TypeDefinitionHandle hTypeDef, string outputDir)
     {
+        TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
+
         if (ShouldSkipType(mr, typeDef))
-            return;
+            return true;
 
-        IAhkEmitter? emitter = ParseType(mr, typeDef);
-        if (emitter == null)
+        try
         {
-            Debug.WriteLine($"Non-explicit skip for {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
-            return;
+            IAhkEmitter? emitter = ParseType(mr, typeDef);
+            if (emitter == null)
+            {
+                Debug.WriteLine($"Non-explicit skip for {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
+                return true;
+            }
+
+            string filepath = emitter.GetDesiredFilepath(outputDir);
+            string dirPath = Path.GetDirectoryName(filepath) ?? throw new NullReferenceException($"Null directory path: {filepath}");
+
+            Directory.CreateDirectory(dirPath);
+            File.WriteAllText(filepath, emitter.ToAhk());
+
+            return true;
         }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"{ex.GetType().Name} parsing {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}: {ex.Message}");
+            Console.Error.WriteLine(ex.Message);
+            Console.Error.WriteLine(ex.StackTrace);
+            Console.Error.WriteLine();
 
-        string filepath = emitter.GetDesiredFilepath(outputDir);
-        string dirPath = Path.GetDirectoryName(filepath) ?? throw new NullReferenceException($"Null directory path: {filepath}");
-
-        Directory.CreateDirectory(dirPath);
-        File.WriteAllText(filepath, emitter.ToAhk());
+            return false;
+        }
     }
 
     private static IEnumerable<FileStream> CollectWinmdFiles(string directoryPath)
@@ -145,6 +164,7 @@ public class Program
 
         return Directory.EnumerateFiles(directoryPath)
             .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".winmd")
+            .Where(path => Path.GetFileNameWithoutExtension(path) is "Windows")
             .Select(path => { Console.WriteLine($"\t{path}"); return path; })
             .Select(File.OpenRead)
             .ToList();
