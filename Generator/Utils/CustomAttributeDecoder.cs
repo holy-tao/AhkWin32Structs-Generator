@@ -125,7 +125,7 @@ public class CustomAttributeDecoder
         return infos;
     }
 
-    private static (string Namespace, string Name) GetAttributeTypeName(MetadataReader reader, CustomAttribute attr)
+    public static (string Namespace, string Name) GetAttributeTypeName(MetadataReader reader, CustomAttribute attr)
     {
         switch (attr.Constructor.Kind)
         {
