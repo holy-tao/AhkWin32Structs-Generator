@@ -222,23 +222,23 @@ public static class FieldSignatureDecoder
 
         string baseDir = AppContext.BaseDirectory;
         string runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
-        string sdkRoot = Environment.GetEnvironmentVariable("WindowsSdkDir") ??
-                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                                "Windows Kits", "10");
 
         List<string> probeNames = [
             $"{assemblyName}.dll",
             $"{assemblyName}.winmd",
+            Path.Combine(Program.MetadataDir, assemblyName),
+            Path.Combine(Program.MetadataDir, $"{assemblyName}.winmd"),
+            Path.Combine(Program.MetadataDir, $"{assemblyName}.dll"),
             Path.Combine(baseDir, $"{assemblyName}.dll"),
             Path.Combine(baseDir, $"{assemblyName}.winmd"),
             Path.Combine(runtimeDir, $"{assemblyName}.dll"),
             Path.Combine(runtimeDir, $"{assemblyName}.winmd"),
-            Path.Combine(Program.MetadataDir, assemblyName),
-            Path.Combine(Program.MetadataDir, $"{assemblyName}.winmd"),
-            Path.Combine(Program.MetadataDir, $"{assemblyName}.dll")
         ];
 
         // Probe typical Windows SDK metadata locations
+        string sdkRoot = Environment.GetEnvironmentVariable("WindowsSdkDir") ??
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                                "Windows Kits", "10");
         if (Directory.Exists(sdkRoot))
         {
             // Common pattern for Windows 10/11 SDKs
@@ -248,6 +248,7 @@ public static class FieldSignatureDecoder
                 foreach (var versionDir in Directory.GetDirectories(refsPath))
                 {
                     probeNames.Add(Path.Combine(versionDir, $"{assemblyName}.winmd"));
+                    probeNames.Add(Path.Combine(versionDir, $"{assemblyName}.dll"));
 
                     string asmDir = Path.Combine(versionDir, assemblyName);
                     if (!Directory.Exists(asmDir))
@@ -255,9 +256,11 @@ public static class FieldSignatureDecoder
 
                     // Search all subdirectories of the version/AssemblyName directory
                     probeNames.Add(Path.Combine(asmDir, $"{assemblyName}.winmd"));
+                    probeNames.Add(Path.Combine(asmDir, $"{assemblyName}.dll"));
                     foreach(string subDir in Directory.GetDirectories(asmDir, "*", SearchOption.AllDirectories))
                     {
                         probeNames.Add(Path.Combine(subDir, $"{assemblyName}.winmd"));
+                        probeNames.Add(Path.Combine(subDir, $"{assemblyName}.dll"));
                     }
                 }
             }
@@ -267,24 +270,63 @@ public static class FieldSignatureDecoder
             if (Directory.Exists(unionMeta))
             {
                 probeNames.Add(Path.Combine(unionMeta, $"{assemblyName}.winmd"));
+                probeNames.Add(Path.Combine(unionMeta, $"{assemblyName}.dll"));
             }
         }
-
-        foreach (var path in probeNames)
+        else
         {
-            if (!File.Exists(path))
-                continue;
+            Console.WriteLine($"Warning: failed to find the Windows SDK root - checked {sdkRoot}");
+        }
 
-            PEReader peReader = new(File.OpenRead(path));
+        // Probe the global assembly cache - many WinRT assemblies forward types here
+        string windir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        string gacBase = Path.Combine(windir, "Microsoft.NET", "assembly");
+        if (Directory.Exists(gacBase))
+        {
+            foreach(string subdir in Directory.GetDirectories(gacBase))
+            {
+                IEnumerable<string> asmDirs = Directory.GetDirectories(subdir)
+                    .Where(dir => (Path.GetFileName(dir)?.Equals(assemblyName, StringComparison.InvariantCultureIgnoreCase)) ?? false);
+
+                foreach(string asmDir in asmDirs)
+                {
+                    // Find the most recent version directory
+                    string mostRecentVersionDir = Directory.GetDirectories(asmDir)
+                        .OrderByDescending(dir => Directory.GetLastWriteTimeUtc(Path.Combine(asmDir, dir)))
+                        .FirstOrDefault(string.Empty);
+                    if (!string.IsNullOrWhiteSpace(mostRecentVersionDir))
+                    {
+                        probeNames.Add(Path.Combine(mostRecentVersionDir, $"{assemblyName}.winmd"));
+                        probeNames.Add(Path.Combine(mostRecentVersionDir, $"{assemblyName}.dll"));
+                    }
+                }
+            }
+        }
+        else
+        {
+            Console.WriteLine($"Warning: failed to find the Global Assembly Cache - checked {gacBase}");            
+        }
+
+        Debug.WriteLine($"Probing {probeNames.Count} paths for assembly:");
+        probeNames.ForEach(name => Debug.WriteLine($"\t{name}"));
+
+        string found = probeNames.FirstOrDefault(File.Exists, string.Empty);
+
+        if (!string.IsNullOrWhiteSpace(found))
+        {
+            PEReader peReader = new(File.OpenRead(found));
             var reader = peReader.GetMetadataReader();
 
             _assemblyReaders[assemblyName] = reader;
 
-            Debug.WriteLine($"Loaded external assembly '{assemblyName}' from '{path}'");
+            Debug.WriteLine($"Loaded assembly '{assemblyName}' from '{found}'");
             return reader;
         }
+            
+        Console.WriteLine($"Failed to load assembly '{assemblyName}'; searched:");
+        probeNames.ForEach(name => Console.WriteLine($"\t{name}"));
 
-        throw new DllNotFoundException($"Failed to load external assembly '{assemblyName}'");
+        throw new DllNotFoundException($"Failed to load assembly '{assemblyName}'");
     }
 
     /// <summary>
@@ -314,6 +356,9 @@ public static class FieldSignatureDecoder
     /// <exception cref="NullReferenceException"></exception>
     private static TypeDefinitionHandle FindTypeDefinition(MetadataReader reader, string ns, string name, out MetadataReader targetReader)
     {
+        string? asmName = reader.GetAssemblyDefinition().GetAssemblyName().Name;
+        Debug.WriteLine($"Looking for {ns}.{name} in {asmName}");
+
         // Try normal type definitions (in the current assembly) first
         foreach (var tdHandle in reader.TypeDefinitions)
         {
@@ -332,8 +377,10 @@ public static class FieldSignatureDecoder
         foreach (var exportedHandle in reader.ExportedTypes)
         {
             var exported = reader.GetExportedType(exportedHandle);
-            if (reader.StringComparer.Equals(exported.Name, name) &&
-                reader.StringComparer.Equals(exported.Namespace, ns))
+            Debug.WriteLine($"\t{reader.GetString(exported.Namespace)}.{reader.GetString(exported.Name)}: {exported.Implementation.Kind}");
+
+            if (reader.StringComparer.Equals(exported.Name, name, true) &&
+                reader.StringComparer.Equals(exported.Namespace, ns, true))
             {
                 switch (exported.Implementation.Kind)
                 {
@@ -347,15 +394,17 @@ public static class FieldSignatureDecoder
                     case HandleKind.ExportedType:
                         // Nested forwarded type — follow recursively
                         return FindForwardedTypeRecursive(reader, exported.Implementation, ns, name, out targetReader);
+
+                    default:
+                        throw new NotSupportedException(exported.Implementation.Kind.ToString());
                 }
             }
         }
 
-        string? asmName = reader.GetAssemblyDefinition().GetAssemblyName().Name;
         throw new TypeLoadException($"Could not resolve reference to '{ns}.{name}' in assembly '{asmName}'");
     }
 
-    private static TypeDefinitionHandle FindForwardedTypeRecursive(MetadataReader reader, EntityHandle handle, string ns, string name, out MetadataReader targetReader)
+    public static TypeDefinitionHandle FindForwardedTypeRecursive(MetadataReader reader, EntityHandle handle, string ns, string name, out MetadataReader targetReader)
     {
         var exported = reader.GetExportedType((ExportedTypeHandle)handle);
 
@@ -372,7 +421,7 @@ public static class FieldSignatureDecoder
                 return FindForwardedTypeRecursive(reader, exported.Implementation, ns, name, out targetReader);
 
             default:
-                throw new InvalidOperationException($"Invalid type forwarder target: {exported.Implementation.Kind}");
+                throw new NotSupportedException($"Unsupported type forwarder target: {exported.Implementation.Kind}");
         }
     }
 }
