@@ -20,8 +20,8 @@ public enum CustomParamAttributes
 public readonly record struct AhkParameter
 {
     // For sanitizing parameter names
-    public static string[] ReservedNames = ["in", "as", "is", "contains", "not", "and", "or", "this", "return", 
-        "throw", "loop", "do", "while", "float", "number", "integer", "object", "class", "buffer"];
+    public static HashSet<string> ReservedNames = ["in", "as", "is", "contains", "not", "and", "or", "this", "return", 
+        "throw", "loop", "do", "while", "float", "number", "integer", "object", "class", "buffer", "string"];
 
     public readonly MetadataReader? mr;
 
@@ -36,7 +36,7 @@ public readonly record struct AhkParameter
                 return "result";
             }
 
-            if (ReservedNames.Contains(nameVal, StringComparer.InvariantCultureIgnoreCase))
+            if (ReservedNames.TryGetValue(nameVal.ToLowerInvariant(), out _))
             {
                 nameVal += "_R";
             }
