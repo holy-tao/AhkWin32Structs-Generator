@@ -257,7 +257,7 @@ public class AhkMethod
 
             sb.AppendLine("        return resultHandle");
         }
-        else if (fnRetVal.IsPtrToCom)
+        else if (fnRetVal.IsPtrToCom && !fnRetVal.IsComOutPtr)
         {
             sb.AppendLine($"        return {fnRetVal.FieldInfo.UnderlyingType?.TypeName}({fnRetVal.Name})");
         }
@@ -479,7 +479,8 @@ public class AhkMethod
             if (param.Reserved || param == outputParameter)
                 continue;
 
-            sb.Append($"     * @param {{{param.FieldInfo.AhkType}}} {param.Name} ");
+            string typeNote = param.IsComOutPtr ? $"Pointer<{param.FieldInfo.AhkType}>" : param.FieldInfo.AhkType;
+            sb.Append($"     * @param {{{typeNote}}} {param.Name} ");
             if (apiDetails?.Parameters.TryGetValue(param.Name, out string? docString) ?? false)
             {
                 sb.Append(AhkType.EscapeDocs(docString, "    "));
@@ -493,6 +494,8 @@ public class AhkMethod
             {
                 AhkParameter param = outputParameter.Value;
                 string? actualValueName = param.IsPtr ? param.FieldInfo.UnderlyingType?.AhkType : param.FieldInfo.AhkType;
+                actualValueName = param.IsComOutPtr? $"Pointer<{actualValueName}>" : actualValueName;
+                
                 sb.Append($"     * @returns {{{actualValueName}}} ");
                 if (apiDetails?.Parameters.TryGetValue(param.Name, out string? docString) ?? false)
                 {
