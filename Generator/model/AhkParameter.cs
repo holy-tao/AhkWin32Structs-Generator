@@ -180,11 +180,11 @@ public readonly record struct AhkParameter
 
     public bool IsPtrToHandle()
     {
-        if (!IsPtr || FieldInfo.UnderlyingType?.TypeDef == null || FieldInfo.Reader == null)
+        if (!IsPtr || FieldInfo.UnderlyingType?.TypeDef is null || FieldInfo.UnderlyingType?.Reader is null)
             return false;
 
         return AhkStruct.TypeIsHandle(
-            FieldInfo.Reader, 
+            FieldInfo.UnderlyingType?.Reader ?? throw new NullReferenceException(), 
             FieldInfo.UnderlyingType?.TypeDef ?? throw new NullReferenceException()
         );
     }
