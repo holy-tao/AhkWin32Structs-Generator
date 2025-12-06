@@ -4,6 +4,7 @@ using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
+using Microsoft.VisualBasic;
 
 public static class FieldSignatureDecoder
 {
@@ -11,6 +12,8 @@ public static class FieldSignatureDecoder
     /// Cache for loaded external (non-Win32Metadata) assemblies
     /// </summary>
     private static readonly Dictionary<string, MetadataReader> _assemblyReaders = [];
+
+    private static readonly Dictionary<(string ns, string name), (MetadataReader reader, TypeDefinitionHandle handle)> _typeCache = [];
 
     /// <summary>
     /// List of namespaces of types which we are external to Windows.Win32 and which we don't
@@ -176,6 +179,12 @@ public static class FieldSignatureDecoder
         string name = reader.GetString(tr.Name);
         string ns = reader.GetString(tr.Namespace);
 
+        if(_typeCache.TryGetValue((ns, name), out var cached))
+        {
+            targetReader = cached.reader;
+            return cached.handle;
+        }
+
         switch (tr.ResolutionScope.Kind)
         {
             case HandleKind.ModuleDefinition:
@@ -193,6 +202,7 @@ public static class FieldSignatureDecoder
                     var nestedTd = reader.GetTypeDefinition(nestedHandle);
                     if (reader.StringComparer.Equals(nestedTd.Name, name))
                     {
+                        _typeCache[(ns, name)] = (targetReader, nestedHandle);
                         return nestedHandle;
                     }
                 }
@@ -356,8 +366,14 @@ public static class FieldSignatureDecoder
     /// <exception cref="NullReferenceException"></exception>
     private static TypeDefinitionHandle FindTypeDefinition(MetadataReader reader, string ns, string name, out MetadataReader targetReader)
     {
+        if(_typeCache.TryGetValue((ns, name), out var cached))
+        {
+            targetReader = cached.reader;
+            return cached.handle;
+        }
+
         string? asmName = reader.GetAssemblyDefinition().GetAssemblyName().Name;
-        Debug.WriteLine($"Looking for {ns}.{name} in {asmName}");
+        //Debug.WriteLine($"Looking for {ns}.{name} in {asmName}");
 
         // Try normal type definitions (in the current assembly) first
         foreach (var tdHandle in reader.TypeDefinitions)
@@ -367,6 +383,7 @@ public static class FieldSignatureDecoder
                 reader.StringComparer.Equals(td.Namespace, ns))
             {
                 targetReader = reader;
+                _typeCache[(ns, name)] = (reader, tdHandle);
                 return tdHandle;
             }
         }
@@ -377,7 +394,7 @@ public static class FieldSignatureDecoder
         foreach (var exportedHandle in reader.ExportedTypes)
         {
             var exported = reader.GetExportedType(exportedHandle);
-            Debug.WriteLine($"\t{reader.GetString(exported.Namespace)}.{reader.GetString(exported.Name)}: {exported.Implementation.Kind}");
+            //Debug.WriteLine($"\t{reader.GetString(exported.Namespace)}.{reader.GetString(exported.Name)}: {exported.Implementation.Kind}");
 
             if (reader.StringComparer.Equals(exported.Name, name, true) &&
                 reader.StringComparer.Equals(exported.Namespace, ns, true))
