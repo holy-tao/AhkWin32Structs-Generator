@@ -69,15 +69,22 @@ class AhkComMethod : AhkMethod
 
             if (typeName is "BSTR")
             {
+                // COM's string wrapper
                 conversions.AppendLine($"        {param.Name} := {param.Name} is String ? BSTR.Alloc({param.Name}).Value : {param.Name}");
             }
             else if (typeName is "PSTR" or "PWSTR")
             {
+                // Normal string pointer (feel like this shouldn't be so complicated)
                 conversions.AppendLine($"        {param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}");
             }
             else if (param.IsHandle())
             {
                 conversions.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
+            }
+            else if (param.IsPrimitive && param.FieldInfo.AhkType is "HSTRING")
+            {
+                // WinRT's string wrapper
+                conversions.AppendLine($"        {param.Name} := {param.Name} is String ? HSTRING.Create({param.Name}).Value : {param.Name}");
             }
         }
 
@@ -88,9 +95,11 @@ class AhkComMethod : AhkMethod
     {
         StringBuilder sb = new();
 
-        // ComCall can check HRESULTs for us
         if (FuncHasReturnValue)
-            sb.Append("result := ");
+        {
+            string returnValueName = outputParameter is null? parameters[0].Name : "result";
+            sb.Append($"{returnValueName} := ");
+        }
 
         // https://www.autohotkey.com/docs/v2/lib/ComCall.htm
         sb.Append($"ComCall({VTableIndex}, this");

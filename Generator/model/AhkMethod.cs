@@ -275,6 +275,21 @@ public class AhkMethod
         {
             sb.AppendLine($"        return {fnRetVal.FieldInfo.UnderlyingType?.TypeName}({fnRetVal.Name})");
         }
+        else if (fnRetVal.FieldInfo.AhkType is "HSTRING")
+        {
+            // Carve-out - this is a handle, but WinRT APIs refer to these as primitive strings
+            sb.AppendLine($"        return HSTRING({fnRetVal.Name})");
+        }
+        else if (fnRetVal.IsPrimitive && fnRetVal.FieldInfo.TypeName is "Object")
+        {
+            // Carve-out - primitive Object is IInspectable
+            sb.AppendLine($"        return IInspectable({fnRetVal.Name})");
+        }
+        else if (fnRetVal.IsClass)
+        {
+            // WinRT class
+            sb.AppendLine($"        return {fnRetVal.GetTypeDefName()}({fnRetVal.Name})");
+        }
         else
         {
             sb.AppendLine($"        return {fnRetVal.Name}");
@@ -296,6 +311,11 @@ public class AhkMethod
             else if (param.IsHandle())
             {
                 conversions.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
+            }
+            else if (param.IsPrimitive && param.FieldInfo.AhkType is "HSTRING")
+            {
+                // WinRT's string wrapper - RoActivateInstance and RoActivateClassFactory are the only cases we care about I think
+                conversions.AppendLine($"        {param.Name} := {param.Name} is String ? HSTRING.Create({param.Name}).Value : {param.Name}");
             }
         }
 
@@ -396,6 +416,22 @@ public class AhkMethod
                 AhkMethod freeWith = param.FreeWith ?? throw new NullReferenceException(nameof(param.FreeWith));
                 referencedTypes.Add($"{freeWith.Namespace}.Apis");
             }
+        }
+
+        // Check for Objects or strings
+        if(parameters.Any(p => p.FieldInfo.AhkType is "HSTRING"))
+        {
+            referencedTypes.Add("Windows.Win32.System.WinRT.HSTRING");
+        }
+
+        AhkParameter fnRetVal = outputParameter ?? parameters[0];
+        if (fnRetVal.IsPrimitive && fnRetVal.FieldInfo.TypeName is "Object")
+        {
+            referencedTypes.Add("Windows.Win32.System.WinRT.IInspectable");
+        }
+        if (fnRetVal.IsClass)
+        {
+            referencedTypes.Add($"{fnRetVal.GetTypeDefNamespace()}.{fnRetVal.GetTypeDefName()}");
         }
 
         return referencedTypes;

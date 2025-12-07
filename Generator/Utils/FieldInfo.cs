@@ -174,6 +174,10 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                         return "Pointer";
                     case "void":
                         return "Void";
+                    case "string":
+                        return "HSTRING";   // Primitive Strings mean WinRT strings, which are pointers to HSTRINGS
+                    case "object":      
+                        return "Pointer<IInspectable>"; // TODO figure something out about this - can we wrap automatically?
                     default:
                         throw new NotSupportedException(TypeName);
                 }

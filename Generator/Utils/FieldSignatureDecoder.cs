@@ -20,7 +20,7 @@ public static class FieldSignatureDecoder
     /// want to resolve. These are all WinRT types, the only place this is ever applicable is in
     /// the WinRT Interop Apis
     /// </summary>
-    private static readonly string[] excludeNamespaces = ["Windows.UI", "Windows.Foundation", "Windows.Graphics", "Windows.Storage"];
+    private static readonly string[] excludeNamespaces = [];
 
     public static FieldInfo DecodeFieldType(MetadataReader reader, FieldDefinition fieldDef)
     {
@@ -41,7 +41,7 @@ public static class FieldSignatureDecoder
         if(excludeNamespaces.Any(typeNamespace.StartsWith))
         {
             Debug.WriteLine($"Treating Win32 external {typeNamespace}.{typeName} as a pointer");
-            return new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td);
+            return new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td, null, reader);
         }
         else if (typeName == "HRESULT")
         {
@@ -65,7 +65,13 @@ public static class FieldSignatureDecoder
             return new FieldInfo(SimpleFieldKind.COM, typeName, 0, td, null, reader);
         }
 
-        return new FieldInfo(SimpleFieldKind.Struct, typeName, 0, td, null, reader);
+        SimpleFieldKind fieldKind = (td.Attributes & TypeAttributes.ClassSemanticsMask) switch
+        {
+            TypeAttributes.Interface => throw new NotSupportedException("Interface should've been caught earlier"),
+            TypeAttributes.Class => SimpleFieldKind.Class,
+            _ => SimpleFieldKind.Struct
+        };
+        return new FieldInfo(fieldKind, typeName, 0, td, null, reader);
     }
 
     public static bool IsComInterface(MetadataReader reader, TypeDefinitionHandle handle)
