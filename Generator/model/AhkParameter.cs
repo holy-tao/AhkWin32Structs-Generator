@@ -191,10 +191,10 @@ public readonly record struct AhkParameter
 
     public bool IsHandle()
     {
-        if (!FieldInfo.TypeDef.HasValue)
+        if (!FieldInfo.TypeDef.HasValue || FieldInfo.Reader is null)
             return false;
-        return AhkStruct.TypeIsHandle(FieldInfo.Reader ?? throw new NullReferenceException(nameof(FieldInfo.Reader))
-            , FieldInfo.TypeDef.Value);
+
+        return AhkStruct.TypeIsHandle(FieldInfo.Reader, FieldInfo.TypeDef.Value);
     }
 
     public string? GetTypeDefName()
