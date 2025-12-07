@@ -1,10 +1,7 @@
 using System.Diagnostics;
-using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
-using System.Runtime.InteropServices;
-using Microsoft.VisualBasic;
 
 public static class FieldSignatureDecoder
 {
@@ -32,6 +29,13 @@ public static class FieldSignatureDecoder
         return fieldDef.DecodeSignature(new FieldSignatureProvider(reader), new());
     }
 
+    /// <summary>
+    /// Decodes a TypeDefinition into a FieldInfo usable for AHK code generation
+    /// </summary>
+    /// <param name="reader">Metadata reader for tdHandle's assembly</param>
+    /// <param name="tdHandle">Handle to the TypeDefinition to decoded</param>
+    /// <returns>The decoded TypeDefinition</returns>
+    /// <exception cref="TypeAccessException">If the type cannot be decoded</exception>
     public static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle)
     {
         var td = reader.GetTypeDefinition(tdHandle);
@@ -51,7 +55,7 @@ public static class FieldSignatureDecoder
         {
             return DecodeNativeTypedef(reader, td);
         }
-        else if (IsEnum(reader, tdHandle))
+        else if (IsEnum(reader, td))
         {
             string underlying = GetEnumUnderlyingType(reader, tdHandle);
             return new FieldInfo(SimpleFieldKind.Primitive, underlying);
@@ -60,18 +64,20 @@ public static class FieldSignatureDecoder
         {
             return new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td, null, reader);
         }
-        else if (IsComInterface(reader, tdHandle))
+        else if (IsInterface(td))
         {
             return new FieldInfo(SimpleFieldKind.COM, typeName, 0, td, null, reader);
         }
-
-        SimpleFieldKind fieldKind = (td.Attributes & TypeAttributes.ClassSemanticsMask) switch
+        else if (IsStruct(reader, td))
         {
-            TypeAttributes.Interface => throw new NotSupportedException("Interface should've been caught earlier"),
-            TypeAttributes.Class => SimpleFieldKind.Class,
-            _ => SimpleFieldKind.Struct
-        };
-        return new FieldInfo(fieldKind, typeName, 0, td, null, reader);
+            return new FieldInfo(SimpleFieldKind.Struct, typeName, 0, td, null, reader);
+        }
+        else if (IsClass(reader, td))
+        {
+            return new FieldInfo(SimpleFieldKind.Class, typeName, 0, td, null, reader); 
+        }
+
+        throw new TypeAccessException($"Could not decode {typeNamespace}.{typeName}");
     }
 
     public static bool IsComInterface(MetadataReader reader, TypeDefinitionHandle handle)
@@ -110,18 +116,28 @@ public static class FieldSignatureDecoder
         return false;
     }
 
-    public static bool IsEnum(MetadataReader reader, TypeDefinitionHandle handle)
+    public static bool IsInterface(TypeDefinition td) => (td.Attributes & TypeAttributes.Interface) != 0;
+
+    public static bool IsEnum(MetadataReader reader, TypeDefinition td)
     {
-        var td = reader.GetTypeDefinition(handle);
-        var baseHandle = td.BaseType;
-        if (baseHandle.Kind == HandleKind.TypeReference)
-        {
-            var tr = reader.GetTypeReference((TypeReferenceHandle)baseHandle);
-            return reader.StringComparer.Equals(tr.Namespace, "System") &&
-                   reader.StringComparer.Equals(tr.Name, "Enum");
-        }
-        return false;
+        if (IsInterface(td)) 
+            return false;
+        if (td.Attributes.HasFlag(TypeAttributes.ExplicitLayout) || td.Attributes.HasFlag(TypeAttributes.SequentialLayout))
+            return false;
+
+        var fields = td.GetFields();
+        return fields.Count == 1 && reader.GetString(reader.GetFieldDefinition(fields.Single()).Name) is "value__";
     }
+
+    public static bool IsStruct(MetadataReader reader, TypeDefinition td) =>
+        !IsInterface(td) &&
+        !IsEnum(reader, td) && 
+        (td.Attributes.HasFlag(TypeAttributes.ExplicitLayout) || td.Attributes.HasFlag(TypeAttributes.SequentialLayout));
+
+    public static bool IsClass(MetadataReader reader, TypeDefinition td) =>
+        !IsInterface(td) &&
+        !IsEnum(reader, td) &&
+        !IsStruct(reader, td);
 
     public static string GetEnumUnderlyingType(MetadataReader reader, TypeDefinitionHandle handle)
     {
@@ -177,8 +193,7 @@ public static class FieldSignatureDecoder
     ///     a different assembly than the type refernce, this will differ from reader
     /// </param>
     /// <returns></returns>
-    /// <exception cref="NullReferenceException"></exception>
-    /// <exception cref="NotSupportedException"></exception>
+    /// <exception cref="TypeLoadException">If the type cannot be found</exception>
     public static TypeDefinitionHandle ResolveTypeReference(MetadataReader reader, TypeReferenceHandle trHandle, out MetadataReader targetReader)
     {
         var tr = reader.GetTypeReference(trHandle);
@@ -215,7 +230,7 @@ public static class FieldSignatureDecoder
 
                 string parentNs = reader.GetString(parentTd.Namespace);
                 string parentName = reader.GetString(parentTd.Name);
-                throw new NullReferenceException($"Could not resolve reference to '{ns}.{name}' under '{parentNs}.{parentName}'");
+                throw new TypeLoadException($"Could not resolve reference to '{ns}.{name}' under '{parentNs}.{parentName}'");
 
             case HandleKind.AssemblyReference:
                 AssemblyReference asmRef = reader.GetAssemblyReference((AssemblyReferenceHandle)tr.ResolutionScope);
@@ -227,13 +242,25 @@ public static class FieldSignatureDecoder
             // !!NOTE: ModuleReference is technically possible, not supported (yet). Win32Metadata only has one module
 
             default:
-                throw new NotSupportedException($"Cannot resolve '{ns}.{name}' in resolution scope '{tr.ResolutionScope}'");
+                throw new TypeLoadException($"Cannot resolve '{ns}.{name}' in resolution scope '{tr.ResolutionScope}'");
         }
     }
 
+    public static (MetadataReader reader, TypeDefinition typeDef) ResolveTypeReference(MetadataReader reader, TypeReferenceHandle trHandle)
+    {
+        TypeDefinitionHandle hFound = ResolveTypeReference(reader, trHandle, out var foundReader);
+        return (foundReader, reader.GetTypeDefinition(hFound));
+    }
+
+    /// <summary>
+    /// Tries to load a MetadataReader for the given assembly
+    /// </summary>
+    /// <param name="assemblyName">Name of the assembly to load - "Windows.Wdk", "mscorlib", "System.InteropServices", etc</param>
+    /// <returns></returns>
+    /// <exception cref="DllNotFoundException">If the assembly cannot be found</exception>
     public static MetadataReader LoadAssemblyReader(string assemblyName)
     {
-        if (_assemblyReaders.TryGetValue(assemblyName, out MetadataReader? cached))
+        if (_assemblyReaders.TryGetValue(assemblyName.TrimEnd(".winmd").TrimEnd(".dll"), out MetadataReader? cached))
             return cached;
 
         string baseDir = AppContext.BaseDirectory;
@@ -330,12 +357,12 @@ public static class FieldSignatureDecoder
             PEReader peReader = new(File.OpenRead(found));
             var reader = peReader.GetMetadataReader();
 
-            _assemblyReaders[assemblyName] = reader;
+            _assemblyReaders[assemblyName.TrimEnd(".winmd").TrimEnd(".dll")] = reader;
 
             Debug.WriteLine($"Loaded assembly '{assemblyName}' from '{found}'");
             return reader;
         }
-            
+        
         Console.WriteLine($"Failed to load assembly '{assemblyName}'; searched:");
         probeNames.ForEach(name => Console.WriteLine($"\t{name}"));
 

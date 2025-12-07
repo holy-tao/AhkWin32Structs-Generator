@@ -58,14 +58,13 @@ public class Program
             versionInfo.AppendLine($"{assemblyName.Name?.TrimEnd(".winmd")} = {assemblyName.Version}");
             Console.Write($"\t{assemblyName.Name?.TrimEnd(".winmd")} v{assemblyName.Version}... ");
 
+            FieldSignatureDecoder.RegisterMetadataReader(assemblyName.Name!.TrimEnd(".winmd"), reader);
+
             (int fileTotal, int fileErrors) = GenerateBindings(reader, ahkOutputDir);
 
             Console.WriteLine($"done. {fileTotal} files generated with {fileErrors} errors.");
             total += fileTotal;
             errors += fileErrors;
-
-            peReader.Dispose();
-            fileStream.Dispose();
         }
     
         // Finalize version.ini with package info
@@ -164,7 +163,7 @@ public class Program
 
         return Directory.EnumerateFiles(directoryPath)
             .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".winmd")
-            .Where(path => Path.GetFileNameWithoutExtension(path).ToLowerInvariant() is "windows")
+            //.Where(path => Path.GetFileNameWithoutExtension(path).ToLowerInvariant() is "windows")
             .Select(path => { Console.WriteLine($"\t{path}"); return path; })
             .Select(File.OpenRead)
             .ToList();

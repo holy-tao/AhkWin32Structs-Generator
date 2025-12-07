@@ -124,13 +124,12 @@ class AhkComInterface : AhkType
             return (baseReader, baseReader.GetTypeDefinition(hDef));
         }
 
-        List<TypeDefinition> impls = GetResolvedInterfaceImplementations(forType);
-
-        return impls.Count switch
+        var impls = GetResolvedInterfaceImplementations(forType);
+        return impls.Count() switch
         {
             0 => null,
-            1 => (mr, impls.First()),
-            _ => throw new NotSupportedException($"Extends too many interfaces. Should this be WinRT? [{string.Join(", ", impls.Select(td => mr.GetString(td.Name)))}]")
+            1 => impls.First(),
+            _ => throw new NotSupportedException($"Extends too many interfaces [{string.Join(", ", impls.Select(td => mr.GetString(td.typeDef.Name)))}]")
         };
     }
 
@@ -140,19 +139,19 @@ class AhkComInterface : AhkType
     /// <returns>All directly implemented interfaces for this interface</returns>
     /// <exception cref="NullReferenceException"></exception>
     /// <exception cref="NotSupportedException"></exception>
-    private List<TypeDefinition> GetResolvedInterfaceImplementations(TypeDefinition forType)
+    private IEnumerable<(MetadataReader reader, TypeDefinition typeDef)> GetResolvedInterfaceImplementations(TypeDefinition forType)
     {
         return forType.GetInterfaceImplementations()
             .Select(ih => mr.GetInterfaceImplementation(ih).Interface)
             .Select(iface => iface.Kind switch
                 {
                     // Resolve type reference, asserting that it's not null, then resolve the handle
-                    HandleKind.TypeReference => mr.GetTypeDefinition(FieldSignatureDecoder.ResolveTypeReference(mr, (TypeReferenceHandle)iface, out _)),
-                    HandleKind.TypeDefinition => mr.GetTypeDefinition((TypeDefinitionHandle)iface),
-                    _ => throw new NotSupportedException($"{iface.Kind} for interface {Namespace}.{Name}")
+                    HandleKind.TypeReference => FieldSignatureDecoder.ResolveTypeReference(mr, (TypeReferenceHandle)iface),
+                    HandleKind.TypeDefinition => (mr, mr.GetTypeDefinition((TypeDefinitionHandle)iface)),
+                    _ => throw new NotSupportedException(iface.Kind.ToString())
                 }
-            )
-            .ToList();
+            );
+            
     }
 
     /// <summary>
