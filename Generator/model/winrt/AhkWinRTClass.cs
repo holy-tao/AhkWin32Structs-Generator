@@ -51,6 +51,8 @@ class AhkWinRTClass : AhkType
         sb.AppendLine();
 
         sb.AppendLine($";@region Instance Methods");
+        ApendAhkConstructor(sb);
+        sb.AppendLine();
         foreach(AhkWinRTMethod method in InstanceMethods)
         {
             method.ToAhk(sb);
@@ -59,6 +61,36 @@ class AhkWinRTClass : AhkType
         sb.AppendLine($";@endregion Instance Methods");
 
         sb.AppendLine("}");
+    }
+
+    /// <summary>
+    /// Creates the __New method. If the class supports no-argument constructors, creates one, 
+    /// otherwise just takes a pointer and passes it to super.__New
+    /// </summary>
+    /// <param name="sb"></param>
+    private void ApendAhkConstructor(StringBuilder sb)
+    {
+        // If we have an [Activatable] attr whose first fixed argument's type is UInt, there's a no-arg constructor
+        // https://learn.microsoft.com/en-us/uwp/api/windows.foundation.metadata.activatableattribute?view=winrt-26100
+        bool hasNoArgCtor = CustomAttributes
+            .Where(c => c.Name is "ActivatableAttribute")
+            .Any(c => c.Attr.FixedArguments.First().Type is "UInt32");
+
+        // TODO doc comment
+
+        sb.AppendLine($"    __New(ptr{(hasNoArgCtor ? " := 0" : string.Empty)}) {{");
+
+        if (hasNoArgCtor)
+        {
+            sb.AppendLine($"        if(ptr == 0) {{");
+            sb.AppendLine($"            activatableClassId := HSTRING.Create(\"{Namespace}.{Name}\")");
+            sb.AppendLine($"            ptr := WinRT.RoActivateInstance(activatableClassId)");
+            sb.AppendLine($"        }}");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine($"        super.__New(ptr)");
+        sb.AppendLine($"    }}");
     }
 
     /// <summary>
