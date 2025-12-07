@@ -171,14 +171,18 @@ public class Program
 
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef)
     {
-        bool isInterface = (typeDef.Attributes & TypeAttributes.Interface) != 0;
-        bool isClass = (typeDef.Attributes & TypeAttributes.Class) != 0;    // Name is deceptive - includes structs, delegates, COM coclasses, etc
+        bool isInterface = (typeDef.Attributes & TypeAttributes.ClassSemanticsMask) == TypeAttributes.Interface;
+        bool isClass = (typeDef.Attributes & TypeAttributes.ClassSemanticsMask) == TypeAttributes.Class;    // Name is deceptive - includes structs, delegates, COM coclasses, etc
         bool isWinRT = (typeDef.Attributes & TypeAttributes.WindowsRuntime) != 0;
 
         if (isInterface)
         {
             // COM Interface
             return new AhkComInterface(mr, typeDef);
+        }
+        else if(isClass && isWinRT)
+        {
+            return new AhkWinRTClass(mr, typeDef);
         }
 
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
@@ -195,16 +199,18 @@ public class Program
         {
             "Enum" => new AhkEnum(mr, typeDef),
             "Struct" or "ValueType" => AhkStruct.Get(mr, typeDef),
+            "Object" => throw new NotSupportedException("how did we get here?"),   // TODO this is a class
             _ => null
         };
     }
 
     private static bool ShouldSkipType(MetadataReader mr, TypeDefinition typeDef)
     {
-        if(typeDef.BaseType.IsNil)
+        // Skip modules
+        if(mr.StringComparer.Equals(typeDef.Name, "<Module>"))
             return true;
 
-        if (typeDef.BaseType.Kind != HandleKind.TypeReference)
+        if (typeDef.BaseType.Kind is not HandleKind.TypeReference)
             return false;
 
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
