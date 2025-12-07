@@ -164,6 +164,7 @@ public class Program
 
         return Directory.EnumerateFiles(directoryPath)
             .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".winmd")
+            .Where(path => Path.GetFileNameWithoutExtension(path).ToLowerInvariant() is "windows")
             .Select(path => { Console.WriteLine($"\t{path}"); return path; })
             .Select(File.OpenRead)
             .ToList();
@@ -180,10 +181,6 @@ public class Program
             // COM Interface
             return new AhkComInterface(mr, typeDef);
         }
-        else if(isClass && isWinRT)
-        {
-            return new AhkWinRTClass(mr, typeDef);
-        }
 
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
         string typeName = mr.GetString(typeDef.Name);
@@ -199,7 +196,7 @@ public class Program
         {
             "Enum" => new AhkEnum(mr, typeDef),
             "Struct" or "ValueType" => AhkStruct.Get(mr, typeDef),
-            "Object" => throw new NotSupportedException("how did we get here?"),   // TODO this is a class
+            "Object" => new AhkWinRTClass(mr, typeDef),
             _ => null
         };
     }
