@@ -231,7 +231,6 @@ public static class FieldSignatureDecoder
             return cached;
 
         string baseDir = AppContext.BaseDirectory;
-        string runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
 
         List<string> probeNames = [
             $"{assemblyName}.dll",
@@ -240,9 +239,7 @@ public static class FieldSignatureDecoder
             Path.Combine(Program.MetadataDir, $"{assemblyName}.winmd"),
             Path.Combine(Program.MetadataDir, $"{assemblyName}.dll"),
             Path.Combine(baseDir, $"{assemblyName}.dll"),
-            Path.Combine(baseDir, $"{assemblyName}.winmd"),
-            Path.Combine(runtimeDir, $"{assemblyName}.dll"),
-            Path.Combine(runtimeDir, $"{assemblyName}.winmd"),
+            Path.Combine(baseDir, $"{assemblyName}.winmd")
         ];
 
         // Probe typical Windows SDK metadata locations
@@ -293,9 +290,9 @@ public static class FieldSignatureDecoder
         string gacBase = Path.Combine(windir, "Microsoft.NET", "assembly");
         if (Directory.Exists(gacBase))
         {
-            foreach(string subdir in Directory.GetDirectories(gacBase))
+            foreach(string subdir in new string[]{"GAC_64", "GAC_MSIL"})
             {
-                IEnumerable<string> asmDirs = Directory.GetDirectories(subdir)
+                IEnumerable<string> asmDirs = Directory.GetDirectories(Path.Join(gacBase, subdir))
                     .Where(dir => (Path.GetFileName(dir)?.Equals(assemblyName, StringComparison.InvariantCultureIgnoreCase)) ?? false);
 
                 foreach(string asmDir in asmDirs)
@@ -317,8 +314,8 @@ public static class FieldSignatureDecoder
             Console.WriteLine($"Warning: failed to find the Global Assembly Cache - checked {gacBase}");            
         }
 
-        Debug.WriteLine($"Probing {probeNames.Count} paths for assembly:");
-        probeNames.ForEach(name => Debug.WriteLine($"\t{name}"));
+        // Debug.WriteLine($"Probing {probeNames.Count} paths for assembly:");
+        // probeNames.ForEach(name => Debug.WriteLine($"\t{name}"));
 
         string found = probeNames.FirstOrDefault(File.Exists, string.Empty);
 
