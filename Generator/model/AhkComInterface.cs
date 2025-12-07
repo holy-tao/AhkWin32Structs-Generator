@@ -1,4 +1,5 @@
 
+using System.Reflection;
 using System.Reflection.Metadata;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
@@ -77,7 +78,7 @@ class AhkComInterface : AhkType
     // CLSID for an instantiatable object the implements this interface, if any
     public readonly Guid? clsid;
 
-    public readonly TypeDefinition? BaseInterface;
+    public readonly (MetadataReader reader, TypeDefinition def)? BaseInterface;
 
     public readonly List<AhkComMethod> Methods;
 
@@ -111,15 +112,25 @@ class AhkComInterface : AhkType
         }
     }
 
-    private TypeDefinition? GetBaseTypeDef(TypeDefinition forType)
+    private (MetadataReader, TypeDefinition)? GetBaseTypeDef(TypeDefinition forType)
     {
+        // All WinRT interfaces implicitly extend IUnknown. They may implement other interfaces, but that means
+        // that querying for them is guaranteed to succeed and has no impact on VTable layout, which is what we
+        // care about here
+        if (forType.Attributes.HasFlag(TypeAttributes.WindowsRuntime))
+        {
+            TypeDefinitionHandle hDef = FieldSignatureDecoder.FindTypeDefinition("Windows.Win32",
+                "Windows.Win32.System.Com", "IUnknown", out var baseReader);
+            return (baseReader, baseReader.GetTypeDefinition(hDef));
+        }
+
         List<TypeDefinition> impls = GetResolvedInterfaceImplementations(forType);
 
         return impls.Count switch
         {
             0 => null,
-            1 => impls.First(),
-            _ => throw new NotSupportedException($"Interface {Namespace}.{Name} implements {impls.Count} interfaces, expected 1: [{string.Join(",", impls.Select(td => mr.GetString(td.Name)))}]")
+            1 => (mr, impls.First()),
+            _ => throw new NotSupportedException($"Extends too many interfaces. Should this be WinRT? [{string.Join(", ", impls.Select(td => mr.GetString(td.Name)))}]")
         };
     }
 
@@ -151,13 +162,13 @@ class AhkComInterface : AhkType
     /// <returns></returns>
     private int GetVTableOffset()
     {
-        TypeDefinition? current = BaseInterface;
+        (MetadataReader reader, TypeDefinition def)? current = BaseInterface;
         int offset = 0;
 
-        while (current.HasValue)
+        while (current is not null)
         {
-            offset += current.Value.GetMethods().ToList().Count;
-            current = GetBaseTypeDef(current.Value);
+            offset += current.Value.def.GetMethods().Count;
+            current = GetBaseTypeDef(current.Value.def);
         }
 
         return offset;
@@ -188,7 +199,10 @@ class AhkComInterface : AhkType
         sb.AppendLine();
 
         MaybeAddTypeDocumentation(sb);
-        sb.AppendLine($"class {Name} extends {(BaseInterface.HasValue ? mr.GetString(BaseInterface.Value.Name) : "Win32ComInterface")}{{");
+        string baseName = BaseInterface.HasValue ? 
+            BaseInterface.Value.reader.GetString(BaseInterface.Value.def.Name) : 
+            "Win32ComInterface";
+        sb.AppendLine($"class {Name} extends {baseName}{{");
 
         sb.AppendLine();
         AppendStaticCode(sb);
@@ -269,7 +283,7 @@ class AhkComInterface : AhkType
 
         if (BaseInterface.HasValue)
         {
-            imports.Add(GetFqn(mr, (TypeDefinition)BaseInterface));
+            imports.Add(GetFqn(BaseInterface.Value.reader, BaseInterface.Value.def));
         }
 
         return imports;

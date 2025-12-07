@@ -225,7 +225,7 @@ public static class FieldSignatureDecoder
         }
     }
 
-    private static MetadataReader LoadAssemblyReader(string assemblyName)
+    public static MetadataReader LoadAssemblyReader(string assemblyName)
     {
         if (_assemblyReaders.TryGetValue(assemblyName, out MetadataReader? cached))
             return cached;
@@ -361,7 +361,7 @@ public static class FieldSignatureDecoder
     /// </param>
     /// <returns></returns>
     /// <exception cref="NullReferenceException"></exception>
-    private static TypeDefinitionHandle FindTypeDefinition(MetadataReader reader, string ns, string name, out MetadataReader targetReader)
+    public static TypeDefinitionHandle FindTypeDefinition(MetadataReader reader, string ns, string name, out MetadataReader targetReader)
     {
         if(_typeCache.TryGetValue((ns, name), out var cached))
         {
@@ -416,6 +416,19 @@ public static class FieldSignatureDecoder
         }
 
         throw new TypeLoadException($"Could not resolve reference to '{ns}.{name}' in assembly '{asmName}'");
+    }
+
+    /// <summary>
+    /// Find a type definition by assembly, namespace, and name
+    /// </summary>
+    /// <param name="asmName">The assembly you expect the type to be in - e.g "Windows.Win32", "Windows.Wdk"</param>
+    /// <param name="ns">Namespace of the type</param>
+    /// <param name="name">Name of the type</param>
+    /// <returns></returns>
+    public static TypeDefinitionHandle FindTypeDefinition(string asmName, string ns, string name, out MetadataReader foundReader)
+    {
+         MetadataReader reader = LoadAssemblyReader(asmName);
+         return FindTypeDefinition(reader, ns, name, out foundReader);
     }
 
     public static TypeDefinitionHandle FindForwardedTypeRecursive(MetadataReader reader, EntityHandle handle, string ns, string name, out MetadataReader targetReader)
