@@ -9,7 +9,7 @@ using Microsoft.Windows.SDK.Win32Docs;
 /// <param name="Name">Name of the property</param>
 /// <param name="Getter">Getter method for the property, if any</param>
 /// <param name="Setter">Setter method for the property, if any</param>
-record struct AhkComProperty(AhkComInterface Interface, string Name, AhkComMethod? Getter, AhkComMethod? Setter)
+record struct AhkComProperty(AhkType Interface, string Name, AhkMethod? Getter, AhkMethod? Setter)
 {
     public void ToAhk(StringBuilder sb)
     {

@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Reflection.Metadata;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
@@ -41,6 +42,11 @@ public abstract class AhkType : IAhkEmitter
     public bool IsAnsi => flags.HasFlag(MemberFlags.Ansi);    //Some types have both flags!?
     public bool IsUnicode => flags.HasFlag(MemberFlags.Unicode);
 
+    /// <summary>
+    /// Indicates whether or not this type is part of the Windows Runtime
+    /// </summary>
+    public bool IsWinRT => typeDef.Attributes.HasFlag(TypeAttributes.WindowsRuntime);
+
     public readonly List<CAInfo> CustomAttributes;
 
     public AhkType(MetadataReader mr, TypeDefinition typeDef)
@@ -58,7 +64,7 @@ public abstract class AhkType : IAhkEmitter
 
     public abstract void ToAhk(StringBuilder sb);
 
-    private protected void MaybeAddTypeDocumentation(StringBuilder sb)
+    protected void MaybeAddTypeDocumentation(StringBuilder sb)
     {
         sb.AppendLine("/**");
 

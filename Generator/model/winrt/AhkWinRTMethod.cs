@@ -1,0 +1,58 @@
+using System.Reflection.Metadata;
+using System.Text;
+
+class AhkWinRTMethod : AhkMethod
+{
+    public readonly AhkWinRTClass DeclaringClass;
+    public readonly TypeDefinition DeclaringInterface;
+
+    public string DeclaringInterfaceName => mr.GetString(DeclaringInterface.Name);
+    public string DeclaringInterfaceNamespace => mr.GetString(DeclaringInterface.Namespace);
+
+    public readonly string? OverloadName;
+
+    public AhkWinRTMethod(AhkWinRTClass declarer, MetadataReader mr, MethodDefinition methodDef) : base(mr, methodDef)
+    {
+        DeclaringClass = declarer;
+        DeclaringInterface = mr.GetTypeDefinition(methodDef.GetDeclaringType());
+
+        OverloadName = GetOverloadName();
+    }
+
+    private string? GetOverloadName()
+    {
+        CustomAttributeValue<string> overloadAttr = CustomAttributes
+            .SingleOrDefault(c => c.Name is "OverloadAttribute").Attr;
+
+        // https://stackoverflow.com/a/1896035
+        if(!EqualityComparer<CustomAttributeValue<string>>.Default.Equals(overloadAttr, default))
+        {
+            return (string?)overloadAttr.FixedArguments.First().Value;
+        }
+
+        return null;
+    }
+
+    public override void ToAhk(StringBuilder sb)
+    {
+        // TODO produce documentation
+
+        string argList = BuildMethodArgumentList();
+        sb.AppendLine($"    {GetDeduplicatedName()}({argList}) {{");
+        sb.AppendLine($"        if (!this.HasProp(\"__{DeclaringInterfaceName}\")) {{");
+        sb.AppendLine($"            if ((queryResult := this.QueryInterface({DeclaringInterfaceName}.IID, &outPtr := 0)) != 0)");
+        sb.AppendLine($"                throw OSError(queryResult)");
+        sb.AppendLine($"            this.__{DeclaringInterfaceName} := {DeclaringInterfaceName}(outPtr)");
+        sb.AppendLine($"        }}");
+        sb.AppendLine();
+        sb.AppendLine($"        return this.__{DeclaringInterfaceName}.{GetDeduplicatedName()}({argList})");
+        sb.AppendLine("    }");
+    }
+
+    private protected override  AhkParameter? GetOutputParameter() => null;
+
+    public override string GetDeduplicatedName()
+    {
+        return OverloadName ?? Name;
+    }
+}

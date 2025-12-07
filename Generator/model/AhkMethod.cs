@@ -35,6 +35,8 @@ public class AhkMethod
 
     public bool CanReturnErrorsAsSuccess => CustomAttributes.Any(c => c.Name is "CanReturnErrorsAsSuccessAttribute");
 
+    public bool IsSpecialName => methodDef.Attributes.HasFlag(MethodAttributes.SpecialName);
+
     /// <summary>
     /// Does the function have a non-void return value? Note that it may not, but we could
     /// still have an output parameter
@@ -49,7 +51,7 @@ public class AhkMethod
     /// </summary>
     public readonly AhkParameter? outputParameter;
 
-    private readonly List<CAInfo> CustomAttributes;
+    private protected readonly List<CAInfo> CustomAttributes;
 
     public AhkMethod(MetadataReader mr, MethodDefinition methodDef)
     {
@@ -87,6 +89,18 @@ public class AhkMethod
             .Single(methodDef => reader.StringComparer.Equals(methodDef.Name, name));
 
         return new AhkMethod(reader, def);
+    }
+
+    
+    /// <summary>
+    /// Some interfaces have overloaded methods. AHK doesn't support this, class members need to
+    /// have unique names; this method retrieves a unique (to the method's declarer) name for the 
+    /// method.
+    /// </summary>
+    /// <returns>A unique name for this method</returns>
+    public virtual string GetDeduplicatedName()
+    {
+        return Name;
     }
 
     public virtual void ToAhk(StringBuilder sb)

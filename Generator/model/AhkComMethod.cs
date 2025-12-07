@@ -11,8 +11,6 @@ class AhkComMethod : AhkMethod
 
     public bool HasStringParam => parameters[1..].Any(p => p.GetTypeDefName() is "BSTR");
 
-    public bool IsSpecialName => methodDef.Attributes.HasFlag(MethodAttributes.SpecialName);
-
     private readonly AhkComInterface parent;
 
     public AhkComMethod(AhkComInterface parent, MetadataReader mr, MethodDefinition methodDef, int vTableIndex) : base(mr, methodDef)
@@ -120,13 +118,8 @@ class AhkComMethod : AhkMethod
 
         return sb.Append(')').ToString();
     }
-
-    /// <summary>
-    /// Some interfaces have overloaded methods. AHK doesn't support this, class members need to
-    /// have unique names. So we append a counter to overloads for uniqueness
-    /// </summary>
-    /// <returns></returns>
-    public string GetDeduplicatedName()
+    
+    public override string GetDeduplicatedName()
     {
         int counter = parent.Methods
             .Where(m => (m.Name == Name) && (m.VTableIndex < VTableIndex))
