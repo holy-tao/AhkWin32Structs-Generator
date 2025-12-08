@@ -148,10 +148,20 @@ class AhkWinRTClass : AhkType
                         TypeDefinitionHandle hTypeDef = FieldSignatureDecoder.ResolveTypeReference(
                             mr, (TypeReferenceHandle)iface, out MetadataReader resolvedReader);
                         TypeDefinition resolvedTypeDef = resolvedReader.GetTypeDefinition(hTypeDef);
+
                         return (resolvedReader, resolvedTypeDef);
 
                     case HandleKind.TypeDefinition:
                         return (mr, mr.GetTypeDefinition((TypeDefinitionHandle)iface));
+
+                    case HandleKind.TypeSpecification:
+                        TypeSpecification typeSpec = mr.GetTypeSpecification((TypeSpecificationHandle)iface);
+                        var resolved = typeSpec.DecodeSignature(new FieldSignatureProvider(mr), new());
+
+                        return (
+                            resolved.Reader ?? throw new NullReferenceException(nameof(resolved.Reader)),
+                            resolved.TypeDef ?? throw new NullReferenceException(nameof(resolved.TypeDef))
+                        );
 
                     default:
                         throw new NotSupportedException($"{iface.Kind} for interface {Namespace}.{Name}");

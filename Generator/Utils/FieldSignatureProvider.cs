@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Reflection.Metadata;
 
 public class GenericContext
@@ -64,7 +65,9 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
     }
 
     public FieldInfo GetSZArrayType(FieldInfo elementType)
-        => throw new NotSupportedException("SZARRAY not supported");
+    {
+        return new(SimpleFieldKind.Array, elementType.TypeName, -1, elementType.TypeDef, elementType, _reader);
+    }
 
     public FieldInfo GetArrayType(FieldInfo elementType, ArrayShape shape)
     {
@@ -88,13 +91,22 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
         => new(SimpleFieldKind.Pointer, elementType.TypeName);
 
     public FieldInfo GetGenericInstantiation(FieldInfo genericType, ImmutableArray<FieldInfo> typeArguments)
-        => new(SimpleFieldKind.Other, $"{genericType.TypeName}<{string.Join(",", typeArguments)}>");
+    {
+        // Debug.WriteLine($"Flattening GenericInstantiation: {genericType.TypeName}<{string.Join(", ", typeArguments.Select(t => t.TypeName))}>");
+        return genericType;
+    }
 
     public FieldInfo GetGenericMethodParameter(GenericContext genericContext, int index)
-        => new(SimpleFieldKind.Other, $"!!{index}");
+    {
+        // throw new NotSupportedException($"GenericMethodParameter: {index}");
+        return new FieldInfo(SimpleFieldKind.Pointer, $"Callback");
+    }
 
     public FieldInfo GetGenericTypeParameter(GenericContext genericContext, int index)
-        => new(SimpleFieldKind.Other, $"!{index}");
+    {
+        // throw new NotSupportedException($"GenericTypeParameter: {index}");
+        return new FieldInfo(SimpleFieldKind.Other, $"Any");
+    }
 
     public FieldInfo GetModifiedType(FieldInfo modifier, FieldInfo unmodifiedType, bool isRequired)
         => unmodifiedType;
@@ -114,7 +126,9 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
     }
 
     public FieldInfo GetTypeFromSerializedName(string name)
-        => new(SimpleFieldKind.Other, name);
+    {
+        throw new NotSupportedException($"GetTypeFromSerializedName(\"{name}\")");
+    }
 
     public FieldInfo GetUnsupportedType()
         => new(SimpleFieldKind.Other, "Unsupported");
