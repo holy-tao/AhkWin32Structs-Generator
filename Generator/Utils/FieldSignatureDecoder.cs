@@ -39,7 +39,7 @@ public static class FieldSignatureDecoder
     public static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle)
     {
         var td = reader.GetTypeDefinition(tdHandle);
-        string typeName = reader.GetString(td.Name);
+        string typeName = reader.GetString(td.Name).Split('`').First();
         string typeNamespace = reader.GetString(td.Namespace);
 
         if(excludeNamespaces.Any(typeNamespace.StartsWith))
@@ -176,7 +176,7 @@ public static class FieldSignatureDecoder
 
         return new FieldInfo(
             SimpleFieldKind.NativeTypedef,
-            mr.GetString(typeDef.Name),
+            mr.GetString(typeDef.Name).Split('`').First(),
             0,
             typeDef,
             fieldDef.DecodeSignature(new FieldSignatureProvider(mr, typeDef), new()),

@@ -17,11 +17,13 @@ public abstract class AhkType : IAhkEmitter
 
     private protected readonly List<AhkExtension>? extensions;
 
-    public string Name
+    public virtual string Name
     {
         get
         {
-            string candidate = mr.GetString(typeDef.Name).TrimEnd("_e__Struct");
+            string candidate = mr.GetString(typeDef.Name)
+                .TrimEnd("_e__Struct")
+                .Split('`').First();
             if (globalReservedNames.Contains(candidate, StringComparer.CurrentCultureIgnoreCase))
             {
                 candidate = "Win32" + candidate;
@@ -100,7 +102,7 @@ public abstract class AhkType : IAhkEmitter
     public string GetDesiredFilepath(string root)
     {
         string namespacePath = Path.Join(Namespace.Split("."));
-        string canonicalName = mr.GetString(typeDef.Name);
+        string canonicalName = mr.GetString(typeDef.Name).Split('`').First();
 
         return Path.Join(root, namespacePath, $"{canonicalName}.ahk");
     }
@@ -111,7 +113,7 @@ public abstract class AhkType : IAhkEmitter
         {
             List<string> parts = [.. import.Split(".")];
             string importNamespace = string.Join(".", parts[0..^1]);    // All but last
-            string importName = parts.Last();
+            string importName = parts.Last().Split('`').First();
 
             string sbPath = AhkStruct.RelativePathBetweenNamespaces(Namespace, importNamespace);
             sb.AppendLine($"#Include {sbPath}{importName}.ahk");
