@@ -91,7 +91,7 @@ class AhkComInterface : AhkType
         iid = GuidDecoder.MaybeDecodeGuid(mr, typeDef);
         clsid = GetClsid();
 
-        BaseInterface = GetBaseTypeDef(typeDef);
+        BaseInterface = GetBaseTypeDef(mr, typeDef);
         VTableOffset = GetVTableOffset();
 
         Methods = typeDef.GetMethods()
@@ -112,7 +112,7 @@ class AhkComInterface : AhkType
         }
     }
 
-    private (MetadataReader, TypeDefinition)? GetBaseTypeDef(TypeDefinition forType)
+    private (MetadataReader, TypeDefinition)? GetBaseTypeDef(MetadataReader reader, TypeDefinition forType)
     {
         // All WinRT interfaces implicitly extend IUnknown. They may implement other interfaces, but that means
         // that querying for them is guaranteed to succeed and has no impact on VTable layout, which is what we
@@ -120,11 +120,11 @@ class AhkComInterface : AhkType
         if (forType.Attributes.HasFlag(TypeAttributes.WindowsRuntime))
         {
             TypeDefinitionHandle hDef = FieldSignatureDecoder.FindTypeDefinition("Windows.Win32",
-                "Windows.Win32.System.Com", "IUnknown", out var baseReader);
+                "Windows.Win32.System.WinRT", "IInspectable", out var baseReader);
             return (baseReader, baseReader.GetTypeDefinition(hDef));
         }
 
-        var impls = GetInterfaceImplementations(forType);
+        var impls = GetInterfaceImplementations(reader, forType);
         return impls.Count() switch
         {
             0 => null,
@@ -139,23 +139,23 @@ class AhkComInterface : AhkType
     /// <returns>All directly implemented interfaces for this interface</returns>
     /// <exception cref="NullReferenceException"></exception>
     /// <exception cref="NotSupportedException"></exception>
-    public IEnumerable<(MetadataReader reader, TypeDefinition typeDef)> GetInterfaceImplementations(TypeDefinition forType)
+    public IEnumerable<(MetadataReader reader, TypeDefinition typeDef)> GetInterfaceImplementations(MetadataReader reader, TypeDefinition forType)
     {
         return forType.GetInterfaceImplementations()
-            .Select(ih => mr.GetInterfaceImplementation(ih).Interface)
+            .Select(ih => reader.GetInterfaceImplementation(ih).Interface)
             .Select(iface =>
             {
                 switch(iface.Kind) 
                 {
                     case HandleKind.TypeReference:
-                        return FieldSignatureDecoder.ResolveTypeReference(mr, (TypeReferenceHandle)iface);
+                        return FieldSignatureDecoder.ResolveTypeReference(reader, (TypeReferenceHandle)iface);
 
                     case HandleKind.TypeDefinition:
-                        return (mr, mr.GetTypeDefinition((TypeDefinitionHandle)iface));
+                        return (reader, reader.GetTypeDefinition((TypeDefinitionHandle)iface));
 
                     case HandleKind.TypeSpecification:
-                        TypeSpecification typeSpec = mr.GetTypeSpecification((TypeSpecificationHandle)iface);
-                        var resolved = typeSpec.DecodeSignature(new FieldSignatureProvider(mr), new());
+                        TypeSpecification typeSpec = reader.GetTypeSpecification((TypeSpecificationHandle)iface);
+                        var resolved = typeSpec.DecodeSignature(new FieldSignatureProvider(reader), new());
 
                         return (
                             resolved.Reader ?? throw new NullReferenceException(nameof(resolved.Reader)),
@@ -169,7 +169,7 @@ class AhkComInterface : AhkType
     }
 
     public IEnumerable<(MetadataReader reader, TypeDefinition typeDef)> GetInterfaceImplementations()
-        => GetInterfaceImplementations(typeDef);
+        => GetInterfaceImplementations(mr, typeDef);
 
     /// <summary>
     /// Count the number of methods in this interface's inheritance chain, not including
@@ -184,7 +184,7 @@ class AhkComInterface : AhkType
         while (current is not null)
         {
             offset += current.Value.def.GetMethods().Count;
-            current = GetBaseTypeDef(current.Value.def);
+            current = GetBaseTypeDef(current.Value.reader, current.Value.def);
         }
 
         return offset;
