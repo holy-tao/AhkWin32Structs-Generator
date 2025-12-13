@@ -12,6 +12,8 @@ public static class FieldSignatureDecoder
 
     private static readonly Dictionary<(string ns, string name), (MetadataReader reader, TypeDefinitionHandle handle)> _typeCache = [];
 
+    private static readonly TraceSource traceSource = new("AssemblyLoader");
+
     /// <summary>
     /// List of namespaces of types which we are external to Windows.Win32 and which we don't
     /// want to resolve. These are all WinRT types, the only place this is ever applicable is in
@@ -44,7 +46,7 @@ public static class FieldSignatureDecoder
 
         if(excludeNamespaces.Any(typeNamespace.StartsWith))
         {
-            Debug.WriteLine($"Treating Win32 external {typeNamespace}.{typeName} as a pointer");
+            Trace.TraceWarning($"Treating Win32 external {typeNamespace}.{typeName} as a pointer");
             return new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td, null, reader);
         }
         else if (typeName == "HRESULT")
@@ -315,7 +317,7 @@ public static class FieldSignatureDecoder
         }
         else
         {
-            Console.WriteLine($"Warning: failed to find the Windows SDK root - checked {sdkRoot}");
+            Trace.TraceWarning($"Failed to find the Windows SDK root - checked {sdkRoot}");
         }
 
         // Probe the global assembly cache - many WinRT assemblies forward types here
@@ -344,11 +346,11 @@ public static class FieldSignatureDecoder
         }
         else
         {
-            Console.WriteLine($"Warning: failed to find the Global Assembly Cache - checked {gacBase}");            
+            Trace.TraceWarning($"Failed to find the Global Assembly Cache - checked {gacBase}");            
         }
 
-        // Debug.WriteLine($"Probing {probeNames.Count} paths for assembly:");
-        // probeNames.ForEach(name => Debug.WriteLine($"\t{name}"));
+        traceSource.TraceEvent(TraceEventType.Verbose, 1, $"Probing {probeNames.Count} paths for assembly:");
+        probeNames.ForEach(name =>traceSource.TraceEvent(TraceEventType.Verbose, 1, $"\t{name}"));
 
         string found = probeNames.FirstOrDefault(File.Exists, string.Empty);
 
@@ -359,13 +361,11 @@ public static class FieldSignatureDecoder
 
             _assemblyReaders[assemblyName.TrimEnd(".winmd").TrimEnd(".dll")] = reader;
 
-            Debug.WriteLine($"Loaded assembly '{assemblyName}' from '{found}'");
+            Trace.TraceInformation($"Loaded assembly '{assemblyName}' from '{found}'");
             return reader;
         }
         
-        Console.WriteLine($"Failed to load assembly '{assemblyName}'; searched:");
-        probeNames.ForEach(name => Console.WriteLine($"\t{name}"));
-
+        Trace.TraceError($"Failed to load assembly '{assemblyName}'. Searched {probeNames.Count} paths: {string.Join("\n\t", probeNames)}");
         throw new DllNotFoundException($"Failed to load assembly '{assemblyName}'");
     }
 

@@ -26,14 +26,18 @@ public class Program
         MetadataDir = args[0];
         string ahkOutputDir = args[1];
 
-        Console.WriteLine("Starting AhkWin32Structs Generator...");
-        Console.WriteLine($"\tMetadata Directory: {MetadataDir}");
-        Console.WriteLine($"\tOutput Directory: {ahkOutputDir}");
+        Trace.TraceInformation("Starting AhkWin32Structs Generator...");
+        Trace.TraceInformation($"\tMetadata Directory: {MetadataDir}");
+        Trace.TraceInformation($"\tOutput Directory: {ahkOutputDir}");
 
-        Console.WriteLine("Reading metadata...");
+        Trace.TraceInformation("Reading metadata...");
 
         Stopwatch stopwatch = new();
         stopwatch.Start();
+
+        Trace.Listeners.Add(new TextWriterTraceListener(Path.Join(ahkOutputDir, "generator.log"), "Generator Log"));
+        Trace.Listeners.Add(new ConsoleTraceListener());
+        Trace.AutoFlush = true;
 
         using FileStream apiDocFileStream = File.OpenRead(Path.Join(MetadataDir, "apidocs.msgpack"));
 
@@ -45,7 +49,7 @@ public class Program
         StringBuilder versionInfo = new();
         versionInfo.AppendLine("[Assemblies]");
 
-        Console.WriteLine("Generating bindings...");
+        Trace.TraceInformation("Generating bindings...");
 
         int total = 0, errors = 0;
         foreach(FileStream fileStream in winmdFiles)
@@ -56,19 +60,19 @@ public class Program
             // Pull version info
             AssemblyName assemblyName = reader.GetAssemblyDefinition().GetAssemblyName();
             versionInfo.AppendLine($"{assemblyName.Name?.TrimEnd(".winmd")} = {assemblyName.Version}");
-            Console.Write($"\t{assemblyName.Name?.TrimEnd(".winmd")} v{assemblyName.Version}... ");
+            Trace.TraceInformation($"Generating \t{assemblyName.Name?.TrimEnd(".winmd")} v{assemblyName.Version}... ");
 
             FieldSignatureDecoder.RegisterMetadataReader(assemblyName.Name!.TrimEnd(".winmd"), reader);
 
             (int fileTotal, int fileErrors) = GenerateBindings(reader, ahkOutputDir);
 
-            Console.WriteLine($"done. {fileTotal} files generated with {fileErrors} errors.");
+            Trace.TraceInformation($"Done processing {assemblyName.Name?.TrimEnd(".winmd")}. {fileTotal} files generated with {fileErrors} errors.");
             total += fileTotal;
             errors += fileErrors;
         }
     
         // Finalize version.ini with package info
-        Console.WriteLine("Finalizing version.ini file...");
+        Trace.TraceInformation("Finalizing version.ini file...");
         versionInfo.AppendLine();
         versionInfo.AppendLine("[Packages]");
 
@@ -80,12 +84,12 @@ public class Program
             .ToList()
             .ForEach(info => {
                 versionInfo.AppendLine($"{info[0]} = {info[1]}");
-                Console.WriteLine($"\t{info[0]}: {info[1]}");
+                Trace.TraceInformation($"\t{info[0]}: {info[1]}");
             });
 
         File.WriteAllText(Path.Join(ahkOutputDir, "version.ini"), versionInfo.ToString());
         
-        Console.WriteLine($"Done! Emitted {total} files with {errors} errors in {stopwatch.Elapsed.TotalSeconds} seconds");
+        Trace.TraceInformation($"Done! Emitted {total} files with {errors} errors in {stopwatch.Elapsed.TotalSeconds} seconds");
         return -errors;
     }
 
@@ -134,7 +138,7 @@ public class Program
             IAhkEmitter? emitter = ParseType(mr, typeDef);
             if (emitter == null)
             {
-                Debug.WriteLine($"Non-explicit skip for {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
+                Trace.TraceWarning($"Non-explicit skip for {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
                 return true;
             }
 
@@ -148,23 +152,19 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"{ex.GetType().Name} parsing {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}: {ex.Message}");
-            Console.Error.WriteLine(ex.Message);
-            Console.Error.WriteLine(ex.StackTrace);
-            Console.Error.WriteLine();
-
+            Trace.TraceError($"{ex.GetType().Name} parsing {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}\n{ex}");
             return false;
         }
     }
 
     private static IEnumerable<FileStream> CollectWinmdFiles(string directoryPath)
     {
-        Console.WriteLine($"Scanning '{directoryPath}' for .winmd files...");
+        Trace.TraceInformation($"Scanning '{directoryPath}' for .winmd files...");
 
         return Directory.EnumerateFiles(directoryPath)
             .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".winmd")
             //.Where(path => Path.GetFileNameWithoutExtension(path).ToLowerInvariant() is "windows")
-            .Select(path => { Console.WriteLine($"\t{path}"); return path; })
+            .Select(path => { Trace.TraceInformation($"\t{path}"); return path; })
             .Select(File.OpenRead)
             .ToList();
     }
@@ -191,12 +191,14 @@ public class Program
             return new AhkApiType(mr, typeDef);
         }
 
+        // TODO need to recurse through base types; WinRT classes can extend other WinRT classes
+
         return baseTypeName switch
         {
             "Enum" => new AhkEnum(mr, typeDef),
             "Struct" or "ValueType" => AhkStruct.Get(mr, typeDef),
             "Object" => new AhkWinRTClass(mr, typeDef),
-            _ => null
+            _ => throw new NotImplementedException(baseTypeName)
         };
     }
 
