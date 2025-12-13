@@ -5,6 +5,9 @@ using System.Text;
 /// <summary>
 /// WinRT is "COM with extra steps" - in practice, that means that a WinRT class is actually an IInspectable interface
 /// with a bunch of metadata about the other interfaces that you can query for its instance methods.
+/// 
+/// See https://devblogs.microsoft.com/oldnewthing/20210524-00/?p=105240 for more on statics and non-default 
+/// constructors
 /// </summary>
 class AhkWinRTClass : AhkType
 {
@@ -12,10 +15,17 @@ class AhkWinRTClass : AhkType
 
     public readonly List<AhkComProperty> InstanceProperties;
 
+    public readonly List<AhkComInterface> StaticInterfaces;
+
+    public readonly List<AhkWinRTMethod> StaticMethods;
+
     public AhkWinRTClass(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
     {
         InstanceMethods = CollectInstanceMethods();
         InstanceProperties = CollectInstanceProperties();
+
+        StaticInterfaces = CollectStaticInterfaces();
+        StaticMethods = CollectStaticMethods();
     }
 
     public override List<string> GetReferencedTypes()
@@ -23,10 +33,12 @@ class AhkWinRTClass : AhkType
         List<string> imports = base.GetReferencedTypes();
         imports.AddRange([
             "Windows.Win32.System.WinRT.IInspectable",  // All WinRT classes extend IInspectable
-            "Windows.Win32.System.WinRT.Apis"           // Need for e.g. RoActivateInstance
+            "Windows.Win32.System.WinRT.Apis",          // Need for e.g. RoActivateInstance
+            "Windows.Win32.System.WinRT.HSTRING"        // TODO most types need this, but not all
         ]);
 
         imports.AddRange(InstanceMethods.Select(m => $"{m.DeclaringInterfaceNamespace}.{m.DeclaringInterfaceName}"));
+        imports.AddRange(StaticInterfaces.Select(iface => $"{iface.Namespace}.{iface.Name}"));
 
         return imports;
     }
@@ -40,6 +52,15 @@ class AhkWinRTClass : AhkType
 
         MaybeAddTypeDocumentation(sb);
         sb.AppendLine($"class {Name} extends IInspectable {{");
+
+        sb.AppendLine($";@region Static Methods");
+        foreach(AhkWinRTMethod method in StaticMethods)
+        {
+            method.ToAhk(sb);
+            sb.AppendLine();
+        }
+        sb.AppendLine($";@endregion Static Methods");
+        sb.AppendLine();
 
         sb.AppendLine($";@region Instance Properties");
         foreach(AhkComProperty prop in InstanceProperties)
@@ -104,7 +125,7 @@ class AhkWinRTClass : AhkType
         foreach((MetadataReader reader, TypeDefinition iface) in GetInterfaceImplementations())
         {
             var methodDefs = iface.GetMethods().Select(reader.GetMethodDefinition);
-            methods.AddRange(methodDefs.Select(def => new AhkWinRTMethod(this, reader, def)));
+            methods.AddRange(methodDefs.Select(def => new AhkWinRTMethod(this, reader, def, false)));
         }
 
         return methods;
@@ -133,6 +154,52 @@ class AhkWinRTClass : AhkType
     }
 
     /// <summary>
+    /// Find all static interfaces, including factory interfaces, that apply to this class
+    /// </summary>
+    /// <returns></returns>
+    private List<AhkComInterface> CollectStaticInterfaces()
+    {
+        List<AhkComInterface> statics = [];
+        // Collect [Static] attributes
+        statics.AddRange(CustomAttributes
+            .Where(c => c.Name is "StaticAttribute")
+            .Select(c =>
+            {
+                // TODO rework or make a new CustomAttributeDecoder that decodes the TypeDefinition
+                string fqn = (string)(c.Attr.FixedArguments[0].Value ?? throw new NullReferenceException());
+                string ns = string.Join('.', fqn.Split('.')[..^1]);
+                string name = fqn.Split('.').Last().Split('`').First();
+
+                var tdHandle = FieldSignatureDecoder.FindTypeDefinition(mr, ns, name, out var reader);
+                if (tdHandle.IsNil)
+                    throw new NullReferenceException($"Nil TypeDefinitionHandle for StaticAttribute -> {fqn}");
+                
+                return new AhkComInterface(reader, reader.GetTypeDefinition(tdHandle));
+            })
+        );
+
+        // TODO static constructors - [Activatable] attribute where first argument is a System.Type
+        // https://learn.microsoft.com/en-us/uwp/api/windows.foundation.metadata.activatableattribute?view=winrt-26100
+
+        return statics;
+    }
+
+    private List<AhkWinRTMethod> CollectStaticMethods() 
+    {
+        var interfaces = StaticInterfaces.SelectMany(iface => iface.GetInterfaceImplementations());
+
+        List<AhkWinRTMethod> methods = [];
+
+        foreach((MetadataReader reader, TypeDefinition iface) in interfaces)
+        {
+            var methodDefs = iface.GetMethods().Select(reader.GetMethodDefinition);
+            methods.AddRange(methodDefs.Select(def => new AhkWinRTMethod(this, reader, def, true)));
+        }
+
+        return methods;
+    }
+
+    /// <summary>
     /// Collects all directly implemented interfaces for this interface and resolves any TypeReferences.
     /// </summary>
     /// <returns>All directly implemented interfaces for this interface</returns>
@@ -145,11 +212,7 @@ class AhkWinRTClass : AhkType
                 switch(iface.Kind) 
                 {
                     case HandleKind.TypeReference:
-                        TypeDefinitionHandle hTypeDef = FieldSignatureDecoder.ResolveTypeReference(
-                            mr, (TypeReferenceHandle)iface, out MetadataReader resolvedReader);
-                        TypeDefinition resolvedTypeDef = resolvedReader.GetTypeDefinition(hTypeDef);
-
-                        return (resolvedReader, resolvedTypeDef);
+                        return FieldSignatureDecoder.ResolveTypeReference(mr, (TypeReferenceHandle)iface);
 
                     case HandleKind.TypeDefinition:
                         return (mr, mr.GetTypeDefinition((TypeDefinitionHandle)iface));

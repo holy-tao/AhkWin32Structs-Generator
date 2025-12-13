@@ -5,16 +5,19 @@ class AhkWinRTMethod : AhkMethod
 {
     public readonly AhkWinRTClass DeclaringClass;
     public readonly TypeDefinition DeclaringInterface;
+    public readonly bool IsStatic;
 
-    public string DeclaringInterfaceName => mr.GetString(DeclaringInterface.Name);
+    public string DeclaringInterfaceName => mr.GetString(DeclaringInterface.Name).Split('`').First();
     public string DeclaringInterfaceNamespace => mr.GetString(DeclaringInterface.Namespace);
+    public string DeclaringInterfaceFqn => $"{DeclaringInterfaceNamespace}.{DeclaringInterfaceName}";
 
     public readonly string? OverloadName;
 
-    public AhkWinRTMethod(AhkWinRTClass declarer, MetadataReader mr, MethodDefinition methodDef) : base(mr, methodDef)
+    public AhkWinRTMethod(AhkWinRTClass declarer, MetadataReader mr, MethodDefinition methodDef, bool isStatic) : base(mr, methodDef)
     {
         DeclaringClass = declarer;
         DeclaringInterface = mr.GetTypeDefinition(methodDef.GetDeclaringType());
+        IsStatic = isStatic;
 
         OverloadName = GetOverloadName();
     }
@@ -37,6 +40,18 @@ class AhkWinRTMethod : AhkMethod
     {
         // TODO produce documentation
 
+        if(IsStatic)
+        {
+            ToAhkStatic(sb);
+        }
+        else
+        {
+            ToAhkInstance(sb);
+        }
+    }
+
+    private void ToAhkInstance(StringBuilder sb)
+    {
         string argList = BuildMethodArgumentList();
         sb.AppendLine($"    {GetDeduplicatedName()}({argList}) {{");
         sb.AppendLine($"        if (!this.HasProp(\"__{DeclaringInterfaceName}\")) {{");
@@ -46,6 +61,20 @@ class AhkWinRTMethod : AhkMethod
         sb.AppendLine($"        }}");
         sb.AppendLine();
         sb.AppendLine($"        return this.__{DeclaringInterfaceName}.{GetDeduplicatedName()}({argList})");
+        sb.AppendLine("    }");
+    }
+
+    private void ToAhkStatic(StringBuilder sb)
+    {
+        string argList = BuildMethodArgumentList();
+
+        sb.AppendLine($"    static {GetDeduplicatedName()}({argList}) {{");
+        sb.AppendLine($"        if (!{DeclarerName}.HasProp(\"__{DeclaringInterfaceName}\")) {{");
+        sb.AppendLine($"            factoryPtr := WinRT.RoGetActivationFactory(HSTRING.Create(\"{DeclaringInterfaceFqn}\"), {DeclaringInterfaceName}.IID)");
+        sb.AppendLine($"            {DeclarerName}.__{DeclaringInterfaceName} := {DeclaringInterfaceName}(factoryPtr)");
+        sb.AppendLine($"        }}");
+        sb.AppendLine();
+        sb.AppendLine($"        return {DeclarerName}.__{DeclaringInterfaceName}.{GetDeduplicatedName()}({argList})");
         sb.AppendLine("    }");
     }
 

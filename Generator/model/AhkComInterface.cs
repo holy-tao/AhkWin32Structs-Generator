@@ -124,7 +124,7 @@ class AhkComInterface : AhkType
             return (baseReader, baseReader.GetTypeDefinition(hDef));
         }
 
-        var impls = GetResolvedInterfaceImplementations(forType);
+        var impls = GetInterfaceImplementations(forType);
         return impls.Count() switch
         {
             0 => null,
@@ -139,20 +139,37 @@ class AhkComInterface : AhkType
     /// <returns>All directly implemented interfaces for this interface</returns>
     /// <exception cref="NullReferenceException"></exception>
     /// <exception cref="NotSupportedException"></exception>
-    private IEnumerable<(MetadataReader reader, TypeDefinition typeDef)> GetResolvedInterfaceImplementations(TypeDefinition forType)
+    public IEnumerable<(MetadataReader reader, TypeDefinition typeDef)> GetInterfaceImplementations(TypeDefinition forType)
     {
         return forType.GetInterfaceImplementations()
             .Select(ih => mr.GetInterfaceImplementation(ih).Interface)
-            .Select(iface => iface.Kind switch
+            .Select(iface =>
+            {
+                switch(iface.Kind) 
                 {
-                    // Resolve type reference, asserting that it's not null, then resolve the handle
-                    HandleKind.TypeReference => FieldSignatureDecoder.ResolveTypeReference(mr, (TypeReferenceHandle)iface),
-                    HandleKind.TypeDefinition => (mr, mr.GetTypeDefinition((TypeDefinitionHandle)iface)),
-                    _ => throw new NotSupportedException(iface.Kind.ToString())
+                    case HandleKind.TypeReference:
+                        return FieldSignatureDecoder.ResolveTypeReference(mr, (TypeReferenceHandle)iface);
+
+                    case HandleKind.TypeDefinition:
+                        return (mr, mr.GetTypeDefinition((TypeDefinitionHandle)iface));
+
+                    case HandleKind.TypeSpecification:
+                        TypeSpecification typeSpec = mr.GetTypeSpecification((TypeSpecificationHandle)iface);
+                        var resolved = typeSpec.DecodeSignature(new FieldSignatureProvider(mr), new());
+
+                        return (
+                            resolved.Reader ?? throw new NullReferenceException(nameof(resolved.Reader)),
+                            resolved.TypeDef ?? throw new NullReferenceException(nameof(resolved.TypeDef))
+                        );
+
+                    default:
+                        throw new NotSupportedException($"{iface.Kind} for interface {Namespace}.{Name}");
                 }
-            );
-            
+            });
     }
+
+    public IEnumerable<(MetadataReader reader, TypeDefinition typeDef)> GetInterfaceImplementations()
+        => GetInterfaceImplementations(typeDef);
 
     /// <summary>
     /// Count the number of methods in this interface's inheritance chain, not including

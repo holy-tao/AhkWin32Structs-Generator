@@ -113,6 +113,8 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                 case "byte":
                 case "sbyte":
                     return 1;
+                case "string":
+                    return 8;       // HSTRING
                 default:
                     throw new NotSupportedException($"{TypeName} ({Kind})");
             }
