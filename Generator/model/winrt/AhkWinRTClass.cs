@@ -129,7 +129,12 @@ class AhkWinRTClass : AhkType
     {
         List<AhkWinRTMethod> methods = [];
 
-        foreach((MetadataReader reader, TypeDefinition iface) in GetInterfaceImplementations())
+        // The WinRT metadata unfortunately contains .NET specific constructs like System.IEnumerable
+        // which we need to filter out. They made this for CSWin32, the rest of us have to suffer
+        var winRTInterfaces = GetInterfaceImplementations()
+            .Where(i => i.reader.GetString(i.iface.Namespace).StartsWith("Windows"));
+
+        foreach((MetadataReader reader, TypeDefinition iface) in winRTInterfaces)
         {
             var methodDefs = iface.GetMethods().Select(reader.GetMethodDefinition);
             methods.AddRange(methodDefs.Select(def => new AhkWinRTMethod(this, reader, def, false)));
