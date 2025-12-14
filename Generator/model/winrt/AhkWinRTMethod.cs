@@ -70,7 +70,8 @@ class AhkWinRTMethod : AhkMethod
 
         sb.AppendLine($"    static {GetDeduplicatedName()}({argList}) {{");
         sb.AppendLine($"        if (!{DeclaringClass.Name}.HasProp(\"__{DeclaringInterfaceName}\")) {{");
-        sb.AppendLine($"            factoryPtr := WinRT.RoGetActivationFactory(HSTRING.Create(\"{DeclaringInterfaceFqn}\"), {DeclaringInterfaceName}.IID)");
+        sb.AppendLine($"            activatableClassId := HSTRING.Create(\"{DeclaringClass.Namespace}.{DeclaringClass.Name}\")");
+        sb.AppendLine($"            factoryPtr := WinRT.RoGetActivationFactory(activatableClassId, {DeclaringInterfaceName}.IID)");
         sb.AppendLine($"            {DeclaringClass.Name}.__{DeclaringInterfaceName} := {DeclaringInterfaceName}(factoryPtr)");
         sb.AppendLine($"        }}");
         sb.AppendLine();
