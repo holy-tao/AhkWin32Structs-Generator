@@ -127,6 +127,12 @@ public static class FieldSignatureDecoder
         if (td.Attributes.HasFlag(TypeAttributes.ExplicitLayout) || td.Attributes.HasFlag(TypeAttributes.SequentialLayout))
             return false;
 
+        // Check base type
+        if(td.BaseType.IsNil == false && td.BaseType.Kind is HandleKind.TypeReference && 
+            reader.GetString(reader.GetTypeReference((TypeReferenceHandle)td.BaseType).Name) is "Enum")
+            return true;
+
+        // Fall back to heuristic - single field with name "value__"
         var fields = td.GetFields();
         return fields.Count == 1 && reader.GetString(reader.GetFieldDefinition(fields.Single()).Name) is "value__";
     }
