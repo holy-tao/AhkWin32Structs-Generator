@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Metadata;
+using Gma.DataStructures.StringSearch;  // https://github.com/gmamaladze/trienet
 
 [Flags]
 public enum CustomParamAttributes
@@ -19,31 +21,33 @@ public enum CustomParamAttributes
 
 public readonly record struct AhkParameter
 {
-    // For sanitizing parameter names
-    public static HashSet<string> ReservedNames = ["in", "as", "is", "contains", "not", "and", "or", "this", "return", 
-        "throw", "loop", "do", "while", "float", "number", "integer", "object", "class", "buffer", "string"];
+    // We also need to ensure no conflicts with type names since AHK names are case-insensitive. I'm not 
+    // happy about this either. Ideally we'd populate this with every type name we're going to load before
+    // starting codegen, but doing it per-assembly as we encounter them is good enough in practice.
+    private static readonly PatriciaTrie<string> ReservedNames;
+
+    private static readonly HashSet<MetadataReader> IndexedAssemblies = [];
+
+    static AhkParameter()
+    {
+        // Initial population of our reserved name trie
+        ReservedNames = new();
+        string[] constReservedNames = ["in", "as", "is", "contains", "not", "and", "or", "this", "return", 
+            "throw", "loop", "do", "while", "float", "number", "integer", "object", "class", "buffer", "string",
+            "file", "enumerator"];
+
+        foreach(string name in constReservedNames)
+        {
+            ReservedNames.Add(name, name);
+        }
+    }
 
     public readonly MetadataReader? mr;
 
     public readonly Parameter param;
 
-    public readonly string Name {
-        get
-        {
-            string? nameVal = mr?.GetString(param.Name);
-            if (string.IsNullOrWhiteSpace(nameVal))
-            {
-                return "result";
-            }
+    public readonly string Name;
 
-            if (ReservedNames.TryGetValue(nameVal.ToLowerInvariant(), out _))
-            {
-                nameVal += "_R";
-            }
-
-            return nameVal;
-        }
-    }
     public readonly int SequenceNumber => param.SequenceNumber;
     public readonly FieldInfo FieldInfo;
     public readonly ParameterAttributes Attributes => param.Attributes;
@@ -97,11 +101,43 @@ public readonly record struct AhkParameter
         this.param = param;
         this.FieldInfo = FieldInfo;
 
+        Name = GetName();
+
         CustomAttributes = GetCustomParamAttributes();
         IgnoreIfReturnValues = GetIgnoreIfReturnValues();
 
         FreeWith = MaybeGetReleaseMethod("FreeWithAttribute");
         RAIIFree = MaybeGetReleaseMethod("RAIIFreeAttribute");
+    }
+
+    private string GetName()
+    {
+        string? paramName = mr?.GetString(param.Name) ;
+        string? nameVal = paramName?.ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(nameVal) || string.IsNullOrWhiteSpace(paramName) || mr is null)
+        {
+            return "result";
+        }
+
+        // Index the current assembly's type names as reserved words if necessary
+        if(!IndexedAssemblies.Contains(mr))
+        {
+            foreach(TypeDefinitionHandle hTd in mr.TypeDefinitions)
+            {
+                TypeDefinition td = mr.GetTypeDefinition(hTd);
+                string tdName = mr.GetString(td.Name).ToLowerInvariant();
+                ReservedNames.Add(tdName, tdName);
+            }
+
+            IndexedAssemblies.Add(mr);
+        }
+
+        if (ReservedNames.Retrieve(nameVal).Any(n => n.Equals(nameVal)))
+        {
+            paramName = "_" + paramName;
+        }
+
+        return paramName;
     }
 
     private CustomParamAttributes GetCustomParamAttributes()
