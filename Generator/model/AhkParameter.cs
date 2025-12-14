@@ -48,9 +48,14 @@ public readonly record struct AhkParameter
 
     public readonly string Name;
 
-    public readonly int SequenceNumber => param.SequenceNumber;
+    public readonly int SequenceNumber => 
+        EqualityComparer<Parameter>.Default.Equals(param, default) ? -1 : param.SequenceNumber;
+
     public readonly FieldInfo FieldInfo;
-    public readonly ParameterAttributes Attributes => param.Attributes;
+
+    public readonly ParameterAttributes Attributes => 
+        EqualityComparer<Parameter>.Default.Equals(param, default) ? ParameterAttributes.None : param.Attributes;
+
     public readonly CustomParamAttributes CustomAttributes;
 
     public readonly AhkMethod? RAIIFree;
@@ -60,7 +65,7 @@ public readonly record struct AhkParameter
     public readonly List<string>? IgnoreIfReturnValues;
 
     public bool IsInParam => Attributes.HasFlag(ParameterAttributes.In);
-    public bool IsOutParam => Attributes.HasFlag(ParameterAttributes.Out);
+    public bool IsOutParam => IsOutputOverride || Attributes.HasFlag(ParameterAttributes.Out);
     public bool Optional => Attributes.HasFlag(ParameterAttributes.Optional);
     public bool Constant => CustomAttributes.HasFlag(CustomParamAttributes.Constant);
     public bool Reserved => CustomAttributes.HasFlag(CustomParamAttributes.Reserved);
@@ -94,12 +99,18 @@ public readonly record struct AhkParameter
     public bool IsPtrToStruct => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.Struct);
 
     public bool IsPtrToString => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.String);
+
+    public bool IsPtrToWinRTClass => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.Class);
     
-    public AhkParameter(MetadataReader? mr, Parameter param, FieldInfo FieldInfo)
+    // override for e.g. WinRT return values where there are not attributes
+    private readonly bool IsOutputOverride;
+
+    public AhkParameter(MetadataReader? mr, Parameter param, FieldInfo FieldInfo, bool IsOutputOverride = false)
     {
         this.mr = mr;
         this.param = param;
         this.FieldInfo = FieldInfo;
+        this.IsOutputOverride = IsOutputOverride;
 
         Name = GetName();
 

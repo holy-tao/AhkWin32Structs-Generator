@@ -79,10 +79,21 @@ class AhkWinRTMethod : AhkMethod
         sb.AppendLine("    }");
     }
 
-    private protected override  AhkParameter? GetOutputParameter() => null;
-
     public override string GetDeduplicatedName()
     {
         return OverloadName ?? Name;
+    }
+
+    private protected override AhkParameter? GetOutputParameter()
+    {
+        AhkParameter? outParam = null;
+        IEnumerable<AhkParameter> candidateParams = parameters
+            .Where(p => p.IsOutParam && !p.IsInParam)
+            .Where(p => p.IsPtrToPrimitive || p.IsPtrToStruct || p.IsPtrToCom || p.IsPtrToWinRTClass || p.IsPtrToHandle());
+            
+        if (candidateParams.Count() == 1)
+            outParam = candidateParams.Single();
+
+        return outParam;
     }
 }

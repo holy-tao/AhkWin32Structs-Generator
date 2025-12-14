@@ -55,7 +55,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         {
             return UnderlyingType?.GetDllCallType(useNakedPointer) ?? throw new NullReferenceException();
         }
-        else if (Kind == SimpleFieldKind.COM)
+        else if (Kind is SimpleFieldKind.COM or SimpleFieldKind.Class)
         {
             return "ptr";
         }
@@ -68,7 +68,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                     SimpleFieldKind.Pointer => UnderlyingType.Kind == SimpleFieldKind.Pointer ?
                         "ptr*" :
                         UnderlyingType.GetDllCallType(useNakedPointer),
-                    SimpleFieldKind.COM => "ptr*",
+                    SimpleFieldKind.COM or SimpleFieldKind.Class => "ptr*",
                     SimpleFieldKind.Primitive => UnderlyingType.TypeName.Equals("void", StringComparison.InvariantCultureIgnoreCase) ?
                         "ptr" :
                         UnderlyingType.GetDllCallType(useNakedPointer) + '*',

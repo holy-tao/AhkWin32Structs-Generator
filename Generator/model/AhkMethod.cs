@@ -271,7 +271,7 @@ public class AhkMethod
 
             sb.AppendLine("        return resultHandle");
         }
-        else if (fnRetVal.IsPtrToCom && !fnRetVal.IsComOutPtr)
+        else if ((fnRetVal.IsPtrToCom && !fnRetVal.IsComOutPtr) || fnRetVal.IsPtrToWinRTClass)
         {
             sb.AppendLine($"        return {fnRetVal.FieldInfo.UnderlyingType?.TypeName}({fnRetVal.Name})");
         }
@@ -284,11 +284,6 @@ public class AhkMethod
         {
             // Carve-out - primitive Object is IInspectable
             sb.AppendLine($"        return IInspectable({fnRetVal.Name})");
-        }
-        else if (fnRetVal.IsClass)
-        {
-            // WinRT class
-            sb.AppendLine($"        return {fnRetVal.GetTypeDefName()}({fnRetVal.Name})");
         }
         else
         {
@@ -475,12 +470,22 @@ public class AhkMethod
 
     private protected string BuildMethodArgumentList()
     {
-        return string.Join(", ", parameters
-            .Slice(1, parameters.Count - 1)                 // Skip param 0, the return value
-            .Where(p => !p.Reserved)   // Skip reserved params and explicit return values
-            .Where(p => p != outputParameter)
+        return string.Join(", ", GetAhkArgumentList()
             .Select(p => p.Name)
         );
+    }
+
+    /// <summary>
+    /// Gets the list of arguments exposed to the AutoHotkey APIs - that is, excluding the output
+    /// parameter, reserved params, etc.
+    /// </summary>
+    /// <returns></returns>
+    public IEnumerable<AhkParameter> GetAhkArgumentList()
+    {
+        return parameters
+            .Slice(1, parameters.Count - 1)                 // Skip param 0, the return value
+            .Where(p => !p.Reserved)                        // Skip reserved params and explicit return values
+            .Where(p => p != outputParameter);
     }
 
     private protected virtual string BuildDllCallArgumentList()
@@ -496,7 +501,7 @@ public class AhkMethod
             string dllCallType = isString ? "ptr" : param.FieldInfo.GetDllCallType(false);
 
             string marshalAs = (param.IsPtrToPrimitive && !param.Reserved && param != outputParameter) ? $"{param.Name}Marshal" : $"\"{dllCallType}\"";
-            string passAs = (param == outputParameter && (param.IsPtrToPrimitive || param.IsPtrToCom)) ? $"&{param.Name} := 0" : param.Name;
+            string passAs = (param == outputParameter && (param.IsPtrToPrimitive || param.IsPtrToCom || param.IsPtrToWinRTClass)) ? $"&{param.Name} := 0" : param.Name;
 
             argList.Append(marshalAs);
             argList.Append(", ");
