@@ -69,12 +69,12 @@ class AhkWinRTMethod : AhkMethod
         string argList = BuildMethodArgumentList();
 
         sb.AppendLine($"    static {GetDeduplicatedName()}({argList}) {{");
-        sb.AppendLine($"        if (!{DeclarerName}.HasProp(\"__{DeclaringInterfaceName}\")) {{");
+        sb.AppendLine($"        if (!{DeclaringClass.Name}.HasProp(\"__{DeclaringInterfaceName}\")) {{");
         sb.AppendLine($"            factoryPtr := WinRT.RoGetActivationFactory(HSTRING.Create(\"{DeclaringInterfaceFqn}\"), {DeclaringInterfaceName}.IID)");
-        sb.AppendLine($"            {DeclarerName}.__{DeclaringInterfaceName} := {DeclaringInterfaceName}(factoryPtr)");
+        sb.AppendLine($"            {DeclaringClass.Name}.__{DeclaringInterfaceName} := {DeclaringInterfaceName}(factoryPtr)");
         sb.AppendLine($"        }}");
         sb.AppendLine();
-        sb.AppendLine($"        return {DeclarerName}.__{DeclaringInterfaceName}.{GetDeduplicatedName()}({argList})");
+        sb.AppendLine($"        return {DeclaringClass.Name}.__{DeclaringInterfaceName}.{GetDeduplicatedName()}({argList})");
         sb.AppendLine("    }");
     }
 

@@ -53,23 +53,29 @@ class AhkWinRTClass : AhkType
         MaybeAddTypeDocumentation(sb);
         sb.AppendLine($"class {Name} extends IInspectable {{");
 
-        sb.AppendLine($";@region Static Methods");
-        foreach(AhkWinRTMethod method in StaticMethods)
+        if(StaticMethods.Count > 0)
         {
-            method.ToAhk(sb);
+            sb.AppendLine($";@region Static Methods");
+            foreach(AhkWinRTMethod method in StaticMethods)
+            {
+                method.ToAhk(sb);
+                sb.AppendLine();
+            }
+            sb.AppendLine($";@endregion Static Methods");
             sb.AppendLine();
         }
-        sb.AppendLine($";@endregion Static Methods");
-        sb.AppendLine();
 
-        sb.AppendLine($";@region Instance Properties");
-        foreach(AhkComProperty prop in InstanceProperties)
+        if(InstanceProperties.Count > 0)
         {
-            prop.ToAhk(sb);
+            sb.AppendLine($";@region Instance Properties");
+            foreach(AhkComProperty prop in InstanceProperties)
+            {
+                prop.ToAhk(sb);
+                sb.AppendLine();
+            }
+            sb.AppendLine($";@endregion Instance Properties");
             sb.AppendLine();
         }
-        sb.AppendLine($";@endregion Instance Properties");
-        sb.AppendLine();
 
         sb.AppendLine($";@region Instance Methods");
         ApendAhkConstructor(sb);
@@ -91,7 +97,8 @@ class AhkWinRTClass : AhkType
     /// <param name="sb"></param>
     private void ApendAhkConstructor(StringBuilder sb)
     {
-        // If we have an [Activatable] attr whose first fixed argument's type is UInt, there's a no-arg constructor
+        // If we have an [Activatable] attr whose first fixed argument's type is UInt, there's a no-arg constructor,
+        // meaning we can RoActivateInstance the fqn directly. See the table here:
         // https://learn.microsoft.com/en-us/uwp/api/windows.foundation.metadata.activatableattribute?view=winrt-26100
         bool hasNoArgCtor = CustomAttributes
             .Where(c => c.Name is "ActivatableAttribute")
@@ -159,44 +166,36 @@ class AhkWinRTClass : AhkType
     /// <returns></returns>
     private List<AhkComInterface> CollectStaticInterfaces()
     {
-        List<AhkComInterface> statics = [];
-        // Collect [Static] attributes
-        statics.AddRange(CustomAttributes
-            .Where(c => c.Name is "StaticAttribute")
+        // Collect [Static] attributes and Static constructors - [Activatable] attributes where first argument is a 
+        // System.Type. See the table here:
+        // https://learn.microsoft.com/en-us/uwp/api/windows.foundation.metadata.activatableattribute?view=winrt-26100
+        return CustomAttributes
+            .Where(c => { 
+                return c.Name is "StaticAttribute" || 
+                    (c.Name is "ActivatableAttribute" && c.Attr.FixedArguments.First().Type is "System.Type");
+            })
             .Select(c =>
             {
                 // TODO rework or make a new CustomAttributeDecoder that decodes the TypeDefinition
-                string fqn = (string)(c.Attr.FixedArguments[0].Value ?? throw new NullReferenceException());
+                string fqn = (string)(c.Attr.FixedArguments.First().Value ?? throw new NullReferenceException());
                 string ns = string.Join('.', fqn.Split('.')[..^1]);
                 string name = fqn.Split('.').Last().Split('`').First();
 
                 var tdHandle = FieldSignatureDecoder.FindTypeDefinition(mr, ns, name, out var reader);
                 if (tdHandle.IsNil)
-                    throw new NullReferenceException($"Nil TypeDefinitionHandle for StaticAttribute -> {fqn}");
+                    throw new NullReferenceException($"Nil TypeDefinitionHandle for {c.Name} -> {fqn}");
                 
                 return new AhkComInterface(reader, reader.GetTypeDefinition(tdHandle));
             })
-        );
-
-        // TODO static constructors - [Activatable] attribute where first argument is a System.Type
-        // https://learn.microsoft.com/en-us/uwp/api/windows.foundation.metadata.activatableattribute?view=winrt-26100
-
-        return statics;
+            .ToList();
     }
 
     private List<AhkWinRTMethod> CollectStaticMethods() 
     {
-        var interfaces = StaticInterfaces.SelectMany(iface => iface.GetInterfaceImplementations());
-
-        List<AhkWinRTMethod> methods = [];
-
-        foreach((MetadataReader reader, TypeDefinition iface) in interfaces)
-        {
-            var methodDefs = iface.GetMethods().Select(reader.GetMethodDefinition);
-            methods.AddRange(methodDefs.Select(def => new AhkWinRTMethod(this, reader, def, true)));
-        }
-
-        return methods;
+        return StaticInterfaces.SelectMany(iface => 
+                iface.Methods.Select(m => new AhkWinRTMethod(this, m.mr, m.methodDef, true))
+            )
+            .ToList();
     }
 
     /// <summary>

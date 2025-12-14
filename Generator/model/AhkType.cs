@@ -10,7 +10,7 @@ public abstract class AhkType : IAhkEmitter
     // kernel struct
     private static readonly List<string> globalReservedNames = ["string", "number", "float", "integer"];
 
-    private protected readonly MetadataReader mr;
+    public readonly MetadataReader mr;
     public readonly TypeDefinition typeDef;
 
     public readonly ApiDetails? apiDetails;

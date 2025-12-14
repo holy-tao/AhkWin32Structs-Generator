@@ -13,8 +13,8 @@ public class AhkMethod
 
     public string DeclarerName => Namespace.Split(".").Last();
 
-    private protected readonly MetadataReader mr;
-    private protected readonly MethodDefinition methodDef;
+    public readonly MetadataReader mr;
+    public readonly MethodDefinition methodDef;
     private protected readonly ApiDetails? apiDetails;
 
     private protected readonly MethodImport import;
