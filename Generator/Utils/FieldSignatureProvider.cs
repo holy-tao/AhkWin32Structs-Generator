@@ -31,8 +31,25 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
 
     // Primitive and special codes
     public FieldInfo GetPrimitiveType(PrimitiveTypeCode typeCode)
-        => new(SimpleFieldKind.Primitive, typeCode.ToString());
+    {
+        /*
+        Carve-out: WinRT primitive strings are HSTRINGs, which are actually handles. The WinRT metadata are showing
+        us the projected .NET type, so we need to interpolate. Win32 never has primitive strings, because primitive
+        strings don't actually exist. See also:
+            - https://learn.microsoft.com/en-us/windows/win32/winrt/hstring
+            - https://learn.microsoft.com/en-us/windows/uwp/cpp-and-winrt-apis/strings
+        */
+        if(typeCode is PrimitiveTypeCode.String)
+        {
+            TypeDefinitionHandle resolved = FieldSignatureDecoder.FindTypeDefinition(
+                "Windows.Win32", "Windows.Win32.System.WinRT", "HSTRING", out var win32Reader);
+            TypeDefinition def = win32Reader.GetTypeDefinition(resolved);
 
+            return new(SimpleFieldKind.Struct, "HSTRING", 0, def, null, win32Reader);
+        }
+
+        return new(SimpleFieldKind.Primitive, typeCode.ToString());
+    }
     public FieldInfo GetTypeFromDefinition(TypeDefinitionHandle handle, byte rawTypeKind)
         => FieldSignatureDecoder.DecodeTypeDef(_reader, handle);
 
