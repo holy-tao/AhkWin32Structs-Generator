@@ -19,23 +19,33 @@ class AhkWinRTClass : AhkType
 
     public readonly List<AhkWinRTMethod> StaticMethods;
 
-    public AhkWinRTClass(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
+    private readonly string baseTypeNamespace;
+    private readonly string baseTypeName;
+
+    public AhkWinRTClass(MetadataReader mr, TypeDefinition typeDef, string baseNamespace, string baseName) : base(mr, typeDef)
     {
         InstanceMethods = CollectInstanceMethods();
         InstanceProperties = CollectInstanceProperties();
 
         StaticInterfaces = CollectStaticInterfaces();
         StaticMethods = CollectStaticMethods();
+
+        baseTypeNamespace = baseNamespace;
+        baseTypeName = baseName;
     }
 
     public override List<string> GetReferencedTypes()
     {
         List<string> imports = base.GetReferencedTypes();
         imports.AddRange([
-            "Windows.Win32.System.WinRT.IInspectable",  // All WinRT classes extend IInspectable
             "Windows.Win32.System.WinRT.Apis",          // Need for e.g. RoActivateInstance
             "Windows.Win32.System.WinRT.HSTRING"        // TODO most types need this, but not all
         ]);
+
+        imports.Add(baseTypeName is "Object" ?
+            "Windows.Win32.System.WinRT.IInspectable" :     // Object means IInspectable
+            $"{baseTypeNamespace}.{baseTypeName}"
+        );
 
         imports.AddRange(InstanceMethods.Select(m => $"{m.DeclaringInterfaceNamespace}.{m.DeclaringInterfaceName}"));
         imports.AddRange(StaticInterfaces.Select(iface => $"{iface.Namespace}.{iface.Name}"));
@@ -51,7 +61,7 @@ class AhkWinRTClass : AhkType
         sb.AppendLine();
 
         MaybeAddTypeDocumentation(sb);
-        sb.AppendLine($"class {Name} extends IInspectable {{");
+        sb.AppendLine($"class {Name} extends {(baseTypeName is "Object" ? "IInspectable" : baseTypeName)} {{");
 
         if(StaticMethods.Count > 0)
         {

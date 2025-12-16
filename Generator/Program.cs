@@ -6,6 +6,7 @@ using System.Text;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using MessagePack.Resolvers;
 
 public class Program
 {
@@ -35,9 +36,14 @@ public class Program
         Stopwatch stopwatch = new();
         stopwatch.Start();
 
-        Trace.Listeners.Add(new TextWriterTraceListener(Path.Join(ahkOutputDir, "generator.log"), "Generator Log"));
+        Trace.Listeners.Add(new TextWriterTraceListener(Path.Join(ahkOutputDir, $"generator-{DateTime.UtcNow:yyyyMMddHHmmssfff}.log"), "Generator Log"));
         Trace.Listeners.Add(new ConsoleTraceListener());
+
+#if DEBUG
         Trace.AutoFlush = true;
+#else
+        Trace.AutoFlush = false;
+#endif
 
         using FileStream apiDocFileStream = File.OpenRead(Path.Join(MetadataDir, "apidocs.msgpack"));
 
@@ -133,6 +139,9 @@ public class Program
         if (ShouldSkipType(mr, typeDef))
             return true;
 
+        Trace.TraceInformation($"Generating {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
+        Stopwatch stopwatch = Stopwatch.StartNew();
+
         try
         {
             IAhkEmitter? emitter = ParseType(mr, typeDef);
@@ -147,6 +156,7 @@ public class Program
 
             Directory.CreateDirectory(dirPath);
             File.WriteAllText(filepath, emitter.ToAhk());
+            Trace.TraceInformation($"Wrote code to {filepath}");
 
             return true;
         }
@@ -154,6 +164,10 @@ public class Program
         {
             Trace.TraceError($"{ex.GetType().Name} parsing {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}\n{ex}");
             return false;
+        }
+        finally
+        {
+            Trace.TraceInformation($"Took {stopwatch.Elapsed.Milliseconds} ms ({stopwatch.Elapsed.Seconds} seconds)");
         }
     }
 
@@ -165,40 +179,32 @@ public class Program
             .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".winmd")
             //.Where(path => Path.GetFileNameWithoutExtension(path).ToLowerInvariant() is "windows")
             .Select(path => { Trace.TraceInformation($"\t{path}"); return path; })
-            .Select(File.OpenRead)
-            .ToList();
+            .Select(File.OpenRead);
     }
 
     private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef)
     {
-        bool isInterface = (typeDef.Attributes & TypeAttributes.ClassSemanticsMask) == TypeAttributes.Interface;
-        bool isClass = (typeDef.Attributes & TypeAttributes.ClassSemanticsMask) == TypeAttributes.Class;    // Name is deceptive - includes structs, delegates, COM coclasses, etc
-        bool isWinRT = (typeDef.Attributes & TypeAttributes.WindowsRuntime) != 0;
-
-        if (isInterface)
+        if ((typeDef.Attributes & TypeAttributes.ClassSemanticsMask) == TypeAttributes.Interface)
         {
             // COM Interface
             return new AhkComInterface(mr, typeDef);
         }
 
-        TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-        string typeName = mr.GetString(typeDef.Name);
-        string baseTypeName = mr.GetString(baseTypeRef.Name);
+        var (baseTypeNamespace, baseTypeName) = GetEntityHandleName(mr, typeDef.BaseType);
 
-        if (baseTypeName == "Object" && typeName == "Apis")
+        if ((typeDef.Attributes & TypeAttributes.WindowsRuntime) == 0 && 
+            baseTypeName is "Object" && mr.StringComparer.Equals(typeDef.Name, "Apis"))
         {
-            // This is the generic type that global functions and constants wind up in
+            // This is the generic type that global Win32 functions and constants wind up in
             return new AhkApiType(mr, typeDef);
         }
-
-        // TODO need to recurse through base types; WinRT classes can extend other WinRT classes
 
         return baseTypeName switch
         {
             "Enum" => new AhkEnum(mr, typeDef),
             "Struct" or "ValueType" => AhkStruct.Get(mr, typeDef),
-            "Object" => new AhkWinRTClass(mr, typeDef),
-            _ => throw new NotImplementedException(baseTypeName)
+            "Object" => new AhkWinRTClass(mr, typeDef, "System", "Object"),
+            _ => new AhkWinRTClass(mr, typeDef, baseTypeNamespace, baseTypeName)     // Class that extends another class
         };
     }
 
@@ -206,23 +212,49 @@ public class Program
     {
         // Skip modules
         if(mr.StringComparer.Equals(typeDef.Name, "<Module>"))
+        {
+            Trace.TraceInformation($"Skipping module {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
             return true;
+        }
 
-        if (typeDef.BaseType.Kind is not HandleKind.TypeReference)
-            return false;
-
-        TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-        string baseTypeName = mr.GetString(baseTypeRef.Name);
+        var (_, baseTypeName) = GetEntityHandleName(mr, typeDef.BaseType);
 
         // MultiCastDelegate means function pointer
         if (baseTypeName is "MulticastDelegate" or "Attribute")
+        {
+            Trace.TraceInformation($"Skipping {baseTypeName} {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
             return true;
+        }
 
         // Handled in their parents
         if (typeDef.IsNested)
+        {
+            Trace.TraceInformation($"Skipping nested type {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
             return true;
-
+        }
+            
         return false;
+    }
+
+    static (string typeNamespace, string typeName) GetEntityHandleName(MetadataReader reader, EntityHandle handle) 
+    {
+        if (handle.IsNil)
+        {
+            // This is legit for the base types of fundamental types like System.Object and System.ValueType
+            return (string.Empty, string.Empty);
+        }
+
+        switch (handle.Kind)
+        {
+            case HandleKind.TypeDefinition:
+                TypeDefinition typeDef = reader.GetTypeDefinition((TypeDefinitionHandle)handle);
+                return (reader.GetString(typeDef.Namespace),reader.GetString(typeDef.Name));
+            case HandleKind.TypeReference:
+                TypeReference typeRef = reader.GetTypeReference((TypeReferenceHandle)handle);
+                return (reader.GetString(typeRef.Namespace),reader.GetString(typeRef.Name));
+            default:
+                throw new NotSupportedException(handle.Kind.ToString());
+        }
     }
 
     private static string ToHex(BlobReader reader)
