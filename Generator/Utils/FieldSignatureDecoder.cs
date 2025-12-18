@@ -268,7 +268,8 @@ public static class FieldSignatureDecoder
     /// <exception cref="DllNotFoundException">If the assembly cannot be found</exception>
     public static MetadataReader LoadAssemblyReader(string assemblyName)
     {
-        if (_assemblyReaders.TryGetValue(assemblyName.TrimEnd(".winmd").TrimEnd(".dll"), out MetadataReader? cached))
+        assemblyName = assemblyName.TrimEnd(".winmd").TrimEnd(".dll");
+        if (_assemblyReaders.TryGetValue(assemblyName, out MetadataReader? cached))
             return cached;
 
         string baseDir = AppContext.BaseDirectory;
@@ -276,7 +277,6 @@ public static class FieldSignatureDecoder
         List<string> probeNames = [
             $"{assemblyName}.dll",
             $"{assemblyName}.winmd",
-            Path.Combine(Program.MetadataDir, assemblyName),
             Path.Combine(Program.MetadataDir, $"{assemblyName}.winmd"),
             Path.Combine(Program.MetadataDir, $"{assemblyName}.dll"),
             Path.Combine(baseDir, $"{assemblyName}.dll"),
@@ -326,12 +326,12 @@ public static class FieldSignatureDecoder
             Trace.TraceWarning($"Failed to find the Windows SDK root - checked {sdkRoot}");
         }
 
-        // Probe the global assembly cache - many WinRT assemblies forward types here
+        // Probe the global assembly cache - some WinRT assemblies forward .NET types here
         string windir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         string gacBase = Path.Combine(windir, "Microsoft.NET", "assembly");
         if (Directory.Exists(gacBase))
         {
-            foreach(string subdir in new string[]{"GAC_64", "GAC_MSIL"})
+            foreach(string subdir in new string[]{"GAC_64", "GAC_MSIL"} /* Exclude 32-bit assemblies (GAC_32)*/)
             {
                 IEnumerable<string> asmDirs = Directory.GetDirectories(Path.Join(gacBase, subdir))
                     .Where(dir => (Path.GetFileName(dir)?.Equals(assemblyName, StringComparison.InvariantCultureIgnoreCase)) ?? false);
@@ -382,6 +382,7 @@ public static class FieldSignatureDecoder
     /// <param name="reader"></param>
     public static void RegisterMetadataReader(string asmName, MetadataReader reader)
     {
+        asmName = asmName.TrimEnd(".winmd").TrimEnd(".dll");
         if (!_assemblyReaders.ContainsKey(asmName))
         {
             _assemblyReaders[asmName] = reader;
@@ -429,7 +430,7 @@ public static class FieldSignatureDecoder
         // E.g. System.Guid goes netstandard -> System.Runtime -> System.Private.CoreLib
         foreach (var exportedHandle in reader.ExportedTypes)
         {
-            var exported = reader.GetExportedType(exportedHandle);
+            ExportedType exported = reader.GetExportedType(exportedHandle);
             //Debug.WriteLine($"\t{reader.GetString(exported.Namespace)}.{reader.GetString(exported.Name)}: {exported.Implementation.Kind}");
 
             if (reader.StringComparer.Equals(exported.Name, name, true) &&
@@ -460,7 +461,7 @@ public static class FieldSignatureDecoder
     /// <summary>
     /// Find a type definition by assembly, namespace, and name
     /// </summary>
-    /// <param name="asmName">The assembly you expect the type to be in - e.g "Windows.Win32", "Windows.Wdk"</param>
+    /// <param name="asmName">The assembly you expect the type to be in, not including file extensions - e.g "Windows.Win32", "Windows.Wdk"</param>
     /// <param name="ns">Namespace of the type</param>
     /// <param name="name">Name of the type</param>
     /// <returns></returns>
