@@ -70,7 +70,10 @@ class AhkComMethod : AhkMethod
             if (typeName is "BSTR")
             {
                 // COM's string wrapper
-                conversions.AppendLine($"        {param.Name} := {param.Name} is String ? BSTR.Alloc({param.Name}).Value : {param.Name}");
+                conversions.AppendLine($"        if({param.Name} is String) {{");
+                conversions.AppendLine($"            pin := BSTR.Alloc({param.Name})");
+                conversions.AppendLine($"            {param.Name} := pin.Value");
+                conversions.AppendLine($"        }}");
             }
             else if (typeName is "PSTR" or "PWSTR")
             {
@@ -79,12 +82,14 @@ class AhkComMethod : AhkMethod
             }
             else if (param.IsHandle())
             {
+                if(typeName is "HSTRING")
+                {
+                    conversions.AppendLine($"        if({param.Name} is String) {{");
+                    conversions.AppendLine($"            pin := HSTRING.Create({param.Name})");
+                    conversions.AppendLine($"            {param.Name} := pin.Value");
+                    conversions.AppendLine($"        }}");
+                }
                 conversions.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
-            }
-            else if (param.IsPrimitive && param.FieldInfo.AhkType is "HSTRING")
-            {
-                // WinRT's string wrapper
-                conversions.AppendLine($"        {param.Name} := {param.Name} is String ? HSTRING.Create({param.Name}).Value : {param.Name}");
             }
         }
 

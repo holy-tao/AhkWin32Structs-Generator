@@ -300,10 +300,6 @@ public class AhkMethod
             }
             else if (param.IsHandle())
             {
-                // If an HSTRING, allow creation of temporary handles
-                if(param.FieldInfo.AhkType is "HSTRING")
-                    conversions.AppendLine($"        {param.Name} := {param.Name} is String ? HSTRING.Create({param.Name}).Value : {param.Name}");
-
                 conversions.AppendLine($"        {param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
             }
         }
