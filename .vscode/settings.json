@@ -1,3 +1,4 @@
 {
-    "dotnet.defaultSolution": "AhkWin32Structs.sln"
+    "dotnet.defaultSolution": "AhkWin32Structs.sln",
+    "git.ignoreLimitWarning": true
 }
