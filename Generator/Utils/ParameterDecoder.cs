@@ -13,6 +13,7 @@ public class ParameterDecoder
         // Build a lookup of ParameterHandle -> Parameter info
         Dictionary<int, Parameter> paramInfos = GetParameters(reader, methodDef);
 
+        // Get the return value
         if (!isWinRT && paramInfos.TryGetValue(0, out var retParam))
         {
             // Return type might be parameter at sequenceNumber 0 for Win32 interfaces
@@ -20,11 +21,38 @@ public class ParameterDecoder
         }
         else if(!isWinRT)
         {
+            // Win32 method with primitive return type
             result.Add(new AhkParameter(null, default, sig.ReturnType));
+        }
+        else if(methodDef.Attributes.HasFlag(MethodAttributes.SpecialName))
+        {
+            // WinRT method - these don't expose their ABI return values in metadata. All WinRT methods return 
+            // HSRESULTs, except for event add_ methods, which return EventRegistrationTokens, and remove_ methods,
+            // which return void
+            // https://learn.microsoft.com/en-us/uwp/winrt-cref/winrt-type-system#events
+            string methodName = reader.GetString(methodDef.Name);
+            if (methodName.StartsWith("add_"))
+            {
+                TypeDefinitionHandle evtRegTokHandle = FieldSignatureDecoder.FindTypeDefinition(
+                    "Windows", "Windows.Foundation", "EventRegistrationToken", out var windowsMr);
+                TypeDefinition evtRegTok = windowsMr.GetTypeDefinition(evtRegTokHandle);
+                
+                result.Add(new AhkParameter(null, default, 
+                    new(SimpleFieldKind.Struct, "EventRegistrationToken", 0, evtRegTok, null, windowsMr)));
+            }
+            else if (methodName.StartsWith("remove_"))
+            {
+                result.Add(new AhkParameter(null, default, new(SimpleFieldKind.Primitive, "Void")));
+            }
+            else
+            {
+                // Not an event
+                result.Add(new AhkParameter(null, default, new(SimpleFieldKind.HRESULT, "HRESULT")));
+            }
         }
         else
         {
-            // All WinRT methods return HSRESULT
+            // Normal WinRT method - these all return HRESULTs
             result.Add(new AhkParameter(null, default, new(SimpleFieldKind.HRESULT, "HRESULT")));
         }
 
