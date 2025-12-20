@@ -1,13 +1,11 @@
 
-using System.Net.Http.Headers;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Text;
-using Microsoft.Windows.SDK.Win32Docs;
 
 class AhkComMethod : AhkMethod
 {
-    public int VTableIndex { get; private set; }
+    public int VTableIndex { get; set; }
 
     public bool HasStringParam => parameters[1..].Any(p => p.GetTypeDefName() is "BSTR");
 

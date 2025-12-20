@@ -161,7 +161,7 @@ class AhkWinRTClass : AhkType
     {
         List<AhkComProperty> properties = [];
 
-        foreach(AhkWinRTMethod method in InstanceMethods.Where(m => m.IsSpecialName))
+        foreach(AhkWinRTMethod method in InstanceMethods.Where(m => m.IsSpecialName && (m.Name.StartsWith("get_") || m.Name.StartsWith("put_"))))
         {
             string normalizedName = method.GetDeduplicatedName()[4..]; // Remove "get_" or "put_"
             if(properties.Any(p => p.Name == normalizedName))

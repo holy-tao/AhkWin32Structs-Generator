@@ -204,6 +204,7 @@ public class Program
             "Enum" => new AhkEnum(mr, typeDef),
             "Struct" or "ValueType" => AhkStruct.Get(mr, typeDef),
             "Object" => new AhkWinRTClass(mr, typeDef, "System", "Object"),
+            "MulticastDelegate" => new AhkWinRTDelegate(mr, typeDef),
             _ => new AhkWinRTClass(mr, typeDef, baseTypeNamespace, baseTypeName)     // Class that extends another class
         };
     }
@@ -220,7 +221,7 @@ public class Program
         var (_, baseTypeName) = GetEntityHandleName(mr, typeDef.BaseType);
 
         // MultiCastDelegate means function pointer
-        if (baseTypeName is "MulticastDelegate" or "Attribute")
+        if (baseTypeName is "Attribute")
         {
             Trace.TraceInformation($"Skipping {baseTypeName} {mr.GetString(typeDef.Namespace)}.{mr.GetString(typeDef.Name)}");
             return true;

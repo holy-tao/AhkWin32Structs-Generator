@@ -4,72 +4,6 @@ using System.Reflection.Metadata;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
 
-/// <summary>
-/// A COM property, represented by its getter and/or setter methods
-/// </summary>
-/// <param name="Name">Name of the property</param>
-/// <param name="Getter">Getter method for the property, if any</param>
-/// <param name="Setter">Setter method for the property, if any</param>
-record struct AhkComProperty(AhkType Interface, string Name, AhkMethod? Getter, AhkMethod? Setter)
-{
-    public void ToAhk(StringBuilder sb)
-    {
-        MaybeAppendDocumentation(sb);
-        sb.AppendLine($"    {Name} {{");
-
-        if (Getter is not null)
-            sb.AppendLine($"        get => this.{Getter.GetDeduplicatedName()}()");
-
-        if (Setter is not null)
-            sb.AppendLine($"        set => this.{Setter.GetDeduplicatedName()}(value)");
-
-        sb.AppendLine("    }");
-    }
-
-    public void MaybeAppendDocumentation(StringBuilder sb)
-    {
-        // Doesn't seem like ApiDocs have anything for properties or getters / setters
-        // Keeping this here in case that changes in the future
-        sb.AppendLine("    /**");
-
-        if(Interface.apiDetails != null)
-        {
-            ApiDetails apiDetails = Interface.apiDetails;
-            if(apiDetails.Fields.TryGetValue(Name, out string? fieldDetails))
-            {
-                sb.AppendLine($"     * {AhkType.EscapeDocs(fieldDetails, "     ")}");
-            }
-        }
-
-        // Type is getter's return type if it exists, otherwise setter's parameter type
-        AhkParameter? param = null;
-        if (Getter is not null)
-        {
-            param = Getter.outputParameter;
-        }
-        else if (Setter is not null)
-        {
-            param = Setter.parameters.First(p => !p.Reserved);
-        }
-
-        if(param is not null)
-        {
-            AhkParameter typeParam = (AhkParameter)param;
-            string? actualValueName = typeParam.IsPtr ? typeParam.FieldInfo.UnderlyingType?.AhkType : typeParam.FieldInfo.AhkType;
-            sb.AppendLine($"     * @type {{{actualValueName}}} ");
-        }
-
-        sb.AppendLine("     */");
-    }
-
-    public override string ToString()
-    {
-        StringBuilder sb = new();
-        ToAhk(sb);
-        return sb.ToString();
-    }
-}
-
 class AhkComInterface : AhkType
 {
     // Interface ID for this interface
@@ -78,13 +12,13 @@ class AhkComInterface : AhkType
     // CLSID for an instantiatable object the implements this interface, if any
     public readonly Guid? clsid;
 
-    public readonly (MetadataReader reader, TypeDefinition def)? BaseInterface;
+    public (MetadataReader reader, TypeDefinition def)? BaseInterface { get; protected set; }
 
     public readonly List<AhkComMethod> Methods;
 
     public readonly List<AhkComProperty> Properties;
 
-    public readonly int VTableOffset;
+    public int VTableOffset { get; protected set; }
 
     public AhkComInterface(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
     {
@@ -100,7 +34,7 @@ class AhkComInterface : AhkType
 
         // Collect properties from special-name methods
         Properties = [];
-        foreach(AhkComMethod method in Methods.Where(m => m.IsSpecialName))
+        foreach(AhkComMethod method in Methods.Where(m => m.IsSpecialName && (m.Name.StartsWith("get_") || m.Name.StartsWith("put_"))))
         {
             string normalizedName = method.GetDeduplicatedName()[4..]; // Remove "get_" or "put_"
             if(Properties.Any(p => p.Name == normalizedName))
@@ -114,13 +48,16 @@ class AhkComInterface : AhkType
 
     private (MetadataReader, TypeDefinition)? GetBaseTypeDef(MetadataReader reader, TypeDefinition forType)
     {
-        // All WinRT interfaces implicitly extend IUnknown. They may implement other interfaces, but that means
+        // All WinRT interfaces implicitly extend IInspectable. They may require other interfaces, but that means
         // that querying for them is guaranteed to succeed and has no impact on VTable layout, which is what we
         // care about here
         if (forType.Attributes.HasFlag(TypeAttributes.WindowsRuntime))
         {
-            TypeDefinitionHandle hDef = FieldSignatureDecoder.FindTypeDefinition("Windows.Win32",
-                "Windows.Win32.System.WinRT", "IInspectable", out var baseReader);
+            // But WinRT delegates are special and extend IUnknown, not IInspectable
+            MetadataReader baseReader;
+            TypeDefinitionHandle hDef = (this is AhkWinRTDelegate) ?
+                FieldSignatureDecoder.FindTypeDefinition("Windows.Win32", "Windows.Win32.System.Com", "IUnknown", out baseReader) : 
+                FieldSignatureDecoder.FindTypeDefinition("Windows.Win32", "Windows.Win32.System.WinRT", "IInspectable", out baseReader);
             return (baseReader, baseReader.GetTypeDefinition(hDef));
         }
 
@@ -220,6 +157,13 @@ class AhkComInterface : AhkType
             "Win32ComInterface";
         sb.AppendLine($"class {Name} extends {baseName}{{");
 
+        BodyToAhk(sb);
+
+        sb.AppendLine("}");
+    }
+
+    private protected virtual void BodyToAhk(StringBuilder sb)
+    {
         sb.AppendLine();
         AppendStaticCode(sb);
 
@@ -239,8 +183,6 @@ class AhkComInterface : AhkType
         }
         
         extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
-
-        sb.AppendLine("}");
     }
 
     private void AppendStaticCode(StringBuilder sb)
