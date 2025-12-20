@@ -1,0 +1,163 @@
+# This documents mappings from .NET to WinRT types. This should only be necessary when the .NET type and the WinRT
+# type have different names or are in different namespaces, or if for some reason we need to always treat a type as
+# a different type than it appears as in the metadata. Ensure that type names include the backtick generic count -
+# e.g. "IVector`1" for "List<T>"
+# See: https://learn.microsoft.com/en-us/windows/apps/develop/platform/csharp-winrt/net-mappings-of-winrt-types
+
+# Note that these map types - there's currently no way to map primitives to types because they don't go through the
+# type resolution process, so e.g. 
+#     System.Object -> Windows.Foundation.IInspectable
+#     WinRT string -> Windows.Win32.System.WinRT.HSTRING
+# still need to be handled separately in the codegen.
+
+# Format is
+# AssemblyName:
+#   .Net FQN: 
+#     Assembly: <Windows>
+#     Namespace: <Widows.Foundation>
+#     Name: <DateTime>
+
+System.DateTimeOffset: 
+  Assembly: Windows
+  Namespace: Windows.Foundation
+  Name: DateTime
+System.EventHandler: 
+  Assembly: Windows
+  Namespace: Windows.Foundation
+  Name: EventHandler`1
+System.Runtime.InteropServices.WindowsRuntime.EventRegistrationToken: 
+  Assembly: Windows
+  Namespace: Windows.Foundation
+  Name: EventRegistrationToken
+System.Exception:
+  Assembly: Windows.Win32
+  Namespace: Windows.Win32.Foundation
+  Name: HRESULT
+System.IDIsposable: 
+  Assembly: Windows
+  Namespace: Windows.Foundation
+  Name: IDisposable
+System.Nullable:
+  Assembly: Windows
+  Namespace: Windows.Foundation
+  Name: IReference`1
+System.TimeSpan:
+  Assembly: Windows
+  Namespace: Windows.Foundation
+  Name: TimeSpan
+System.Uri: 
+  Assembly: Windows
+  Namespace: Windows.Foundation
+  Name: Uri
+System.Collections.Generic.IEnumerable:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Collections
+  Name: IIterable`1
+System.Collections.Generic.IEnumerator: 
+  Assembly: Windows
+  Namespace: Windows.Foundation.Collections
+  Name: IIterator`1
+System.Collections.Generic.IDictionary:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Collections
+  Name: IMap`2
+System.Collections.Generic.IReadOnlyDictionary: 
+  Assembly: Windows
+  Namespace: Windows.Foundation.Collections
+  Name: IMapView`2
+System.Collections.Generic.KeyValuePair:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Collections
+  Name: IKeyValuePair`2
+System.Collections.Generic.IList: 
+  Assembly: Windows
+  Namespace: Windows.Foundation.Collections
+  Name: IVector`1
+System.Collections.Generic.IReadOnlyList: 
+  Assembly: Windows
+  Namespace: Windows.Foundation.Collections
+  Name: IVectorView`1
+System.AttributeTargets:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Metadata
+  Name: AttributeTargets
+System.AttributeUsageAttribute:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Metadata
+  Name: AttributeUsageAttribute
+System.Numerics.Matrix3x2:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Numerics
+  Name: Matrix3x2
+System.Numerics.Matrix4x4:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Numerics
+  Name: Matrix4x4
+System.Numerics.Plane:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Numerics
+  Name: Plane
+System.Numerics.Quaternion:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Numerics
+  Name: Quaternion
+System.Numerics.Vector2:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Numerics
+  Name: Vector2
+System.Numerics.Vector3:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Numerics
+  Name: Vector3
+System.Numerics.Vector4:
+  Assembly: Windows
+  Namespace: Windows.Foundation.Numerics
+  Name: Vector4
+System.Collections.IEnumerable:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml.Interop
+  Name: IBindableIterable
+System.Collections.IList:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml.Interop
+  Name: IBindableVector
+System.Type:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml.Interop
+  Name: TypeName
+System.Collections.Specialized.INotifyCollectionChanged:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml.Interop
+  Name: INotifyCollectionChanged
+System.Collections.Specialized.NotifyCollectionChangedEventHandler:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml.Interop
+  Name: NotifyCollectionChangedEventHandler
+System.Collections.Specialized.NotifyCollectionChangedEventArgs:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml.Interop
+  Name: NotifyCollectionChangedEventArgs
+System.Collections.Specialized.NotifyCollectionChangedAction:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml.Interop
+  Name: NotifyCollectionChangedAction
+System.ComponentModel.INotifyPropertyChanged:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml.Data
+  Name: INotifyPropertyChanged
+System.ComponentModel.PropertyChangedEventHandler:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml.Data
+  Name: PropertyChangedEventHandler
+System.ComponentModel.PropertyChangedEventArgs:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml.Data
+  Name: PropertyChangedEventArgs
+System.Windows.Input.ICommand:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml.Input
+  Name: ICommand
+System.IServiceProvider:
+  Assembly: Windows
+  Namespace: Windows.UI.Xaml
+  Name: IServiceProvider

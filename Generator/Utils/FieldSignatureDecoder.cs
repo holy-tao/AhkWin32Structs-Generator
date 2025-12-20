@@ -14,13 +14,6 @@ public static class FieldSignatureDecoder
 
     private static readonly TraceSource traceSource = new("AssemblyLoader");
 
-    /// <summary>
-    /// List of namespaces of types which we are external to Windows.Win32 and which we don't
-    /// want to resolve. These are all WinRT types, the only place this is ever applicable is in
-    /// the WinRT Interop Apis
-    /// </summary>
-    private static readonly string[] excludeNamespaces = [];
-
     public static FieldInfo DecodeFieldType(MetadataReader reader, FieldDefinition fieldDef)
     {
         var blob = reader.GetBlobReader(fieldDef.Signature);
@@ -44,11 +37,19 @@ public static class FieldSignatureDecoder
         string typeName = reader.GetString(td.Name).Split('`').First();
         string typeNamespace = reader.GetString(td.Namespace);
 
-        if(excludeNamespaces.Any(typeNamespace.StartsWith))
+        if(NetTypeMappings.TryGetMappedType($"{typeNamespace}.{typeName}", out var mappedType))
         {
-            Trace.TraceWarning($"Treating Win32 external {typeNamespace}.{typeName} as a pointer");
-            return new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td, null, reader);
+            return DecodeTypeDef(mappedType.Value.reader, mappedType.Value.handle);
         }
+
+        if (!string.IsNullOrWhiteSpace(typeNamespace) && !typeNamespace.StartsWith("Windows") && typeName is not "Guid")
+        {
+            // Non-Windows type that isn't accounted for - not necessarily a fatal error, but we should log it
+            string? asmName = reader.GetAssemblyDefinition().GetAssemblyName().Name;
+            Trace.TraceWarning($"Unexpected non-Windows type {asmName}!{typeNamespace}.{typeName} - generation may fail or produce incorrect results");
+            Trace.TraceWarning("If possible, this type should be mapped to a Win32 or WinRT type in type-mappings.yml");
+        }
+
         else if (typeName == "HRESULT")
         {
             return new FieldInfo(SimpleFieldKind.HRESULT, "HRESULT", 0, td, null, reader);

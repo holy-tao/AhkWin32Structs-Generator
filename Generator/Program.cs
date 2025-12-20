@@ -49,6 +49,7 @@ public class Program
 
         ApiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
         Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(MetadataDir, "extensions"));
+        NetTypeMappings.Load(MetadataDir);
 
         IEnumerable<FileStream> winmdFiles = CollectWinmdFiles(MetadataDir);
 
@@ -177,7 +178,7 @@ public class Program
 
         return Directory.EnumerateFiles(directoryPath)
             .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".winmd")
-            //.Where(path => Path.GetFileNameWithoutExtension(path).ToLowerInvariant() is "windows")
+            .Where(path => Path.GetFileNameWithoutExtension(path).ToLowerInvariant() is "windows")
             .Select(path => { Trace.TraceInformation($"\t{path}"); return path; })
             .Select(File.OpenRead);
     }
