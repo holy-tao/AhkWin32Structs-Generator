@@ -147,7 +147,31 @@ public partial class AhkStruct : AhkType
     /// <returns></returns>
     public static bool TypeIsHandle(MetadataReader mr, TypeDefinition td)
     {
+        // These attributes are dead giveaways
         IEnumerable<string> attrs = CustomAttributeDecoder.GetAllNames(mr, td);
-        return td.GetFields().Count == 1 && attrs.Any(HandleAttrs.Contains);
+        if (attrs.Any(HandleAttrs.Contains))
+        {
+            return true;
+        }
+
+        // Heuristic fallback - if the type is a struct with a single field pointer-sized field whose
+        // name ends with "value", treat it like a handle
+        if(FieldSignatureDecoder.IsStruct(mr, td))
+        {
+            FieldDefinitionHandleCollection fields = td.GetFields();
+            if(fields.Count != 1)
+                return false;
+
+            FieldDefinition field = mr.GetFieldDefinition(fields.Single());
+            if(!mr.GetString(field.Name).ToLowerInvariant().EndsWith("value"))
+                return false;
+
+            FieldInfo decoded = field.DecodeSignature(new FieldSignatureProvider(mr), new());
+
+            return decoded.Kind is SimpleFieldKind.Primitive 
+                && decoded.GetWidth(false) == 8;
+        }
+        
+        return false;
     }
 }

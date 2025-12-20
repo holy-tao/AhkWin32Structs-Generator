@@ -83,7 +83,7 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
 
     public FieldInfo GetSZArrayType(FieldInfo elementType)
     {
-        return new(SimpleFieldKind.Array, elementType.TypeName, -1, elementType.TypeDef, elementType, _reader);
+        return new(SimpleFieldKind.Array, elementType.TypeName, -1, elementType.TypeDef, elementType, null);
     }
 
     public FieldInfo GetArrayType(FieldInfo elementType, ArrayShape shape)
