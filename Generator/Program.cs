@@ -178,7 +178,7 @@ public class Program
 
         return Directory.EnumerateFiles(directoryPath)
             .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".winmd")
-            .Where(path => Path.GetFileNameWithoutExtension(path).ToLowerInvariant() is "windows")
+            //.Where(path => Path.GetFileNameWithoutExtension(path).ToLowerInvariant() is "windows")
             .Select(path => { Trace.TraceInformation($"\t{path}"); return path; })
             .Select(File.OpenRead);
     }

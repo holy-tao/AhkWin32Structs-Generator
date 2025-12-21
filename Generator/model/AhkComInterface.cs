@@ -29,7 +29,7 @@ class AhkComInterface : AhkType
         VTableOffset = GetVTableOffset();
 
         Methods = typeDef.GetMethods()
-            .Select((handle, i) => new AhkComMethod(this, mr, mr.GetMethodDefinition(handle), i + VTableOffset))
+            .Select((handle, i) => new AhkComMethod(mr, mr.GetMethodDefinition(handle), i + VTableOffset))
             .ToList();
 
         // Collect properties from special-name methods

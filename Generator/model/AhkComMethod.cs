@@ -9,12 +9,12 @@ class AhkComMethod : AhkMethod
 
     public bool HasStringParam => parameters[1..].Any(p => p.GetTypeDefName() is "BSTR");
 
-    private readonly AhkComInterface parent;
+    public readonly string? OverloadName;
 
-    public AhkComMethod(AhkComInterface parent, MetadataReader mr, MethodDefinition methodDef, int vTableIndex) : base(mr, methodDef)
+    public AhkComMethod(MetadataReader mr, MethodDefinition methodDef, int vTableIndex) : base(mr, methodDef)
     {
         VTableIndex = vTableIndex;
-        this.parent = parent;
+        OverloadName = GetOverloadName();
     }
 
     public override void ToAhk(StringBuilder sb)
@@ -133,10 +133,27 @@ class AhkComMethod : AhkMethod
     
     public override string GetDeduplicatedName()
     {
-        int counter = parent.Methods
-            .Count(m => (m.Name == Name) && (m.VTableIndex < VTableIndex));
+        string effectiveName = OverloadName ?? Name;
+        int counter = mr.GetTypeDefinition(methodDef.GetDeclaringType()).GetMethods()
+            .Select(mr.GetMethodDefinition)
+            .TakeWhile(m => !m.Equals(methodDef))
+            .Count(m => mr.StringComparer.Equals(m.Name, effectiveName));
 
-        return counter > 0 ? Name + counter : Name;
+        return counter > 0 ? effectiveName + counter : effectiveName;
+    }
+
+    private protected string? GetOverloadName()
+    {
+        CustomAttributeValue<string> overloadAttr = CustomAttributes
+            .SingleOrDefault(c => c.Name is "OverloadAttribute").Attr;
+
+        // https://stackoverflow.com/a/1896035
+        if(!EqualityComparer<CustomAttributeValue<string>>.Default.Equals(overloadAttr, default))
+        {
+            return (string?)overloadAttr.FixedArguments.First().Value;
+        }
+
+        return null;
     }
 
     private protected override AhkParameter? GetOutputParameter()

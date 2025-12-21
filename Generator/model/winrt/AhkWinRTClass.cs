@@ -163,12 +163,12 @@ class AhkWinRTClass : AhkType
 
         foreach(AhkWinRTMethod method in InstanceMethods.Where(m => m.IsSpecialName && (m.Name.StartsWith("get_") || m.Name.StartsWith("put_"))))
         {
-            string normalizedName = method.GetDeduplicatedName()[4..]; // Remove "get_" or "put_"
+            string normalizedName = method.Name[4..]; // Remove "get_" or "put_"
             if(properties.Any(p => p.Name == normalizedName))
                 continue;
 
-            AhkWinRTMethod? getter = InstanceMethods.FirstOrDefault(m => m!.IsSpecialName && m.GetDeduplicatedName() == "get_" + normalizedName, null);
-            AhkWinRTMethod? setter = InstanceMethods.FirstOrDefault(m => m!.IsSpecialName && m.GetDeduplicatedName() == "put_" + normalizedName, null);
+            AhkWinRTMethod? getter = InstanceMethods.FirstOrDefault(m => m!.IsSpecialName && m.Name == "get_" + normalizedName, null);
+            AhkWinRTMethod? setter = InstanceMethods.FirstOrDefault(m => m!.IsSpecialName && m.Name == "put_" + normalizedName, null);
             properties.Add(new AhkComProperty(this, normalizedName, getter, setter));
         }
 

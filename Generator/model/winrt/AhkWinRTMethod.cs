@@ -13,6 +13,8 @@ class AhkWinRTMethod : AhkMethod
 
     public readonly string? OverloadName;
 
+    private readonly AhkComMethod interfaceMethod;
+
     public AhkWinRTMethod(AhkWinRTClass declarer, MetadataReader mr, MethodDefinition methodDef, bool isStatic) : base(mr, methodDef)
     {
         DeclaringClass = declarer;
@@ -20,6 +22,7 @@ class AhkWinRTMethod : AhkMethod
         IsStatic = isStatic;
 
         OverloadName = GetOverloadName();
+        interfaceMethod = new AhkComMethod(mr, methodDef, -1);
     }
 
     private string? GetOverloadName()
@@ -60,7 +63,7 @@ class AhkWinRTMethod : AhkMethod
         sb.AppendLine($"            this.__{DeclaringInterfaceName} := {DeclaringInterfaceName}(outPtr)");
         sb.AppendLine($"        }}");
         sb.AppendLine();
-        sb.AppendLine($"        return this.__{DeclaringInterfaceName}.{GetDeduplicatedName()}({argList})");
+        sb.AppendLine($"        return this.__{DeclaringInterfaceName}.{interfaceMethod.GetDeduplicatedName()}({argList})");
         sb.AppendLine("    }");
     }
 
@@ -75,13 +78,18 @@ class AhkWinRTMethod : AhkMethod
         sb.AppendLine($"            {DeclaringClass.Name}.__{DeclaringInterfaceName} := {DeclaringInterfaceName}(factoryPtr)");
         sb.AppendLine($"        }}");
         sb.AppendLine();
-        sb.AppendLine($"        return {DeclaringClass.Name}.__{DeclaringInterfaceName}.{GetDeduplicatedName()}({argList})");
+        sb.AppendLine($"        return {DeclaringClass.Name}.__{DeclaringInterfaceName}.{interfaceMethod.GetDeduplicatedName()}({argList})");
         sb.AppendLine("    }");
     }
 
     public override string GetDeduplicatedName()
     {
-        return OverloadName ?? Name;
+        string effectiveName = OverloadName ?? Name;
+        int counter = (IsStatic? DeclaringClass.StaticMethods : DeclaringClass.InstanceMethods)
+            .TakeWhile(m => m != this)
+            .Count(m => (m.OverloadName ?? m.Name) == effectiveName);
+
+        return counter > 0 ? effectiveName + counter : effectiveName;
     }
 
     private protected override AhkParameter? GetOutputParameter()
