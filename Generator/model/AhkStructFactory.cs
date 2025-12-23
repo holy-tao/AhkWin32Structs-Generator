@@ -73,6 +73,7 @@ public partial class AhkStruct : AhkType
             {
                 SimpleFieldKind.Array => newMember.fieldInfo.UnderlyingType?.GetWidth(IsAnsi) ?? throw new NullReferenceException(),
                 SimpleFieldKind.String => IsAnsi? 1 : 2,
+                SimpleFieldKind.Struct => newMember.embeddedStruct?.PackingSize ?? throw new NullReferenceException(nameof(newMember.embeddedStruct)),
                 _ => newMember.Size
             };
 
@@ -85,7 +86,7 @@ public partial class AhkStruct : AhkType
             offset += newMember.Size;
         }
 
-        Size = IsUnion? memberList.Select(m => m.Size).Max() : offset;
+        Size = IsUnion? memberList.Max(m => m.Size) : offset;
 
         PackingSize = Math.Min(PackingSize, maxAlignment);
         int tailPadding = (maxAlignment - (offset % maxAlignment)) % maxAlignment;
