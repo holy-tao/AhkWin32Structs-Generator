@@ -8,7 +8,13 @@ class DocumentationUtils
 
     public static ApiDetails? GetApiDetails(MetadataReader mr, TypeDefinition typeDef)
     {
-        return GetApiDetails(mr.GetString(typeDef.Name), CustomAttributeDecoder.GetAttribute(mr, typeDef, "DocumentationAttribute"));
+        // try type name and namespace.type
+        CustomAttribute? docAttr = CustomAttributeDecoder.GetAttribute(mr, typeDef, "DocumentationAttribute");
+
+        ApiDetails? found = GetApiDetails($"{mr.GetFullyQualifiedName(typeDef).Split('`').First()}", docAttr);
+        found ??= GetApiDetails(mr.GetString(typeDef.Name), docAttr);
+        
+        return found;
     }
 
     public static ApiDetails? GetApiDetails(MetadataReader mr, MethodDefinition def)
@@ -26,7 +32,10 @@ class DocumentationUtils
             {
                 string interfaceName = mr.GetString(parentTypeDef.Name);
                 string qualifiedName = interfaceName + "." + methodName;
-                details = GetApiDetails(qualifiedName, documentationAttr);
+
+                // Try interface.method and namespace.interface.method
+                details = GetApiDetails($"{mr.GetFullyQualifiedName(def).Split('`').First()}", documentationAttr);
+                details ??= GetApiDetails(qualifiedName, documentationAttr);
             }
         }
 
@@ -38,10 +47,10 @@ class DocumentationUtils
 
     public static ApiDetails? GetApiDetails(string forName, CustomAttribute? documentationAttr)
     {
-        Program.ApiDocs.TryGetValue(forName, out ApiDetails? details);
+        bool foundDetails = Program.ApiDocs.TryGetValue(forName, out ApiDetails? details);
         
         // Fall back to the [Documentation] attribute if HelpLink is null
-        if(details?.HelpLink == null && documentationAttr != null)
+        if(foundDetails && details?.HelpLink == null && documentationAttr != null)
         {
             details ??= new();
             var decoded = documentationAttr.Value.DecodeValue(attrProvider);

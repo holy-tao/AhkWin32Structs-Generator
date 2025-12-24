@@ -1,6 +1,7 @@
 
 using System.Reflection.Metadata;
 using System.Text;
+using Microsoft.Windows.SDK.Win32Docs;
 
 /// <summary>
 /// WinRT is "COM with extra steps" - in practice, that means that a WinRT class is actually an IInspectable interface
@@ -21,6 +22,8 @@ class AhkWinRTClass : AhkType
 
     private readonly string baseTypeNamespace;
     private readonly string baseTypeName;
+
+    public string Fqn => $"{Namespace}.{Name}";
 
     public AhkWinRTClass(MetadataReader mr, TypeDefinition typeDef, string baseNamespace, string baseName) : base(mr, typeDef)
     {
@@ -114,7 +117,23 @@ class AhkWinRTClass : AhkType
             .Where(c => c.Name is "ActivatableAttribute")
             .Any(c => c.Attr.FixedArguments.First().Type is "UInt32");
 
-        // TODO doc comment
+        // constructor documentation is under #ctor if it exists
+        if(hasNoArgCtor)
+        {
+            ApiDetails? ctorDocs = DocumentationUtils.GetApiDetails($"{Fqn}.#ctor", null);
+            if(ctorDocs is not null)
+            {
+                sb.AppendLine("    /**");
+                sb.AppendLine("     * " + EscapeDocs(ctorDocs?.Description, "    "));
+
+                if (!string.IsNullOrWhiteSpace(ctorDocs?.Remarks))
+                {
+                    sb.AppendLine("     * @remarks");
+                    sb.AppendLine("     * " + EscapeDocs(ctorDocs.Remarks, "    "));
+                }
+                sb.AppendLine("    */");
+            }   
+        }
 
         sb.AppendLine($"    __New(ptr{(hasNoArgCtor ? " := 0" : string.Empty)}) {{");
 
@@ -147,7 +166,7 @@ class AhkWinRTClass : AhkType
         foreach((MetadataReader reader, TypeDefinition iface) in winRTInterfaces)
         {
             var methodDefs = iface.GetMethods().Select(reader.GetMethodDefinition);
-            methods.AddRange(methodDefs.Select(def => new AhkWinRTMethod(this, reader, def, false)));
+            methods.AddRange(methodDefs.Select(def => new AhkWinRTMethod(this, reader, def, false, false)));
         }
 
         return methods;
@@ -207,8 +226,17 @@ class AhkWinRTClass : AhkType
 
     private List<AhkWinRTMethod> CollectStaticMethods() 
     {
+        var activatableInterfaceNames = CustomAttributes
+            .Where(c => c.Name is "ActivatableAttribute" && c.Attr.FixedArguments.First().Type is "System.Type")
+            .Select(c => (string)(c.Attr.FixedArguments.First().Value ?? throw new NullReferenceException()));
+
         return StaticInterfaces.SelectMany(iface => 
-                iface.Methods.Select(m => new AhkWinRTMethod(this, m.mr, m.methodDef, true))
+                iface.Methods.Select(m =>
+                {
+                    string ifaceFqn = $"{iface.Namespace}.{iface.Name}";
+                    bool isConstructor = activatableInterfaceNames.Contains(ifaceFqn);
+                    return new AhkWinRTMethod(this, m.mr, m.methodDef, true, isConstructor);
+                })
             )
             .ToList();
     }

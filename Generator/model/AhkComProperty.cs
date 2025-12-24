@@ -28,16 +28,24 @@ public record struct AhkComProperty(AhkType Interface, string Name, AhkMethod? G
 
     public void MaybeAppendDocumentation(StringBuilder sb)
     {
-        // Doesn't seem like ApiDocs have anything for properties or getters / setters
-        // Keeping this here in case that changes in the future
+        // Note: only WinRT docs have documentation for properties - in that case the key is the fqn 
+        // of the class + property name. For all others we'll only add type information
         sb.AppendLine("    /**");
 
-        if(Interface.apiDetails != null)
+        ApiDetails? apiDetails = DocumentationUtils.GetApiDetails($"{Interface.Namespace}.{Interface.Name}.{Name}", null);
+        if(apiDetails is not null)
         {
-            ApiDetails apiDetails = Interface.apiDetails;
-            if(apiDetails.Fields.TryGetValue(Name, out string? fieldDetails))
+            sb.AppendLine($"     * {AhkType.EscapeDocs(apiDetails.Description, "    ")}");
+
+            if(!string.IsNullOrWhiteSpace(apiDetails.Remarks))
             {
-                sb.AppendLine($"     * {AhkType.EscapeDocs(fieldDetails, "     ")}");
+                sb.AppendLine("     * @remarks");
+                sb.AppendLine($"     * {AhkType.EscapeDocs(apiDetails.Remarks, "    ")}");
+            }
+
+            if(apiDetails.HelpLink is not null)
+            {
+                sb.AppendLine($"     * @see {apiDetails.HelpLink}");
             }
         }
 

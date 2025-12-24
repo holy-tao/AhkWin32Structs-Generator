@@ -15,7 +15,7 @@ public class AhkMethod
 
     public readonly MetadataReader mr;
     public readonly MethodDefinition methodDef;
-    private protected readonly ApiDetails? apiDetails;
+    public ApiDetails? apiDetails { get; protected set; }
 
     private protected readonly MethodImport import;
 
@@ -529,7 +529,10 @@ public class AhkMethod
 
             string typeNote = param.IsComOutPtr ? $"Pointer<{param.FieldInfo.AhkType}>" : param.FieldInfo.AhkType;
             sb.Append($"     * @param {{{typeNote}}} {param.Name} ");
-            if (apiDetails?.Parameters.TryGetValue(param.Name, out string? docString) ?? false)
+
+            // Add docstring if available. Param name may have an underscore appended if it conflicts with a reserved
+            // AHK keyword or a type name, try trimming it off
+            if (apiDetails?.Parameters.TryGetValue(param.Name.TrimEnd("_"), out string? docString) ?? false)
             {
                 sb.Append(AhkType.EscapeDocs(docString, "    "));
             }

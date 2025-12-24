@@ -6,6 +6,7 @@ class AhkWinRTMethod : AhkMethod
     public readonly AhkWinRTClass DeclaringClass;
     public readonly TypeDefinition DeclaringInterface;
     public readonly bool IsStatic;
+    public readonly bool IsConstructor;
 
     public string DeclaringInterfaceName => mr.GetString(DeclaringInterface.Name).Split('`').First();
     public string DeclaringInterfaceNamespace => mr.GetString(DeclaringInterface.Namespace);
@@ -15,14 +16,18 @@ class AhkWinRTMethod : AhkMethod
 
     private readonly AhkComMethod interfaceMethod;
 
-    public AhkWinRTMethod(AhkWinRTClass declarer, MetadataReader mr, MethodDefinition methodDef, bool isStatic) : base(mr, methodDef)
+    public AhkWinRTMethod(AhkWinRTClass declarer, MetadataReader mr, MethodDefinition methodDef, bool isStatic, bool isConstructor) : base(mr, methodDef)
     {
         DeclaringClass = declarer;
         DeclaringInterface = mr.GetTypeDefinition(methodDef.GetDeclaringType());
         IsStatic = isStatic;
+        IsConstructor = isConstructor;
 
         OverloadName = GetOverloadName();
         interfaceMethod = new AhkComMethod(mr, methodDef, -1);
+        
+        string nameForDoc = IsConstructor ? "#ctor" : (OverloadName ?? Name);
+        apiDetails = DocumentationUtils.GetApiDetails($"{DeclaringClass.Fqn}.{nameForDoc.Split('`').First()}", null);
     }
 
     private string? GetOverloadName()
@@ -41,8 +46,7 @@ class AhkWinRTMethod : AhkMethod
 
     public override void ToAhk(StringBuilder sb)
     {
-        // TODO produce documentation
-
+        MaybeAppendDocumentation(sb);
         if(IsStatic)
         {
             ToAhkStatic(sb);
@@ -52,6 +56,7 @@ class AhkWinRTMethod : AhkMethod
             ToAhkInstance(sb);
         }
     }
+
 
     private void ToAhkInstance(StringBuilder sb)
     {
