@@ -19,6 +19,7 @@ class AhkWinRTClass : AhkType
     public readonly List<AhkComInterface> StaticInterfaces;
 
     public readonly List<AhkWinRTMethod> StaticMethods;
+    public readonly List<AhkComProperty> StaticProperties;
 
     private readonly string baseTypeNamespace;
     private readonly string baseTypeName;
@@ -32,6 +33,7 @@ class AhkWinRTClass : AhkType
 
         StaticInterfaces = CollectStaticInterfaces();
         StaticMethods = CollectStaticMethods();
+        StaticProperties = CollectStaticProperties();
 
         baseTypeNamespace = baseNamespace;
         baseTypeName = baseName;
@@ -65,6 +67,18 @@ class AhkWinRTClass : AhkType
 
         MaybeAddTypeDocumentation(sb);
         sb.AppendLine($"class {Name} extends {(baseTypeName is "Object" ? "IInspectable" : baseTypeName)} {{");
+
+        if(StaticProperties.Count > 0)
+        {
+            sb.AppendLine($";@region Static Properties");
+            foreach(AhkComProperty prop in StaticProperties)
+            {
+                prop.ToAhk(sb);
+                sb.AppendLine();
+            }
+            sb.AppendLine($";@endregion Static Properties");
+            sb.AppendLine();
+        }
 
         if(StaticMethods.Count > 0)
         {
@@ -239,6 +253,24 @@ class AhkWinRTClass : AhkType
                 })
             )
             .ToList();
+    }
+
+    private List<AhkComProperty> CollectStaticProperties()
+    {
+        List<AhkComProperty> properties = [];
+
+        foreach(AhkWinRTMethod method in StaticMethods.Where(m => m.IsSpecialName && (m.Name.StartsWith("get_") || m.Name.StartsWith("put_"))))
+        {
+            string normalizedName = method.Name[4..]; // Remove "get_" or "put_"
+            if(properties.Any(p => p.Name == normalizedName))
+                continue;
+
+            AhkWinRTMethod? getter = StaticMethods.FirstOrDefault(m => m!.IsSpecialName && m.Name == "get_" + normalizedName, null);
+            AhkWinRTMethod? setter = StaticMethods.FirstOrDefault(m => m!.IsSpecialName && m.Name == "put_" + normalizedName, null);
+            properties.Add(new AhkComProperty(this, normalizedName, getter, setter, true));
+        }
+
+        return properties;
     }
 
     /// <summary>

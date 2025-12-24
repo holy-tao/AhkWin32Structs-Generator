@@ -10,18 +10,18 @@ using Microsoft.Windows.SDK.Win32Docs;
 /// <param name="Name">Name of the property</param>
 /// <param name="Getter">Getter method for the property, if any</param>
 /// <param name="Setter">Setter method for the property, if any</param>
-public record struct AhkComProperty(AhkType Interface, string Name, AhkMethod? Getter, AhkMethod? Setter)
+public record struct AhkComProperty(AhkType Interface, string Name, AhkMethod? Getter, AhkMethod? Setter, bool IsStatic = false)
 {
     public void ToAhk(StringBuilder sb)
     {
         MaybeAppendDocumentation(sb);
-        sb.AppendLine($"    {Name} {{");
+        sb.AppendLine($"    {(IsStatic? "static " : "")}{Name} {{");
 
         if (Getter is not null)
-            sb.AppendLine($"        get => this.{Getter.GetDeduplicatedName()}()");
+            sb.AppendLine($"        get => {(IsStatic? Interface.Name : "this")}.{Getter.GetDeduplicatedName()}()");
 
         if (Setter is not null)
-            sb.AppendLine($"        set => this.{Setter.GetDeduplicatedName()}(value)");
+            sb.AppendLine($"        set => {(IsStatic? Interface.Name : "this")}.{Setter.GetDeduplicatedName()}(value)");
 
         sb.AppendLine("    }");
     }
