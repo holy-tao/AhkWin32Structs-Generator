@@ -110,19 +110,17 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
     public FieldInfo GetGenericInstantiation(FieldInfo genericType, ImmutableArray<FieldInfo> typeArguments)
     {
         // Debug.WriteLine($"Flattening GenericInstantiation: {genericType.TypeName}<{string.Join(", ", typeArguments.Select(t => t.TypeName))}>");
-        return genericType;
+        return genericType with { GenericArguments = typeArguments };
     }
 
     public FieldInfo GetGenericMethodParameter(GenericContext genericContext, int index)
     {
-        // throw new NotSupportedException($"GenericMethodParameter: {index}");
-        return new FieldInfo(SimpleFieldKind.Pointer, $"Callback");
+        return new FieldInfo(SimpleFieldKind.OpenGeneric, $"{index}");
     }
 
     public FieldInfo GetGenericTypeParameter(GenericContext genericContext, int index)
     {
-        // throw new NotSupportedException($"GenericTypeParameter: {index}");
-        return new FieldInfo(SimpleFieldKind.Other, $"Any");
+        return new FieldInfo(SimpleFieldKind.OpenGeneric, $"{index}");
     }
 
     public FieldInfo GetModifiedType(FieldInfo modifier, FieldInfo unmodifiedType, bool isRequired)

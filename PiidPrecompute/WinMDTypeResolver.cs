@@ -181,11 +181,11 @@ public class WinMDTypeResolver : IWinRTTypeResolver, IDisposable
             
             // IEnumerable<T> → IIterable<T>
             "System.Collections.Generic.IEnumerable`1" => 
-                new WinRTSignature.Guid(new System.Guid("FAA585EA-6214-4217-AFDA-7F46DE5869B4")),
+                new WinRTSignature.Guid(new System.Guid("faa585ea-6214-4217-afda-7f46de5869b3")),
             
             // IEnumerator<T> → IIterator<T>
             "System.Collections.Generic.IEnumerator`1" => 
-                new WinRTSignature.Guid(new System.Guid("6A79E863-4300-459A-9966-CBB660963EE1")),
+                new WinRTSignature.Guid(new System.Guid("6a79e863-4300-459a-9966-cbb660963ee1")),
             
             // IList<T> → IVector<T>
             "System.Collections.Generic.IList`1" => 
@@ -217,7 +217,7 @@ public class WinMDTypeResolver : IWinRTTypeResolver, IDisposable
 
             // WinRT collection interfaces (native names)
             "Windows.Foundation.Collections.IIterable`1" => 
-                new WinRTSignature.Guid(new System.Guid("FAA585EA-6214-4217-AFDA-7F46DE5869B4")),
+                new WinRTSignature.Guid(new System.Guid("FAA585EA-6214-4217-AFDA-7F46DE5869B3")),
             "Windows.Foundation.Collections.IIterator`1" => 
                 new WinRTSignature.Guid(new System.Guid("6A79E863-4300-459A-9966-CBB660963EE1")),
             "Windows.Foundation.Collections.IVector`1" => 

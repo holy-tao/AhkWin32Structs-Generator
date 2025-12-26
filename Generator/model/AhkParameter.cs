@@ -32,7 +32,7 @@ public readonly record struct AhkParameter
     {
         // Initial population of our reserved name trie
         ReservedNames = new();
-        string[] constReservedNames = ["in", "as", "is", "contains", "not", "and", "or", "this", "return", 
+        string[] constReservedNames = ["in", "as", "is", "contains", "not", "and", "or", "this", "return", "result",
             "throw", "loop", "do", "while", "float", "number", "integer", "object", "class", "buffer", "string",
             "file", "enumerator"];
 
@@ -94,6 +94,8 @@ public readonly record struct AhkParameter
 
     public bool IsPtrToCom => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.COM);
 
+    public bool IsPtrToGeneric => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.OpenGeneric);
+
     public bool IsPtrToNativeTypedef => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.NativeTypedef);
     
     public bool IsPtrToStruct => IsPtr && (FieldInfo.UnderlyingType?.Kind is SimpleFieldKind.Struct);
@@ -105,14 +107,15 @@ public readonly record struct AhkParameter
     // override for e.g. WinRT return values where there are not attributes
     private readonly bool IsOutputOverride;
 
-    public AhkParameter(MetadataReader? mr, Parameter param, FieldInfo FieldInfo, bool IsOutputOverride = false)
+    public AhkParameter(MetadataReader? mr, Parameter param, FieldInfo FieldInfo, 
+        bool IsOutputOverride = false, string nameOverride = "")
     {
         this.mr = mr;
         this.param = param;
         this.FieldInfo = FieldInfo;
         this.IsOutputOverride = IsOutputOverride;
 
-        Name = GetName();
+        Name = GetName(nameOverride);
 
         CustomAttributes = GetCustomParamAttributes();
         IgnoreIfReturnValues = GetIgnoreIfReturnValues();
@@ -121,12 +124,12 @@ public readonly record struct AhkParameter
         RAIIFree = MaybeGetReleaseMethod("RAIIFreeAttribute");
     }
 
-    private string GetName()
+    private string GetName(string nameOverride = "")
     {
         string? nameVal = mr?.GetString(param.Name)?.ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(nameVal) || mr is null)
         {
-            return "result";
+            return string.IsNullOrWhiteSpace(nameOverride) ? "result" : nameOverride;
         }
 
         // Index the current assembly's type names as reserved words if necessary

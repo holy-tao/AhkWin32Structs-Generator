@@ -1,5 +1,8 @@
+using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Reflection.Metadata;
 using System.Text;
+using MetadataUtils;
 
 class AhkWinRTMethod : AhkMethod
 {
@@ -7,6 +10,11 @@ class AhkWinRTMethod : AhkMethod
     public readonly TypeDefinition DeclaringInterface;
     public readonly bool IsStatic;
     public readonly bool IsConstructor;
+
+    /// <summary>
+    /// Generic arguments for the declaring interface, if any
+    /// </summary>
+    public readonly ImmutableArray<FieldInfo> DeclarerGenericArgs;
 
     public string DeclaringInterfaceName => mr.GetString(DeclaringInterface.Name).Split('`').First();
     public string DeclaringInterfaceNamespace => mr.GetString(DeclaringInterface.Namespace);
@@ -16,12 +24,14 @@ class AhkWinRTMethod : AhkMethod
 
     private readonly AhkComMethod interfaceMethod;
 
-    public AhkWinRTMethod(AhkWinRTClass declarer, MetadataReader mr, MethodDefinition methodDef, bool isStatic, bool isConstructor) : base(mr, methodDef)
+    public AhkWinRTMethod(AhkWinRTClass declarer, MetadataReader mr, MethodDefinition methodDef, TypeDefinition declaringInterface, 
+        bool isStatic, bool isConstructor, ImmutableArray<FieldInfo> declarerGenericArgs) : base(mr, methodDef)
     {
         DeclaringClass = declarer;
-        DeclaringInterface = mr.GetTypeDefinition(methodDef.GetDeclaringType());
+        DeclaringInterface = declaringInterface;
         IsStatic = isStatic;
         IsConstructor = isConstructor;
+        DeclarerGenericArgs = declarerGenericArgs;
 
         OverloadName = GetOverloadName();
         interfaceMethod = new AhkComMethod(mr, methodDef, -1);
@@ -57,18 +67,45 @@ class AhkWinRTMethod : AhkMethod
         }
     }
 
+    private Guid GetPiid()
+    {
+        
+        string sigList = string.Join(",", DeclarerGenericArgs.Select(arg => arg.GetFullTypeSignature()));
+        string typeKey = $"{DeclaringInterfaceFqn}`{DeclarerGenericArgs.Length}<{sigList}>";
+
+        if (!PiidUtils.TryGetPiid(typeKey, out Guid? piid))
+            throw new KeyNotFoundException(typeKey);
+
+        Trace.TraceInformation($"Resolved generic instantiation {typeKey} to PIID {{{piid}}}");
+        return (Guid)piid;
+    }
 
     private void ToAhkInstance(StringBuilder sb)
     {
-        string argList = BuildMethodArgumentList();
-        sb.AppendLine($"    {GetDeduplicatedName()}({argList}) {{");
+        string methodArgList = BuildMethodArgumentList();
+
+        // TODO generics with generic args: Bind types to call method
+        string declarerGenericArgs = string.Join(", ", DeclarerGenericArgs.Select(arg => arg.GetTypeAsGenericCallable()));
+        if(!string.IsNullOrWhiteSpace(declarerGenericArgs))
+            declarerGenericArgs += ", ";
+
+        string iidAccessor = $"{DeclaringInterfaceName}.IID";            
+
+        sb.AppendLine($"    {GetDeduplicatedName()}({methodArgList}) {{");
         sb.AppendLine($"        if (!this.HasProp(\"__{DeclaringInterfaceName}\")) {{");
-        sb.AppendLine($"            if ((queryResult := this.QueryInterface({DeclaringInterfaceName}.IID, &outPtr := 0)) != 0)");
+
+        if(DeclarerGenericArgs.Length > 0)
+        {
+            sb.AppendLine($"            piid := Guid(\"{{{GetPiid()}}}\")");
+            iidAccessor = "piid";
+        }
+
+        sb.AppendLine($"            if ((queryResult := this.QueryInterface({iidAccessor}, &outPtr := 0)) != 0)");
         sb.AppendLine($"                throw OSError(queryResult)");
-        sb.AppendLine($"            this.__{DeclaringInterfaceName} := {DeclaringInterfaceName}(outPtr)");
+        sb.AppendLine($"            this.__{DeclaringInterfaceName} := {DeclaringInterfaceName}({declarerGenericArgs}outPtr)");
         sb.AppendLine($"        }}");
         sb.AppendLine();
-        sb.AppendLine($"        return this.__{DeclaringInterfaceName}.{interfaceMethod.GetDeduplicatedName()}({argList})");
+        sb.AppendLine($"        return this.__{DeclaringInterfaceName}.{interfaceMethod.GetDeduplicatedName()}({methodArgList})");
         sb.AppendLine("    }");
     }
 
@@ -102,7 +139,12 @@ class AhkWinRTMethod : AhkMethod
         AhkParameter? outParam = null;
         IEnumerable<AhkParameter> candidateParams = parameters
             .Where(p => p.IsOutParam && !p.IsInParam)
-            .Where(p => p.IsPtrToPrimitive || p.IsPtrToStruct || p.IsPtrToCom || p.IsPtrToWinRTClass || p.IsPtrToHandle());
+            .Where(p => p.IsPtrToPrimitive 
+                || p.IsPtrToStruct 
+                || p.IsPtrToCom 
+                || p.IsPtrToWinRTClass 
+                || p.IsPtrToGeneric
+                || p.IsPtrToHandle());
             
         if (candidateParams.Count() == 1)
             outParam = candidateParams.Single();

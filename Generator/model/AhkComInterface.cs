@@ -18,6 +18,8 @@ class AhkComInterface : AhkType
 
     public readonly List<AhkComProperty> Properties;
 
+    public readonly List<string> OpenGenericProperties; // just names
+
     public int VTableOffset { get; protected set; }
 
     public AhkComInterface(MetadataReader mr, TypeDefinition typeDef) : base(mr, typeDef)
@@ -44,6 +46,12 @@ class AhkComInterface : AhkType
             AhkComMethod? setter = Methods.FirstOrDefault(m => m!.IsSpecialName && m.GetDeduplicatedName() == "put_" + normalizedName, null);
             Properties.Add(new AhkComProperty(this, normalizedName, getter, setter));
         }
+
+        OpenGenericProperties = typeDef.GetGenericParameters()
+            .Select(mr.GetGenericParameter)
+            .OrderBy(param => param.Index)
+            .Select(param => mr.GetString(param.Name))
+            .ToList();
     }
 
     private (MetadataReader, TypeDefinition)? GetBaseTypeDef(MetadataReader reader, TypeDefinition forType)
@@ -176,6 +184,18 @@ class AhkComInterface : AhkType
             prop.ToAhk(sb);
         }
 
+        // Generic types must be tracked as instance properties
+        if(OpenGenericProperties.Count != 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"    __New({string.Join(", ", OpenGenericProperties)}, ptr, callbackCreateFlags := \"\") {{");
+            sb.AppendLine($"        super.__New(ptr, callbackCreateFlags)");
+            sb.AppendLine();
+            sb.AppendLine("        ; Register generic parameter types");
+            OpenGenericProperties.ForEach(prop => sb.AppendLine($"        this.{prop} := {prop}"));
+            sb.AppendLine($"    }}");
+        }
+
         foreach (AhkComMethod method in Methods)
         {
             sb.AppendLine();
@@ -185,7 +205,7 @@ class AhkComInterface : AhkType
         extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
     }
 
-    private void AppendStaticCode(StringBuilder sb)
+    private protected void AppendStaticCode(StringBuilder sb)
     {
         sb.AppendLine("    static sizeof => A_PtrSize");
 
@@ -216,7 +236,7 @@ class AhkComInterface : AhkType
         sb.AppendLine($"    static vTableOffset => {VTableOffset}");
     }
 
-    private void AppendVTableList(StringBuilder sb)
+    private protected void AppendVTableList(StringBuilder sb)
     {
         sb.AppendLine("    /**");
         sb.AppendLine("     * @readonly used when implementing interfaces to order function pointers");

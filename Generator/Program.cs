@@ -50,6 +50,7 @@ public class Program
         ApiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
         Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(MetadataDir, "extensions"));
         NetTypeMappings.Load(MetadataDir);
+        PiidUtils.Load(MetadataDir);
 
         IEnumerable<FileStream> winmdFiles = CollectWinmdFiles(MetadataDir);
 

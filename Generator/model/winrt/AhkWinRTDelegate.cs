@@ -32,7 +32,7 @@ class AhkWinRTDelegate : AhkComInterface
         sb.AppendLine($"class {Name} extends IUnknown {{");
 
         sb.AppendLine();
-        sb.AppendLine(AhkCtorCode);
+        AppendConstructor(sb);
         sb.AppendLine();
         sb.AppendLine("    Call(params*) => this.Invoke(params*)"); // Make delegates callable objects
 
@@ -41,25 +41,55 @@ class AhkWinRTDelegate : AhkComInterface
         sb.AppendLine("}");
     }
 
-    /// <summary>
-    /// __New code common to all delegates - make sure to include inentation
-    /// Allows the delegate to be instantiated with a callback function so callers don't need to
-    /// create an implementation object with only one method.
-    /// </summary>
-    private static readonly string AhkCtorCode = """
-        /**
-         * Constructor - create a new delegate instance
-         *
-         * @param {Object | Function | Number} callbackOrPtrOrImplObj callback function, pointer to the
-         *             interface to wrap, or an implementation object with an Invoke method.
-         * @param {String} callbackCreateOptions options for creating the callbacks in `callbackOrPtrOrImplObj`
-         *             is a function or implementation object.
-         */
-        __New(callbackOrPtrOrImplObj, callbackCreateOptions := "") {
-            if(HasMethod(callbackOrPtrOrImplObj)) {
-                callbackOrPtrOrImplObj := { Invoke: callbackOrPtrOrImplObj }
-            }
-            super.__New(callbackOrPtrOrImplObj, callbackCreateOptions)
+    private protected override void BodyToAhk(StringBuilder sb)
+    {
+        sb.AppendLine();
+        AppendStaticCode(sb);
+
+        sb.AppendLine();
+        AppendVTableList(sb);
+
+        foreach (AhkComProperty prop in Properties)
+        {
+            sb.AppendLine();
+            prop.ToAhk(sb);
         }
+
+        foreach (AhkComMethod method in Methods)
+        {
+            sb.AppendLine();
+            method.ToAhk(sb);
+        }
+        
+        extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
+    }
+
+    private void AppendConstructor(StringBuilder sb)
+    {
+        sb.AppendLine(AhkCtorDocComment);
+        sb.AppendLine($"    __New({string.Join(", ", OpenGenericProperties.Append("callbackOrPtrOrImplObj, callbackCreateOptions := \"\""))}) {{");
+        sb.AppendLine($"        if(HasMethod(callbackOrPtrOrImplObj)) {{");
+        sb.AppendLine($"            callbackOrPtrOrImplObj := {{ Invoke: callbackOrPtrOrImplObj }}");
+        sb.AppendLine($"        }}");
+        if(OpenGenericProperties.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("        ; Register generic parameter types");
+            OpenGenericProperties.ForEach(prop => sb.AppendLine($"        this.{prop} := {prop}"));
+        }
+        sb.AppendLine();
+        sb.AppendLine($"        super.__New(callbackOrPtrOrImplObj, callbackCreateOptions)");
+        sb.AppendLine($"    }}");
+    }
+
+    private static readonly string AhkCtorDocComment = """
+        /**
+        * Constructor - create a new delegate instance
+        *
+        * @param {Object | Function | Number} callbackOrPtrOrImplObj callback function, pointer to the
+        *             interface to wrap, or an implementation object with an Invoke method.
+        * @param {String} callbackCreateOptions options for creating the callbacks in `callbackOrPtrOrImplObj`
+        *             is a function or implementation object.
+        */
     """;
 }

@@ -21,38 +21,13 @@ public class ParameterDecoder
         }
         else if(!isWinRT)
         {
-            // Win32 method with primitive return type
+            // Win32 method with primitive return type (potentially void)
             result.Add(new AhkParameter(null, default, sig.ReturnType));
-        }
-        else if(methodDef.Attributes.HasFlag(MethodAttributes.SpecialName))
-        {
-            // WinRT method - these don't expose their ABI return values in metadata. All WinRT methods return 
-            // HSRESULTs, except for event add_ methods, which return EventRegistrationTokens, and remove_ methods,
-            // which return void
-            // https://learn.microsoft.com/en-us/uwp/winrt-cref/winrt-type-system#events
-            string methodName = reader.GetString(methodDef.Name);
-            if (methodName.StartsWith("add_"))
-            {
-                TypeDefinitionHandle evtRegTokHandle = FieldSignatureDecoder.FindTypeDefinition(
-                    "Windows", "Windows.Foundation", "EventRegistrationToken", out var windowsMr);
-                TypeDefinition evtRegTok = windowsMr.GetTypeDefinition(evtRegTokHandle);
-                
-                result.Add(new AhkParameter(null, default, 
-                    new(SimpleFieldKind.Struct, "EventRegistrationToken", 0, evtRegTok, null, windowsMr)));
-            }
-            else if (methodName.StartsWith("remove_"))
-            {
-                result.Add(new AhkParameter(null, default, new(SimpleFieldKind.Primitive, "Void")));
-            }
-            else
-            {
-                // Not an event
-                result.Add(new AhkParameter(null, default, new(SimpleFieldKind.HRESULT, "HRESULT")));
-            }
         }
         else
         {
-            // Normal WinRT method - these all return HRESULTs
+            // ABI return value for all WinRT methods is HRESULT, actual return values, even primitives,
+            // are always the [out] params.
             result.Add(new AhkParameter(null, default, new(SimpleFieldKind.HRESULT, "HRESULT")));
         }
 
@@ -70,15 +45,21 @@ public class ParameterDecoder
             result.Add(new AhkParameter(reader, param, fieldInfo));
         }
 
-        // WinRT encodes the output parameter as parameter 0 (return value), but for the Com plumbing
-        // it's the last param
-        // e.g. string GetString(int value) => HRESULT GetString(int value, string** out)
-        if(isWinRT && paramInfos.TryGetValue(0, out Parameter outParam))
+        // WinRT encodes the output parameter as parameter 0 (return value), but in the ABI surface it's
+        // the last argument and is always a pointer to a type (unless it's void, in which case it's omitted). 
+        // For example:
+        //      string GetString(int value) => HRESULT GetString(int value, string** out)
+        if (isWinRT && sig.ReturnType.TypeName is not "Void")
+        {
+            bool foundParamInfo = paramInfos.TryGetValue(0, out Parameter outParam);
+
             result.Add(new AhkParameter(
-                reader, 
-                outParam, 
-                new FieldInfo(SimpleFieldKind.Pointer, "Pointer", 0, null, sig.ReturnType), 
-                true));
+                foundParamInfo ? reader : null, 
+                foundParamInfo ? outParam : default, 
+                new FieldInfo(SimpleFieldKind.Pointer, "Pointer", 0, null, sig.ReturnType),
+                true,
+                "output_"));
+        }
 
         return result;
     }

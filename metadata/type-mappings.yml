@@ -41,6 +41,12 @@ System.Nullable:
   Assembly: Windows
   Namespace: Windows.Foundation
   Name: IReference`1
+# There are about 200 references to mscorlib!f__AnonymousType0`1.IReference in the WinRT metadata
+# I'm not sure what's up with that, but its pretty easy to manage
+f__AnonymousType0`1.IReference:
+  Assembly: Windows
+  Namespace: Windows.Foundation
+  Name: IReference`1
 System.TimeSpan:
   Assembly: Windows
   Namespace: Windows.Foundation

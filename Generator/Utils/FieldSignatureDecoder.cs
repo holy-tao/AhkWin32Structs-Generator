@@ -24,6 +24,9 @@ public static class FieldSignatureDecoder
         return fieldDef.DecodeSignature(new FieldSignatureProvider(reader), new());
     }
 
+    public static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle handle) =>
+        DecodeTypeDef(reader, reader.GetTypeDefinition(handle));
+    
     /// <summary>
     /// Decodes a TypeDefinition into a FieldInfo usable for AHK code generation
     /// </summary>
@@ -31,12 +34,11 @@ public static class FieldSignatureDecoder
     /// <param name="tdHandle">Handle to the TypeDefinition to decoded</param>
     /// <returns>The decoded TypeDefinition</returns>
     /// <exception cref="TypeAccessException">If the type cannot be decoded</exception>
-    public static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle)
+    public static FieldInfo DecodeTypeDef(MetadataReader reader, TypeDefinition td)
     {
-        var td = reader.GetTypeDefinition(tdHandle);
         string typeName = reader.GetString(td.Name).Split('`').First();
         string typeNamespace = reader.GetString(td.Namespace);
-
+        
         if(NetTypeMappings.TryGetMappedType($"{typeNamespace}.{typeName}", out var mappedType))
         {
             return DecodeTypeDef(mappedType.Value.reader, mappedType.Value.handle);
@@ -60,10 +62,10 @@ public static class FieldSignatureDecoder
         }
         else if (IsEnum(reader, td))
         {
-            string underlying = GetEnumUnderlyingType(reader, tdHandle);
+            string underlying = GetEnumUnderlyingType(reader, td);
             return new FieldInfo(SimpleFieldKind.Primitive, underlying);
         }
-        else if (IsUsedAsFunctionPointer(reader, tdHandle))
+        else if (IsUsedAsFunctionPointer(reader, td))
         {
             return new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td, null, reader);
         }
@@ -149,8 +151,10 @@ public static class FieldSignatureDecoder
         !IsStruct(reader, td);
 
     public static string GetEnumUnderlyingType(MetadataReader reader, TypeDefinitionHandle handle)
+        => GetEnumUnderlyingType(reader, reader.GetTypeDefinition(handle));
+
+    public static string GetEnumUnderlyingType(MetadataReader reader, TypeDefinition td)
     {
-        var td = reader.GetTypeDefinition(handle);
         foreach (var fieldHandle in td.GetFields())
         {
             var fd = reader.GetFieldDefinition(fieldHandle);
@@ -162,13 +166,15 @@ public static class FieldSignatureDecoder
         return "Int32";
     }
 
+    public static bool IsUsedAsFunctionPointer(MetadataReader reader, TypeDefinitionHandle defHandle) =>
+        IsUsedAsFunctionPointer(reader, reader.GetTypeDefinition(defHandle));
+
     /// <summary>
     /// Some function pointers (notably the LPFN*PROC callbacks) are represented in the metadata as empty
     /// structs. So when we encounter one we need to check its attributes to see if it's a function pointer
     /// </summary>
-    public static bool IsUsedAsFunctionPointer(MetadataReader reader, TypeDefinitionHandle defHandle)
+    public static bool IsUsedAsFunctionPointer(MetadataReader reader, TypeDefinition typeDef)
     {
-        TypeDefinition typeDef = reader.GetTypeDefinition(defHandle);
         return CustomAttributeDecoder.GetAllNames(reader, typeDef).Contains("UnmanagedFunctionPointerAttribute");
     }
 

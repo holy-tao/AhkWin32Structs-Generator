@@ -170,7 +170,12 @@ class AhkComMethod : AhkMethod
         {
             IEnumerable<AhkParameter> candidateParams = parameters
                 .Where(p => p.IsOutParam && !p.IsInParam)
-                .Where(p => p.IsPtrToPrimitive || p.IsPtrToStruct || p.IsPtrToCom || p.IsPtrToWinRTClass || p.IsPtrToHandle());
+                .Where(p => p.IsPtrToPrimitive 
+                    || p.IsPtrToStruct 
+                    || p.IsPtrToCom 
+                    || p.IsPtrToWinRTClass 
+                    || p.IsPtrToGeneric || p.FieldInfo.Kind is SimpleFieldKind.OpenGeneric
+                    || p.IsPtrToHandle());
             if (candidateParams.Count() == 1)
             {
                 outParam = candidateParams.Single();

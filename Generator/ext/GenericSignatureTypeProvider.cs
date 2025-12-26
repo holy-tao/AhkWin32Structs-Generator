@@ -1,8 +1,8 @@
-using System;
 using System.Collections.Immutable;
 using System.Reflection.Metadata;
 using System.Text;
 
+// Adapted from:
 // https://github.com/microsoft/win32metadata/blob/3a36bf792ed5d90ebbd130c1e1147fa6d19141e0/sources/MetadataUtils/GenericSignatureTypeProvider.cs
 
 namespace MetadataUtils
@@ -23,74 +23,30 @@ namespace MetadataUtils
     {
         public virtual string GetPrimitiveType(PrimitiveTypeCode typeCode)
         {
-            switch (typeCode)
+            return typeCode switch
             {
-                case PrimitiveTypeCode.Boolean:
-                    return "bool";
-
-                case PrimitiveTypeCode.Byte:
-                    return "byte";
-
-                case PrimitiveTypeCode.Char:
-                    return "char";
-
-                case PrimitiveTypeCode.Double:
-                    return "double";
-
-                case PrimitiveTypeCode.Int16:
-                    return "uint";
-
-                case PrimitiveTypeCode.Int32:
-                    return "int";
-
-                case PrimitiveTypeCode.Int64:
-                    return "long";
-
-                case PrimitiveTypeCode.IntPtr:
-                    return "IntPtr";
-
-                case PrimitiveTypeCode.Object:
-                    return "object";
-
-                case PrimitiveTypeCode.SByte:
-                    return "byte";
-
-                case PrimitiveTypeCode.Single:
-                    return "float";
-
-                case PrimitiveTypeCode.String:
-                    return "string";
-
-                case PrimitiveTypeCode.TypedReference:
-                    return "typedref";
-
-                case PrimitiveTypeCode.UInt16:
-                    return "ushort";
-
-                case PrimitiveTypeCode.UInt32:
-                    return "uint";
-
-                case PrimitiveTypeCode.UInt64:
-                    return "ulong";
-
-                case PrimitiveTypeCode.UIntPtr:
-                    return "UIntPtr";
-
-                case PrimitiveTypeCode.Void:
-                    return "void";
-
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(typeCode));
-            }
+                PrimitiveTypeCode.Object => "Windows.Win32.System.WinRT.IInspectable",
+                PrimitiveTypeCode.String => "Windows.Win32.System.WinRT.HSTRING",
+                _ => typeCode.ToString()
+            };
         }
 
         public virtual string GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind = 0)
         {
             TypeDefinition definition = reader.GetTypeDefinition(handle);
+            return GetTypeFromDefinition(reader, definition, rawTypeKind);
+        }
 
+        public virtual string GetTypeFromDefinition(MetadataReader reader, TypeDefinition definition, byte rawTypeKind = 0)
+        {
             string name = definition.Namespace.IsNil
                 ? reader.GetString(definition.Name)
                 : reader.GetString(definition.Namespace) + "." + reader.GetString(definition.Name);
+
+            if(NetTypeMappings.TryGetMappedType(name.Split('`').First(), out var mapped))
+            {
+                return mapped.Value.reader.GetFullyQualifiedName(mapped.Value.handle);
+            }
 
             if (definition.IsNested)
             {
@@ -110,12 +66,25 @@ namespace MetadataUtils
                 ? reader.GetString(reference.Name)
                 : reader.GetString(reference.Namespace) + "." + reader.GetString(reference.Name);
 
+            if(NetTypeMappings.TryGetMappedType(name.Split('`').First(), out var mapped))
+            {
+                return mapped.Value.reader.GetFullyQualifiedName(mapped.Value.handle);
+            }
+
+            if(name is "System.Guid")
+            {
+                return "Guid";  // this is a fundamental WinRT type
+            }
+
             switch (scope.Kind)
             {
                 case HandleKind.ModuleReference:
                     return "[.module  " + reader.GetString(reader.GetModuleReference((ModuleReferenceHandle)scope).Name) + "]" + name;
 
                 case HandleKind.AssemblyReference:
+                    if(reader.GetString(reference.Namespace).StartsWith("Windows"))
+                        return name;
+
                     var assemblyReferenceHandle = (AssemblyReferenceHandle)scope;
                     var assemblyReference = reader.GetAssemblyReference(assemblyReferenceHandle);
                     return "[" + reader.GetString(assemblyReference.Name) + "]" + name;
@@ -155,7 +124,9 @@ namespace MetadataUtils
 
         public virtual string GetGenericTypeParameter(GenericContext genericContext, int index)
         {
-            return "!" + (genericContext == null ? index.ToString() : genericContext.TypeParameters[index]);
+            return "!" + (genericContext == null ? 
+                index.ToString() : 
+                index < genericContext.TypeParameters.Length ? genericContext.TypeParameters[index] : index.ToString());
         }
 
         public virtual string GetPinnedType(string elementType)
@@ -265,7 +236,7 @@ namespace MetadataUtils
 
         public string GetGenericInstantiation(string genericType, ImmutableArray<string> typeArguments)
         {
-            throw new NotImplementedException();
+            return genericType + "<" + string.Join(",", typeArguments) + ">";
         }
     }
 }

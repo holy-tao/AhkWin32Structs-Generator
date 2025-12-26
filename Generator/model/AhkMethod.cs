@@ -53,6 +53,8 @@ public class AhkMethod
 
     private protected readonly List<CAInfo> CustomAttributes;
 
+    private TypeDefinition Declarer => mr.GetTypeDefinition(methodDef.GetDeclaringType());
+
     public AhkMethod(MetadataReader mr, MethodDefinition methodDef)
     {
         this.mr = mr;
@@ -273,7 +275,44 @@ public class AhkMethod
         }
         else if ((fnRetVal.IsPtrToCom && !fnRetVal.IsComOutPtr) || fnRetVal.IsPtrToWinRTClass)
         {
-            sb.AppendLine($"        return {fnRetVal.FieldInfo.UnderlyingType?.TypeName}({fnRetVal.Name})");
+            FieldInfo retValType = fnRetVal.FieldInfo.UnderlyingType ?? 
+                throw new NullReferenceException($"Return value pointer is missing underlying type --- {fnRetVal.FieldInfo}");
+
+            string genericArgs = string.Join(", ", retValType.GenericArguments
+                .Select(arg => arg.Kind switch
+                {
+                    // FIXME this is kind of gross
+                    SimpleFieldKind.OpenGeneric => "this." + mr.GetString(Declarer.GetGenericParameters()
+                        .Select(mr.GetGenericParameter)
+                        .Single(generic => generic.Index == int.Parse(arg.TypeName)).Name),
+                    _ => arg.TypeName
+                }));
+            if(!string.IsNullOrEmpty(genericArgs))
+                genericArgs += ", ";
+
+            sb.AppendLine($"        return {retValType.TypeName}({genericArgs}{fnRetVal.Name})");
+        }
+        else if (fnRetVal.IsPtrToGeneric)
+        {
+            FieldInfo genericType = fnRetVal.FieldInfo.UnderlyingType ?? 
+                throw new NullReferenceException($"Generic pointer is missing underlying type --- {fnRetVal.FieldInfo}");
+
+            if(genericType.Kind is SimpleFieldKind.Primitive)
+            {
+                sb.AppendLine($"        return {fnRetVal.Name}");
+            }
+            else if (genericType.Kind is SimpleFieldKind.OpenGeneric)
+            {
+                string genericName = mr.GetString(Declarer.GetGenericParameters()
+                    .Select(mr.GetGenericParameter)
+                    .Single(generic => generic.Index == int.Parse(genericType.TypeName)).Name);
+                sb.AppendLine($"        return this.{genericName}.Call({fnRetVal.Name})");
+            }
+            else
+            {
+                string typeArgs = string.Join(", ", genericType.GenericArguments.Select(arg => arg.GetTypeAsGenericCallable()));
+                sb.AppendLine($"        return {genericType.TypeName}({typeArgs}, {fnRetVal.Name})");
+            }
         }
         else if (fnRetVal.IsPrimitive && fnRetVal.FieldInfo.TypeName is "Object")
         {
@@ -494,13 +533,17 @@ public class AhkMethod
             string dllCallType = isString ? "ptr" : param.FieldInfo.GetDllCallType(false);
 
             string marshalAs = (param.IsPtrToPrimitive && !param.Reserved && param != outputParameter) ? $"{param.Name}Marshal" : $"\"{dllCallType}\"";
-            string passAs = (param == outputParameter && (param.IsPtrToPrimitive || param.IsPtrToCom || param.IsPtrToWinRTClass)) ? $"&{param.Name} := 0" : param.Name;
+            // Most - but not all! - output pointers should be passed as VarRefs (e.g. &var := 0)
+            bool passAsVarRef = param == outputParameter && (
+                param.IsPtrToPrimitive 
+                || param.IsPtrToCom 
+                || param.IsPtrToWinRTClass 
+                || param.IsPtrToGeneric);
+            string passAs = passAsVarRef ? $"&{param.Name} := 0" : param.Name;
 
             argList.Append(marshalAs);
             argList.Append(", ");
             argList.Append(passAs);
-
-            // TODO default value, optional values
 
             if (i < parameters.Count - 1)
                 argList.Append(", ");

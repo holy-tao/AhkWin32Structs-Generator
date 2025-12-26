@@ -1,4 +1,6 @@
 
+using System.Collections;
+using System.Collections.Immutable;
 using System.Reflection.Metadata;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
@@ -21,6 +23,10 @@ class AhkWinRTClass : AhkType
     public readonly List<AhkWinRTMethod> StaticMethods;
     public readonly List<AhkComProperty> StaticProperties;
 
+    public readonly List<FieldInfo> ImplementedInterfaces;
+
+    // public readonly ImmutableArray<FieldInfo> GenericArguments;
+
     private readonly string baseTypeNamespace;
     private readonly string baseTypeName;
 
@@ -28,6 +34,12 @@ class AhkWinRTClass : AhkType
 
     public AhkWinRTClass(MetadataReader mr, TypeDefinition typeDef, string baseNamespace, string baseName) : base(mr, typeDef)
     {
+        //  The WinRT metadata unfortunately contains .NET specific constructs like System.IEnumerable
+        // which we need to filter out. They made this for CSWin32, the rest of us have to suffer
+        ImplementedInterfaces = GetInterfaceImplementations()
+            .Where(i => i.GetTypeDefNamespace().StartsWith("Windows"))
+            .ToList();
+
         InstanceMethods = CollectInstanceMethods();
         InstanceProperties = CollectInstanceProperties();
 
@@ -52,6 +64,15 @@ class AhkWinRTClass : AhkType
             $"{baseTypeNamespace}.{baseTypeName}"
         );
 
+        if(ImplementedInterfaces.Any(iface => iface.GenericArguments.Any()))
+        {
+            imports.Add("Windows.Foundation.IPropertyValue");   // Required for boxing / unboxing generics
+            imports.AddRange(ImplementedInterfaces
+                .SelectMany(iface => iface.GenericArguments)
+                .Where(info => info.Kind is not (SimpleFieldKind.OpenGeneric or SimpleFieldKind.Primitive or SimpleFieldKind.String))
+                .Select(info => info.GetTypeDefFqn()));
+        }
+
         imports.AddRange(InstanceMethods.Select(m => $"{m.DeclaringInterfaceNamespace}.{m.DeclaringInterfaceName}"));
         imports.AddRange(StaticInterfaces.Select(iface => $"{iface.Namespace}.{iface.Name}"));
 
@@ -63,6 +84,7 @@ class AhkWinRTClass : AhkType
         sb.AppendLine("#Requires AutoHotkey v2.0 64-bit");
         sb.AppendLine();
         AppendImports(sb);
+        sb.AppendLine($"#Include {GetPathToBase()}Guid.ahk");
         sb.AppendLine();
 
         MaybeAddTypeDocumentation(sb);
@@ -172,15 +194,21 @@ class AhkWinRTClass : AhkType
     {
         List<AhkWinRTMethod> methods = [];
 
-        // The WinRT metadata unfortunately contains .NET specific constructs like System.IEnumerable
-        // which we need to filter out. They made this for CSWin32, the rest of us have to suffer
-        var winRTInterfaces = GetInterfaceImplementations()
-            .Where(i => i.reader.GetString(i.iface.Namespace).StartsWith("Windows"));
-
-        foreach((MetadataReader reader, TypeDefinition iface) in winRTInterfaces)
+        foreach(FieldInfo iface in ImplementedInterfaces)
         {
-            var methodDefs = iface.GetMethods().Select(reader.GetMethodDefinition);
-            methods.AddRange(methodDefs.Select(def => new AhkWinRTMethod(this, reader, def, false, false)));
+            var methodDefs = (iface.TypeDef ?? throw new NullReferenceException(nameof(iface.TypeDef)))
+                .GetMethods()
+                .Select(iface.Reader!.GetMethodDefinition);
+            
+            methods.AddRange(methodDefs.Select(def => 
+                new AhkWinRTMethod(
+                    this, 
+                    iface.Reader, 
+                    def, 
+                    iface.TypeDef.Value, 
+                    false, 
+                    false,
+                    iface.GenericArguments)));
         }
 
         return methods;
@@ -249,7 +277,7 @@ class AhkWinRTClass : AhkType
                 {
                     string ifaceFqn = $"{iface.Namespace}.{iface.Name}";
                     bool isConstructor = activatableInterfaceNames.Contains(ifaceFqn);
-                    return new AhkWinRTMethod(this, m.mr, m.methodDef, true, isConstructor);
+                    return new AhkWinRTMethod(this, m.mr, m.methodDef, iface.typeDef, true, isConstructor, []);
                 })
             )
             .ToList();
@@ -277,28 +305,25 @@ class AhkWinRTClass : AhkType
     /// Collects all directly implemented interfaces for this interface and resolves any TypeReferences.
     /// </summary>
     /// <returns>All directly implemented interfaces for this interface</returns>
-    private IEnumerable<(MetadataReader reader, TypeDefinition iface)> GetInterfaceImplementations()
+    private IEnumerable<FieldInfo> GetInterfaceImplementations()
     {
         return typeDef.GetInterfaceImplementations()
             .Select(ih => mr.GetInterfaceImplementation(ih).Interface)
+            .Where(iface => !iface.IsNil)
             .Select(iface =>
             {
                 switch(iface.Kind) 
                 {
                     case HandleKind.TypeReference:
-                        return FieldSignatureDecoder.ResolveTypeReference(mr, (TypeReferenceHandle)iface);
+                        var resolved = FieldSignatureDecoder.ResolveTypeReference(mr, (TypeReferenceHandle)iface);
+                        return FieldSignatureDecoder.DecodeTypeDef(resolved.reader, resolved.typeDef);
 
                     case HandleKind.TypeDefinition:
-                        return (mr, mr.GetTypeDefinition((TypeDefinitionHandle)iface));
+                        return FieldSignatureDecoder.DecodeTypeDef(mr, (TypeDefinitionHandle)iface);
 
                     case HandleKind.TypeSpecification:
                         TypeSpecification typeSpec = mr.GetTypeSpecification((TypeSpecificationHandle)iface);
-                        var resolved = typeSpec.DecodeSignature(new FieldSignatureProvider(mr), new());
-
-                        return (
-                            resolved.Reader ?? throw new NullReferenceException(nameof(resolved.Reader)),
-                            resolved.TypeDef ?? throw new NullReferenceException(nameof(resolved.TypeDef))
-                        );
+                        return typeSpec.DecodeSignature(new FieldSignatureProvider(mr), new());
 
                     default:
                         throw new NotSupportedException($"{iface.Kind} for interface {Namespace}.{Name}");
