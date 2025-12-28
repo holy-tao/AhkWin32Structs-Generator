@@ -1,3 +1,6 @@
 Generator/bin/*
 Generator/obj/Debug/*
 Generator/obj/*
+PiidPrecompute/bin/*
+PiidPrecompute/obj/Debug/*
+PiidPrecompute/obj/*
