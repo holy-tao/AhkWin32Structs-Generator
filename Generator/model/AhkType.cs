@@ -61,7 +61,7 @@ public abstract class AhkType : IAhkEmitter
         flags = GetFlags();
 
         apiDetails = DocumentationUtils.GetApiDetails(mr, typeDef);
-        Program.Extensions.TryGetValue(GetFqn(mr,typeDef), out extensions);
+        Program.Extensions.TryGetValue(GetFqn(mr,typeDef).Split('`').First(), out extensions);
     }
 
     public abstract void ToAhk(StringBuilder sb);

@@ -1,5 +1,6 @@
 add-to:
   - Windows.Win32.Foundation.POINT
+  - Windows.Foundation.POINT
   - Windows.Win32.Foundation.POINTL
 requires: []
 code: |

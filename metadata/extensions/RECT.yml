@@ -3,6 +3,7 @@
 add-to:
   - Windows.Win32.Foundation.RECT
   - Windows.Win32.Foundation.RECTL
+  - Windows.Foundation.RECT
 requires:
   - Windows.Win32.Graphics.Gdi.Apis
   - Windows.Win32.Foundation.POINT

@@ -75,6 +75,8 @@ class AhkWinRTClass : AhkType
 
         imports.AddRange(InstanceMethods.Select(m => $"{m.DeclaringInterfaceNamespace}.{m.DeclaringInterfaceName}"));
         imports.AddRange(StaticInterfaces.Select(iface => $"{iface.Namespace}.{iface.Name}"));
+        if(extensions?.Count > 0)
+            imports.AddRange(extensions.SelectMany(ex => ex.Requirements));
 
         return imports;
     }
@@ -135,6 +137,13 @@ class AhkWinRTClass : AhkType
             sb.AppendLine();
         }
         sb.AppendLine($";@endregion Instance Methods");
+
+        if(extensions?.Count > 0)
+        {
+            sb.AppendLine($";@region Extensions");
+            extensions.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
+            sb.AppendLine($";@endregion Extensions");
+        }
 
         sb.AppendLine("}");
     }

@@ -1,0 +1,36 @@
+# Extension methods for IPropertyValue, which is used in WinRT to box generic arguments
+
+add-to:
+  - Windows.Foundation.IPropertyValue
+requires:
+  - Windows.Foundation.PropertyType
+code: |
+    /**
+     * If the PropertyValue contains a primitive or a struct, unboxes it and returns it. Arrays
+     * are currently not supported, as is the "OtherType" type.
+     * @returns {Any} The boxed value, if it can be easily unboxed
+     */
+    Unbox() {
+        switch(this.Type) {
+            case PropertyType.Empty: return ""
+            case PropertyType.UInt8: return this.GetUInt8()
+            case PropertyType.Int16: return this.GetInt16()
+            case PropertyType.UInt16: return this.GetUInt16()
+            case PropertyType.Int32: return this.GetInt32()
+            case PropertyType.Int64: return this.GetInt64()
+            case PropertyType.UInt64: return this.GetUInt64()
+            case PropertyType.Single: return this.GetSingle()
+            case PropertyType.Double: return this.GetDouble()
+            case PropertyType.Char16: return this.GetChar16()
+            case PropertyType.Boolean: return this.GetBoolean()
+            case PropertyType.String: return this.GetString()
+            case PropertyType.DateTime: return this.GetDateTime()
+            case PropertyType.Timespan: return this.GetTimespan()
+            case PropertyType.Guid: return this.GetGuid()
+            case PropertyType.Point: return this.GetPoint()
+            case PropertyType.Size: return this.GetSize()
+            case PropertyType.Rect: return this.GetRect()
+            default:
+                throw Error("PropertyValue of type " String(this.Type) " cannot be automatically unboxed", -1, this.Type)
+        }
+    }

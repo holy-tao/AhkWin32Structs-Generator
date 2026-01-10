@@ -1,3 +1,6 @@
+# IUnknown extensions
+# TODO: add a fallback for IInspectable::As to loop through required IIDs and check names against requested type for parameterized types
+
 add-to:
   - Windows.Win32.System.Com.IUnknown
 requires: []
@@ -34,25 +37,25 @@ code: |
     }
 
     /**
-     * Queries the interface for `iface` and returns the found interface proxy.
+     * Queries the interface for `iface` and returns the found interface proxy, effectively "casting" the interface
+     * as another type. This can also be used to cast WinRT classes as other types.
      *
-     *      stringable := MyInterfaceProxy.Query(IStringable)
+     *      stringable := MyInterfaceProxy.As(IStringable)
+     *
+     * Parameterized types (that is, types with generic arguments, like `IVector<Int32>`) are not currently supported.
      * 
      * @param {Class extending Win32ComInterface} iface the interface to query for.
      * @returns {Win32ComInterface} an instance of `iface` if this interface supports it.
      * @throws {TypeError} if this interface does not support `iface` or `iface` is invalid
      */
-    Query(iface) {
-        if(!(iface.prototype is Win32ComInterface)) {
-            throw TypeError(Format("Class {1} does not extend Win32ComInterface", iface.prototype.__Class))
+    As(iface) {
+        queryResult := this.QueryInterface(iface.IID, &outPtr := 0)
+        if(queryResult != 0){
+            msg := Format("Could not cast `"{1}`" as `"{2}`"", type(this), iface.prototype.__Class)
+            throw OSError(queryResult, -1, msg)
         }
 
-        found := this.QueryInterface(iface.IID, &outPtr := 0)
-        if(found){
-            return iface.Call(outPtr)
-        }
-
-        throw TypeError(Format("This object of type {1} does not implement {2}", type(this), iface.prototype.__Class))
+        return iface.Call(outPtr)
     }
 
     __Delete(){

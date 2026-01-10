@@ -1,0 +1,75 @@
+# Extension methods for IAsyncAction. AHK doesn't support true asynchrony, so we need to do some extra work
+# to make it usable in an idiomatic way
+# See:
+#   https://kennykerrca.wordpress.com/2018/03/08/cppwinrt-handling-async-completion/
+#   https://learn.microsoft.com/en-us/uwp/api/windows.foundation.iasyncinfo?view=winrt-26100
+
+add-to:
+  - Windows.Foundation.IAsyncAction
+  - Windows.Foundation.IAsyncActionWithProgress
+  - Windows.Foundation.IAsyncOperation
+  - Windows.Foundation.IAsyncOperationWithProgress
+requires: 
+  - Windows.Foundation.IAsyncInfo
+code: |
+    /**
+     * Synchronously waits until the $Class is complete. Best for actions that you expect to complete very
+     * quickly or which *must* finish before some other action can continue.
+     *
+     * @param {Integer} timeout If greater than zero, the maximum number of seconds to wait
+     * @param {Integer} interval The number of milliseconds to wait between checks (default: 10)
+     * @returns {Generic} The result of the $Class
+     */
+    Await(timeout := 0, interval := 10) {
+        static info := this.As(IAsyncInfo)
+
+        start := A_Now
+        while(!info.Status) {
+            if(timeout > 0 && DateDiff(start, A_Now, "seconds") > timeout) {
+                throw TimeoutError(type(this) " timed out", -1, timeout)
+            }
+            sleep(10)
+        }
+
+        return this.GetResults()
+    }
+
+    /**
+     * Polls the $Class at some interval using a Timer and invokes a callback funtion when it finishes. Best for
+     * long-running operations or operations whose results you don't need immediate access to.
+     *
+     * @param {Func(Generic) => Any} callback The function to call when the operation finishes. The function
+     *      is called with the result of the $Class appended to its parameter list
+     * @param {Integer} Timeout If greater than zero, the number of seconds to wait (default: 0)
+     * @param {Integer} Interval the number of milliseconds between polling attempts (default: 250)
+     * @returns {Func} A reference to the timer function created, which can be used to cancel it.
+     */
+    AwaitWithCallback(callback, timeout := 0, interval := 250) {
+        if(!HasMethod(callback, , 1))
+            throw MethodError("Callback is not callable with 1 argument", -1, callback)
+
+        callbackFunc := Poll.Bind(this, this.As(IAsyncInfo), A_Now, timeout, callback)
+        SetTimer(callbackFunc, interval)
+        return callbackFunc
+
+        Poll(op, info, startTime, timeout, callback) {
+            if(info.Status){
+                SetTimer(, 0)
+                callback.Call(op.GetResults())
+            }
+            else if(timeout > 0 && DateDiff(start, A_Now, "seconds") > timeout){
+                SetTimer(, 0)
+                throw TimeoutError(type(op) . " timed out", , timeout)
+            }
+        }
+    }
+
+    /**
+     * If the async action errored out, throws an OSError. Calling this method before the action has completed is
+     * undefined behavior and will probably cause an Error.
+     */
+    ThrowIfFailed() {
+        static info := this.As(IAsyncInfo)
+        if(info.ErrorCode != 0)
+            throw OSError(info.ErrorCode, -1, this)
+    }
