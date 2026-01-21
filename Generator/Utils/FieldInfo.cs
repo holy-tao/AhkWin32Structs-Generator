@@ -252,7 +252,7 @@ public record FieldInfo
             }
             else if (Kind == SimpleFieldKind.Struct || Kind == SimpleFieldKind.Class || Kind == SimpleFieldKind.NativeTypedef)
             {
-                return TypeName;
+                return HasGenericArgs ? $"{TypeName}<{string.Join(", ", GenericArguments.Select(arg => arg.AhkType))}>" : TypeName;
             }
             else if (Kind == SimpleFieldKind.OpenGeneric)
             {
