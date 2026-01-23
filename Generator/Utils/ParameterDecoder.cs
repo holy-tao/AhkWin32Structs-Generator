@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Metadata;
 
@@ -41,8 +42,17 @@ public class ParameterDecoder
             // BOOL SystemPrng([Out][MemorySize(BytesParamIndex = 1)] byte* pbRandomData, [In] UIntPtr cbRandomData);
             var fieldInfo = !isWinRT && CustomAttributeDecoder.GetAllNames(reader, param).Any(n => n is "MemorySizeAttribute") ?
                 new FieldInfo(SimpleFieldKind.Primitive, "ptr") : sig.ParameterTypes[i];
-            
-            result.Add(new AhkParameter(reader, param, fieldInfo));
+
+            if(sig.ParameterTypes[i].Kind is SimpleFieldKind.SZArray)
+            {
+                Trace.TraceInformation($"Expanding SZArray parameter: {reader.GetFullyQualifiedName(methodDef)}::{reader.GetString(param.Name)}");
+                // Expand SZArray parameters
+                DecodeZSArrayParameter(reader, sig.ParameterTypes[i], param, result);
+            }
+            else
+            {
+                result.Add(new AhkParameter(reader, param, fieldInfo));
+            }
         }
 
         // WinRT encodes the output parameter as parameter 0 (return value), but in the ABI surface it's
@@ -62,6 +72,47 @@ public class ParameterDecoder
         }
 
         return result;
+    }
+
+    /*
+    Conceptually:
+    [In] T[]        => PassArray        => UInt32 length, T* buffer
+    [In, Out] T[]   => FillArray        => UInt32 length, T* buffer
+    [Out] T[]       => ReceiveArray     => UInt32* length, T** buffer
+    */
+    private static void DecodeZSArrayParameter(MetadataReader reader, FieldInfo paramType, Parameter param, List<AhkParameter> parameters)
+    {
+        // See: https://learn.microsoft.com/en-us/uwp/winrt-cref/winrt-type-system#array-parameters
+        bool isOut = param.Attributes.HasFlag(ParameterAttributes.Out);
+        bool isIn = param.Attributes.HasFlag(ParameterAttributes.In);
+
+        if(isOut && !isIn)
+        {
+            // ReceiveArray (Caller receives it) - UInt32* length, T** buffer
+            parameters.Add(new AhkParameter(
+                null, 
+                default, 
+                new(SimpleFieldKind.Pointer, "Pointer", 0, null, new(SimpleFieldKind.Primitive, "UInt32")), 
+                false, 
+                reader.GetString(param.Name) + "_length"));
+            parameters.Add(new AhkParameter(
+                null, 
+                default,  // Don't use the SZArray param itself
+                new(SimpleFieldKind.Pointer, "Pointer", 0, null, new(SimpleFieldKind.Pointer, "Pointer", 0, null, paramType.UnderlyingType)), 
+                false, 
+                reader.GetString(param.Name)));
+        }
+        else
+        {
+            // FillArray or PassArray - UInt32 length, T* buffer
+            parameters.Add(new AhkParameter(null, default, new(SimpleFieldKind.Primitive, "UInt32"), false, reader.GetString(param.Name) + "_length"));
+            parameters.Add(new AhkParameter(
+                null, 
+                default, 
+                new(SimpleFieldKind.Pointer, "Pointer", 0, null, paramType.UnderlyingType), 
+                false, 
+                reader.GetString(param.Name)));
+        }
     }
 
     private static Dictionary<int, Parameter> GetParameters(MetadataReader reader, MethodDefinition methodDef)

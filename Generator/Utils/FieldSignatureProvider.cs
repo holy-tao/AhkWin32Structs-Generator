@@ -83,14 +83,14 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
 
     public FieldInfo GetSZArrayType(FieldInfo elementType)
     {
-        return new(SimpleFieldKind.Array, elementType.TypeName, -1, elementType.TypeDef, elementType, null);
+        return new(SimpleFieldKind.SZArray, elementType.TypeName, -1, elementType.TypeDef, elementType, null);
     }
 
     public FieldInfo GetArrayType(FieldInfo elementType, ArrayShape shape)
     {
-        // Try to detect fixed arrays (like CHAR[n])
         int len = shape.Rank == 1 && shape.Sizes.ToList().Count == 1 ? shape.Sizes[0] : 0;
 
+        // Try to detect fixed arrays like CHAR[n] which are used for string buffers
         string elemName = elementType.TypeName.ToLowerInvariant();
         if (elemName is "char" or "tchar" or "wchar" ||
             (elemName == "sbyte" && elementType.TypeDef != null && _reader.GetString(elementType.TypeDef.Value.Name) == "CHAR"))

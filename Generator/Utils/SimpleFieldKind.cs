@@ -3,15 +3,67 @@
 // We don't care about most of the specifics
 public enum SimpleFieldKind
 {
-    Primitive,  // int, int16, uint, etc
-    Pointer,    // any pointer-sized integer (function pointers, COM interface pointers, etc)
+    /// <summary>
+    /// A primitive type - int, float, bool, etc
+    /// </summary>
+    Primitive,
+
+    /// <summary>
+    /// A pointer-sized integer, not for COM interfaces or WinRT classes. UnderlyingType contains the pointed-to type
+    /// </summary>
+    Pointer,
+
+    /// <summary>
+    /// An Array (not to be confused with SZArray)
+    /// </summary>
     Array,
-    Struct,     // an embedded struct. TypeDef contains the type of the struct itself in this case
+
+    /// <summary>
+    /// A struct pointer. In this case, TypeDef contains the type of the struct itself
+    /// </summary>
+    Struct,
+
+    /// <summary>
+    /// A WinRT Class pointer. In this case, TypeDef contains the type of the class itself
+    /// </summary>
     Class,
-    Other,      // unhandled, will produce an error
-    COM,        // A pointer to a COM Interface
-    String,     // A string buffer for which we can use StrPut / StrGet (usually a character array)
-    HRESULT,     // An int that's specifically an HRESULT
+
+    /// <summary>
+    /// A special type that doesn't fit into other categories. An error in almost all cases
+    /// </summary>
+    Other,
+
+    /// <summary>
+    /// A COM interface pointer
+    /// </summary>
+    COM,
+
+    /// <summary>
+    /// A string buffer for which we can use StrPut / StrGet (usually a character array). Types like BSTR and HSTRING
+    /// are represented as structs, the way they appear in the metadata, and are treated as handles.
+    /// </summary>
+    String,
+
+    /// <summary>
+    /// A HRESULT return type (32-bit Integer)
+    /// </summary>
+    HRESULT,
+
+    /// <summary>
+    /// A NativeTypeDef, usually representing an alias to another type (HWND, etc).
+    /// </summary>
     NativeTypedef,
-    OpenGeneric     // An open generic, like the T in List<T>
+
+    /// <summary>
+    /// A generic type parameter (like T in List<T>)
+    /// </summary>
+    OpenGeneric,
+
+    /// <summary>
+    /// Single-dimensional array with zero lower bound. At the the ABI level, this is actually two parameters - 
+    /// a UInt32 length and a T* pointer. Only used in WinRT methods.
+    /// <br/> <br/>
+    /// See <see cref="https://learn.microsoft.com/en-us/uwp/winrt-cref/winrt-type-system#array-parameters"/>
+    /// </summary>
+    SZArray
 }
