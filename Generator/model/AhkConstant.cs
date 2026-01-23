@@ -20,7 +20,7 @@ class AhkConstant
     public bool IsGuid => customAttributes.Any(c => c.Name is "GuidAttribute");
 
     [MemberNotNullWhen(true, nameof(decodedStruct))]
-    public bool IsStruct => fieldInfo.Kind == SimpleFieldKind.Struct;
+    public bool IsStruct => fieldInfo.Kind is SimpleFieldKind.Struct;
 
     private readonly AhkStruct? decodedStruct;
 
@@ -49,7 +49,7 @@ class AhkConstant
         {
             ToAhkGuid(sb);
         }
-        else if (IsStruct)
+        else if (IsStruct && fieldInfo.TypeName is not "HSTRING")
         {
             // Console.WriteLine($"Struct constant: {Name}: {fieldInfo.TypeName}");
             ToAhkStruct(sb);
