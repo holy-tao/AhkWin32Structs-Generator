@@ -405,8 +405,8 @@ public class AhkMethod
             ]);
         }
 
-        // If the return type is a handle, we need to import the handle
-        if (FuncHasReturnValue && parameters[0].IsHandle())
+        // If the return type is a handle or a struct, we need to import that type
+        if (FuncHasReturnValue && (parameters[0].IsHandle() || parameters[0].IsStruct))
         {
             referencedTypes.Add(AhkType.GetFqn(
                 parameters[0].FieldInfo.Reader ?? throw new NullReferenceException(nameof(FieldInfo.Reader)),
@@ -418,13 +418,16 @@ public class AhkMethod
         if(outputParameter != null)
         {
             FieldInfo? underlying = outputParameter?.FieldInfo.UnderlyingType;
-            bool mustImport = underlying?.Kind is SimpleFieldKind.Struct or SimpleFieldKind.COM;
-
-            if(mustImport && (underlying?.Reader == null || underlying?.Reader == mr))
+            if(underlying is not null && underlying.TypeDef is not null)
             {
-                TypeDefinition? td = underlying?.TypeDef;
-                if(td.HasValue)
-                    referencedTypes.Add(AhkType.GetFqn(mr, td.Value));
+                bool isStructOrCom = underlying.Kind is SimpleFieldKind.Struct or SimpleFieldKind.COM;
+                bool isWindows = underlying.GetTypeDefNamespace().StartsWith("Windows.");
+                string underlyingFqn = underlying.GetTypeDefFqn();
+
+                if(isStructOrCom && isWindows)
+                {
+                    referencedTypes.Add(underlyingFqn);
+                }
             }
         }
 
