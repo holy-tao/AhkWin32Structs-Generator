@@ -97,7 +97,8 @@ public class Program
 
         File.WriteAllText(Path.Join(ahkOutputDir, "version.ini"), versionInfo.ToString());
         
-        Trace.TraceInformation($"Done! Emitted {total} files with {errors} errors in {stopwatch.Elapsed.TotalSeconds} seconds");
+        var elapsed = stopwatch.Elapsed;
+        Trace.TraceInformation($"Done! Emitted {total} files with {errors} errors in {elapsed.Minutes} minutes {elapsed.Seconds} seconds.");
         Trace.Flush();
         return -errors;
     }
