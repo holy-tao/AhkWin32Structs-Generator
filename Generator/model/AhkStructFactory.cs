@@ -1,9 +1,8 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Metadata;
-using System.Reflection.Metadata.Ecma335;
 using System.Runtime.InteropServices;
-using Microsoft.Windows.SDK.Win32Docs;
 
 public partial class AhkStruct : AhkType
 {
@@ -11,34 +10,30 @@ public partial class AhkStruct : AhkType
 
     public static AhkStruct? Get(MetadataReader reader, TypeDefinition typeDef)
     {
+        List<CAInfo> customAttributes = CustomAttributeDecoder.DecodeAll(reader, typeDef);
+
         // Filter out structs for architectures other than x64 and arm64
-        CustomAttribute? archAttr = CustomAttributeDecoder.GetAttribute(reader, typeDef, "SupportedArchitectureAttribute");
-        if (archAttr.HasValue)
+        if (customAttributes.Any(ca => ca.Name is "SupportedArchitectureAttribute"))
         {
-            var decoded = archAttr.Value.DecodeValue(new CaTypeProvider());
-            Architecture archs = (Architecture)(decoded.FixedArguments[0].Value ?? throw new NullReferenceException());
+            var archAttr = customAttributes.First(ca => ca.Name is "SupportedArchitectureAttribute").Attr;
+            Architecture archs = (Architecture)(archAttr.FixedArguments[0].Value ?? throw new NullReferenceException());
             if (!archs.HasFlag(Architecture.X64) && !archs.HasFlag(Architecture.Arm64))
             {
+                Trace.TraceInformation("Filtering struct for non-x64/arm64 architecture: " +
+                    $"{reader.GetString(typeDef.Namespace)}.{reader.GetString(typeDef.Name)}");
                 return null;
             }
         }
 
-        return TypeIsHandle(reader, typeDef) ?
-            new AhkHandle(reader, typeDef) :
-            new AhkStruct(reader, typeDef);
-            
-        /*
-        string fqn = reader.GetString(typeDef.Namespace) + "." + reader.GetString(typeDef.Name);
-        AhkStruct? ahkStruct = Get(fqn);
-        if (ahkStruct == null)
+        // Filter out ApiContract markers
+        if (customAttributes.Any(ca => ca.Name is "ApiContractAttribute"))
         {
-            ahkStruct = 
-            //if(!ahkStruct.Anonymous)
-                //LoadedStructs.Add(fqn, ahkStruct);
+            Trace.TraceInformation("Filtering ApiContract marker: " +
+                $"{reader.GetString(typeDef.Namespace)}.{reader.GetString(typeDef.Name)}");
+            return null;
         }
 
-        return ahkStruct;
-        */
+        return TypeIsHandle(reader, typeDef) ? new AhkHandle(reader, typeDef) : new AhkStruct(reader, typeDef);
     }
 
     public static AhkStruct? Get(string fqn)
@@ -139,7 +134,7 @@ public partial class AhkStruct : AhkType
         return found == default ? null : found;
     }
 
-    static readonly ReadOnlyCollection<string> HandleAttrs = new(["RAIIFreeAttribute", "AlsoUsableForAttribute", "InvalidHandleValueAttribute"]);
+    static readonly ReadOnlyCollection<string> HandleAttrs = new(["RAIIFreeAttribute", "InvalidHandleValueAttribute"]);
 
     /// <summary>
     /// Try to figure out whether or not this struct is a handle type.
