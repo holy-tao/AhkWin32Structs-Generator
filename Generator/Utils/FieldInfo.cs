@@ -1,6 +1,7 @@
 using System.Reflection.Metadata;
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using System.Net.Http.Headers;
 
 // TODO this record is a bit of a mess
 
@@ -375,7 +376,19 @@ public record FieldInfo
             default:
                 throw new NotSupportedException(Kind.ToString());
         }
-            
+    }
 
+    private static Dictionary<PrimitiveTypeCode, FieldInfo> _primitiveCache = [];
+
+    public static FieldInfo Primitive(PrimitiveTypeCode primitiveTypeCode)
+    {
+        if(_primitiveCache.TryGetValue(primitiveTypeCode, out FieldInfo? cached))
+        {
+            return cached;
+        }
+
+        var newFieldInfo = new FieldInfo(SimpleFieldKind.Primitive, primitiveTypeCode.ToString());
+        _primitiveCache[primitiveTypeCode] = newFieldInfo;
+        return newFieldInfo;
     }
 }

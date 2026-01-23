@@ -48,7 +48,7 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
             return new(SimpleFieldKind.Struct, "HSTRING", 0, def, null, win32Reader);
         }
 
-        return new(SimpleFieldKind.Primitive, typeCode.ToString());
+        return FieldInfo.Primitive(typeCode);
     }
     public FieldInfo GetTypeFromDefinition(TypeDefinitionHandle handle, byte rawTypeKind)
         => FieldSignatureDecoder.DecodeTypeDef(_reader, handle);
