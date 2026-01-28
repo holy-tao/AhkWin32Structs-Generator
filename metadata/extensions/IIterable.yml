@@ -1,0 +1,12 @@
+# Code that allows IIterators to be used as AHK enumerators
+
+add-to:
+  - Windows.Foundation.Collections.IIterable
+requires: [] 
+code: |
+    __Enum(numVars) {
+        if(numVars != 1)
+            throw ValueError(this.GetRuntimeClassName().ToString() " only supports iteration with 1 variable", -1, numVars)
+
+        return this.First()
+    }

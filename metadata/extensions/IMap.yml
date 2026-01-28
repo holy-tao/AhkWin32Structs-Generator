@@ -1,0 +1,11 @@
+# Code that allows IMaps to be accessed via __Item
+
+add-to:
+  - Windows.Foundation.Collections.IMap
+  - Windows.Foundation.Collections.IMapView
+requires: [] 
+code: |
+    __Item[key] {
+        get => this.Lookup(key)
+        set => this.Insert(key, value)
+    }

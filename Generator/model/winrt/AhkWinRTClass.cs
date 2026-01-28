@@ -1,6 +1,7 @@
 
 using System.Collections;
 using System.Collections.Immutable;
+using System.Data.SqlTypes;
 using System.Reflection.Metadata;
 using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
@@ -14,6 +15,36 @@ using Microsoft.Windows.SDK.Win32Docs;
 /// </summary>
 class AhkWinRTClass : AhkType
 {
+    private static readonly string EnumCode = """
+    __Enum(numVars) {
+        if(numVars != 1)
+            throw ValueError(this.GetRuntimeClassName().ToString() " only supports iteration with 1 variable", -1, numVars)
+
+        return this.First()
+    }
+    """.Replace(Environment.NewLine, $"{Environment.NewLine}    ");
+
+    private static readonly string VectorItemCode = """
+    __Item[index] {
+        get => this.GetAt(index)
+        set => this.SetAt(index, value) 
+    }
+    """.Replace(Environment.NewLine, $"{Environment.NewLine}    ");
+
+    private static readonly string MapItemCode = """
+    __Item[key] {
+        get => this.Lookup(key)
+        set => this.Insert(key, value)
+    }
+    """.Replace(Environment.NewLine, $"{Environment.NewLine}    ");
+
+    private static readonly string ClosableDeleteCode = """
+    __Delete() {
+        ; Note it's safe to call close multiple times, so no need to check anything
+        this.Close()
+    }
+    """.Replace(Environment.NewLine, $"{Environment.NewLine}    ");
+
     public readonly List<AhkWinRTMethod> InstanceMethods;
 
     public readonly List<AhkComProperty> InstanceProperties;
@@ -32,6 +63,26 @@ class AhkWinRTClass : AhkType
 
     public string Fqn => $"{Namespace}.{Name}";
 
+    /// <summary>
+    /// Does this class implement IIterable (and should we therefore generate an __Enum method)?
+    /// </summary>
+    public readonly bool IsEnumerable;
+
+    /// <summary>
+    /// Should we generate __Item[] properties for IVector methods?
+    /// </summary>
+    public readonly bool IsVectorLike;
+
+    /// <summary>
+    /// Should we generate __Item[] properties for IMap methods?
+    /// </summary>
+    public readonly bool IsMaplike;
+
+    /// <summary>
+    /// Should we generate a __Delete method to call Close()
+    /// </summary>
+    public readonly bool IsClosable;
+
     public AhkWinRTClass(MetadataReader mr, TypeDefinition typeDef, string baseNamespace, string baseName) : base(mr, typeDef)
     {
         //  The WinRT metadata unfortunately contains .NET specific constructs like System.IEnumerable
@@ -39,6 +90,11 @@ class AhkWinRTClass : AhkType
         ImplementedInterfaces = GetInterfaceImplementations()
             .Where(i => i.GetTypeDefNamespace().StartsWith("Windows"))
             .ToList();
+
+        IsEnumerable = ImplementedInterfaces.Any(i => i.GetTypeDefName() is "IIterable`1");
+        IsClosable = ImplementedInterfaces.Any(i => i.GetTypeDefName() is "IClosable");
+        IsVectorLike = ImplementedInterfaces.Any(i => i.GetTypeDefName() is "IVector`1" or "IVectorView`1");
+        IsMaplike = ImplementedInterfaces.Any(i => i.GetTypeDefName() is "IMap`2" or "IMapView`2");
 
         InstanceMethods = CollectInstanceMethods();
         InstanceProperties = CollectInstanceProperties();
@@ -124,6 +180,19 @@ class AhkWinRTClass : AhkType
                 prop.ToAhk(sb);
                 sb.AppendLine();
             }
+
+            if(IsVectorLike)
+            {
+                sb.AppendLine("    " + VectorItemCode);
+                sb.AppendLine();
+            }
+
+            if(IsMaplike)
+            {
+                sb.AppendLine("    " + MapItemCode);
+                sb.AppendLine();
+            }
+
             sb.AppendLine($";@endregion Instance Properties");
             sb.AppendLine();
         }
@@ -136,6 +205,19 @@ class AhkWinRTClass : AhkType
             method.ToAhk(sb);
             sb.AppendLine();
         }
+
+        if(IsEnumerable)
+        {
+            sb.AppendLine("    " + EnumCode);
+            sb.AppendLine();
+        }
+
+        if (IsClosable)
+        {
+            sb.AppendLine("    " + ClosableDeleteCode);
+            sb.AppendLine();
+        }
+
         sb.AppendLine($";@endregion Instance Methods");
 
         if(extensions?.Count > 0)

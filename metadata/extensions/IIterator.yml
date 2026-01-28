@@ -1,0 +1,16 @@
+# Code that allows IIterators to be used as AHK enumerators
+
+add-to:
+  - Windows.Foundation.Collections.IIterator
+requires: [] 
+code: |
+    /**
+     * Allows the IIterator to be used as an AutoHotkey enumerator
+     */
+    Call(&item) {
+        if(!this.HasCurrent)
+            return false
+
+        item := this.Current
+        this.MoveNext()
+    }

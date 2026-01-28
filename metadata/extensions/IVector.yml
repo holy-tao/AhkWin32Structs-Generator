@@ -1,0 +1,11 @@
+# Code that allows IVectors to be accessed via __Item
+
+add-to:
+  - Windows.Foundation.Collections.IVector
+  - Windows.Foundation.Collections.IVectorView
+requires: [] 
+code: |
+    __Item[index] {
+        get => this.GetAt(index)
+        set => this.SetAt(index, value) 
+    }
