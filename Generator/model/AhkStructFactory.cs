@@ -134,7 +134,7 @@ public partial class AhkStruct : AhkType
         return found == default ? null : found;
     }
 
-    static readonly ReadOnlyCollection<string> HandleAttrs = new(["RAIIFreeAttribute", "InvalidHandleValueAttribute"]);
+    static readonly ReadOnlyCollection<string> HandleAttrs = new(["RAIIFreeAttribute", "AlsoUsableForAttribute", "InvalidHandleValueAttribute"]);
 
     /// <summary>
     /// Try to figure out whether or not this struct is a handle type.
@@ -142,15 +142,6 @@ public partial class AhkStruct : AhkType
     /// <returns></returns>
     public static bool TypeIsHandle(MetadataReader mr, TypeDefinition td)
     {
-        // These attributes are dead giveaways
-        IEnumerable<string> attrs = CustomAttributeDecoder.GetAllNames(mr, td);
-        if (attrs.Any(HandleAttrs.Contains))
-        {
-            return true;
-        }
-
-        // Heuristic fallback - if the type is a struct with a single field pointer-sized field whose
-        // name ends with "value", treat it like a handle
         if(FieldSignatureDecoder.IsStruct(mr, td))
         {
             FieldDefinitionHandleCollection fields = td.GetFields();
@@ -160,6 +151,13 @@ public partial class AhkStruct : AhkType
             FieldDefinition field = mr.GetFieldDefinition(fields.Single());
             if(!mr.GetString(field.Name).ToLowerInvariant().EndsWith("value"))
                 return false;
+
+            // Check for giveaway attributes to avoid decoding if we can
+            IEnumerable<string> attrs = CustomAttributeDecoder.GetAllNames(mr, td);
+            if (attrs.Any(HandleAttrs.Contains))
+            {
+                return true;
+            }
 
             FieldInfo decoded = field.DecodeSignature(new FieldSignatureProvider(mr), new());
 
