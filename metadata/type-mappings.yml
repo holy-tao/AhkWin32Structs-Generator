@@ -167,3 +167,21 @@ System.IServiceProvider:
   Assembly: Windows
   Namespace: Windows.UI.Xaml
   Name: IServiceProvider
+
+# Types defined in both the WinRT and Win32 metadata
+Windows.Foundation.Rect:
+  Assembly: Windows.Win32
+  Namespace: Windows.Win32.Foundation
+  Name: RECT
+Windows.Foundation.Point:
+  Assembly: Windows.Win32
+  Namespace: Windows.Win32.Foundation
+  Name: POINT
+Windows.Foundation.Size:
+  Assembly: Windows.Win32
+  Namespace: Windows.Win32.Foundation
+  Name: SIZE
+Windows.Foundation.HResult:
+  Assembly: Windows.Win32
+  Namespace: Windows.Win32.Foundation
+  Name: HRESULT

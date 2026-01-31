@@ -138,6 +138,7 @@ Windows.Foundation.Collections.IIterable`1<Windows.UI.Xaml.Media.PathFigure>: cd
 Windows.Foundation.Collections.IVector`1<Windows.UI.Xaml.Media.PathSegment>: 11fdd506-b21d-564d-b6a8-ff991057b8f3
 Windows.Foundation.Collections.IIterable`1<Windows.UI.Xaml.Media.PathSegment>: 37e2cb21-b9c9-5006-bed7-4c328981b551
 Windows.Foundation.Collections.IVector`1<Windows.Foundation.Point>: c0d513a9-ec4a-5a5d-b6d5-b707defdb9f7
+Windows.Foundation.Collections.IVector`1<Windows.Win32.Foundation.POINT>: c0d513a9-ec4a-5a5d-b6d5-b707defdb9f7
 Windows.Foundation.Collections.IIterable`1<Windows.Foundation.Point>: c192280d-3a09-5423-9dc5-67b83ebde41d
 Windows.Foundation.Collections.IVector`1<Windows.UI.Xaml.Media.TimelineMarker>: b2d8ddb4-d2b8-5930-942d-26118756bd46
 Windows.Foundation.Collections.IIterable`1<Windows.UI.Xaml.Media.TimelineMarker>: 946c5af5-4c09-5784-9cf2-506947378e8e
