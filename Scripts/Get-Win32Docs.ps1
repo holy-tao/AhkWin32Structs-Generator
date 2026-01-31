@@ -3,13 +3,14 @@
 
 $ErrorActionPreference = "Stop"
 
-Import-Module -name "$PSScriptRoot\Modules\Git-Utils.psm1"
+Import-Module -name "$PSScriptRoot\Modules\Git-Utils.psm1" -Force
+Import-Module -name "$PSScriptRoot\Modules\Metadata-Utils.psm1" -Force
 
 $repoRoot = Get-RepoRoot
 
 $destDir = Join-Path $repoRoot "metadata"
 
-& "$PSScriptRoot\Get-NuGetPackageFile.ps1" `
+Get-NuGetPackageFile `
     -PackageName "Microsoft.Windows.SDK.Win32Docs" `
     -FileExtension ".msgpack" `
-    -DestDir $destDir
+    -DestDir $destDir | Out-Null

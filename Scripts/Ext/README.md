@@ -1,2 +1,0 @@
-# `mdmerge.exe`
-[`mdmerge.exe`](https://learn.microsoft.com/en-us/windows/win32/midl/mdmerge-and-metadata-files) is used to combine the .winmd files in [`Microsoft.Windows.SDK.Contracts`](https://www.nuget.org/packages/Microsoft.Windows.SDK.Contracts) into `Windows.winmd`. It's typically installed with the Visual Studio build tools, but is included here for easier scripting. It may need to be updated periodically.

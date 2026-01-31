@@ -2,13 +2,21 @@
 # https://www.nuget.org/packages/Microsoft.Windows.SDK.Win32Metadata/
 
 $ErrorActionPreference = "Stop"
-Import-Module -name "$PSScriptRoot\Modules\Git-Utils.psm1"
 
-$repoRoot = Get-RepoRoot
+try {
+    Import-Module -name "$PSScriptRoot\Modules\Git-Utils.psm1" -Force
+    Import-Module -name "$PSScriptRoot\Modules\Metadata-Utils.psm1" -Force
 
-$destDir = Join-Path $repoRoot "metadata"
+    $repoRoot = Get-RepoRoot
 
-& "$PSScriptRoot\Get-NuGetPackageFile.ps1" `
-    -PackageName "Microsoft.Windows.SDK.Win32Metadata" `
-    -FileExtension ".winmd" `
-    -DestDir $destDir
+    $destDir = Join-Path $repoRoot "metadata"
+
+    Get-NuGetPackageFile `
+        -PackageName "Microsoft.Windows.SDK.Win32Metadata" `
+        -FileExtension ".winmd" `
+        -DestDir $destDir | Out-Null
+}
+catch {
+    Write-Error $_.Exception.Message
+    exit 1
+}
