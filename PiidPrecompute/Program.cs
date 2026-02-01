@@ -38,16 +38,19 @@ public class Program
         
         Stopwatch stopwatch = Stopwatch.StartNew();
 
-        IEnumerable<string> closedGenericTypeSignatures = 
+        IEnumerable<string> closedGenericTypeSignatures =
             PrecomputeFromTypeRefs(reader, genericSignatureProvider, winRTSignatureProvider)
-            // .Concat(PrecomputeFromMethodParams(reader, genericSignatureProvider, winRTSignatureProvider))
+            .Concat(PrecomputeFromEvents(reader, genericSignatureProvider, winRTSignatureProvider))
+            .Concat(PrecomputeFromProperties(reader, genericSignatureProvider, winRTSignatureProvider))
+            .Concat(PrecomputeFromFields(reader, genericSignatureProvider, winRTSignatureProvider))
+            .Concat(PrecomputeFromMethodParams(reader, genericSignatureProvider, winRTSignatureProvider))
             .Distinct();
         
         File.WriteAllLines(OutputPath, closedGenericTypeSignatures);
 
         stopwatch.Stop();
 
-        Console.WriteLine($"Done! Discovered {closedGenericTypeSignatures.Count()} generic types in {stopwatch.ElapsedMilliseconds}ms ({stopwatch.Elapsed.Seconds}s)");
+        Console.WriteLine($"Done! Discovered {closedGenericTypeSignatures.Count()} generic types in {stopwatch.Elapsed.Minutes}m {stopwatch.Elapsed.Seconds}s ({stopwatch.ElapsedMilliseconds}ms)");
         Console.WriteLine($"Output written to {OutputPath}");
         
         return 0;
@@ -134,5 +137,115 @@ public class Program
                 }
             })
             .Where(str => !string.IsNullOrWhiteSpace(str));
+    }
+
+    /// <summary>
+    /// Finds all generic interface instantiations in event handler types
+    /// </summary>
+    private static IEnumerable<string> PrecomputeFromEvents(MetadataReader reader,
+        GenericSignatureTypeProvider genericSignatureProvider, WinRTSignatureTypeProvider winRTSignatureProvider)
+    {
+        return reader.TypeDefinitions
+            .Select(reader.GetTypeDefinition)
+            .SelectMany(typeDef => typeDef.GetEvents())
+            .Select(reader.GetEventDefinition)
+            .Where(eventDef => eventDef.Type.Kind is HandleKind.TypeSpecification)
+            .Select(eventDef => reader.GetTypeSpecification((TypeSpecificationHandle)eventDef.Type))
+            .Select(typeSpec =>
+            {
+                try
+                {
+                    var signature = typeSpec.DecodeSignature(winRTSignatureProvider, GenericContext.Empty);
+                    if (signature is WinRTSignature.PInterface pinterface)
+                    {
+                        var Key = typeSpec.DecodeSignature(genericSignatureProvider, new([], []));
+                        return $"{Key}: {pinterface.ComputeIid()}";
+                    }
+                    else
+                    {
+                        // Not a generic instantiation
+                        return "";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Warning: Could not decode event type spec: {ex.Message}");
+                    Debug.WriteLine(ex.StackTrace);
+                    return "";
+                }
+            })
+            .Where(str => !string.IsNullOrWhiteSpace(str));
+    }
+
+    /// <summary>
+    /// Finds all generic interface instantiations in property types
+    /// </summary>
+    private static IEnumerable<string> PrecomputeFromProperties(MetadataReader reader,
+        GenericSignatureTypeProvider genericSignatureProvider, WinRTSignatureTypeProvider winRTSignatureProvider)
+    {
+        return reader.TypeDefinitions
+            .Select(reader.GetTypeDefinition)
+            .SelectMany(typeDef => typeDef.GetProperties())
+            .Select(reader.GetPropertyDefinition)
+            .SelectMany(propDef =>
+            {
+                try
+                {
+                    var winRTSig = propDef.DecodeSignature(winRTSignatureProvider, GenericContext.Empty);
+                    var keySig = propDef.DecodeSignature(genericSignatureProvider, new([], []));
+
+                    List<string> generics = [];
+
+                    // Check if the property type itself is a generic interface
+                    if (winRTSig.ReturnType is WinRTSignature.PInterface pinterface)
+                    {
+                        generics.Add($"{keySig.ReturnType}: {pinterface.ComputeIid()}");
+                    }
+
+                    return generics;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Warning: Could not decode property signature: {ex.Message}");
+                    Debug.WriteLine(ex.StackTrace);
+                    return [];
+                }
+            });
+    }
+
+    /// <summary>
+    /// Finds all generic interface instantiations in field types
+    /// </summary>
+    private static IEnumerable<string> PrecomputeFromFields(MetadataReader reader,
+        GenericSignatureTypeProvider genericSignatureProvider, WinRTSignatureTypeProvider winRTSignatureProvider)
+    {
+        return reader.TypeDefinitions
+            .Select(reader.GetTypeDefinition)
+            .SelectMany(typeDef => typeDef.GetFields())
+            .Select(reader.GetFieldDefinition)
+            .SelectMany(fieldDef =>
+            {
+                try
+                {
+                    var winRTSig = fieldDef.DecodeSignature(winRTSignatureProvider, GenericContext.Empty);
+                    var keySig = fieldDef.DecodeSignature(genericSignatureProvider, new([], []));
+
+                    List<string> generics = [];
+
+                    // Check if the field type is a generic interface
+                    if (winRTSig is WinRTSignature.PInterface pinterface)
+                    {
+                        generics.Add($"{keySig}: {pinterface.ComputeIid()}");
+                    }
+
+                    return generics;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Warning: Could not decode field signature: {ex.Message}");
+                    Debug.WriteLine(ex.StackTrace);
+                    return [];
+                }
+            });
     }
 }

@@ -256,8 +256,8 @@ public class WinMDTypeResolver : IWinRTTypeResolver, IDisposable
                 new WinRTSignature.Guid(new System.Guid("9DE1C534-6AE1-11E0-84E1-18A905BCC53F")),
             "System.EventHandler`1" =>
                 new WinRTSignature.Guid(new System.Guid("9DE1C534-6AE1-11E0-84E1-18A905BCC53F")),
-            "Windows.Foundation.TypedEventHandler`2" => 
-                new WinRTSignature.Guid(new System.Guid("9DE1C535-6AE1-11E0-84E1-18A905BCC53F")),
+            "Windows.Foundation.TypedEventHandler`2" =>
+                new WinRTSignature.Guid(new System.Guid("9DE1C534-6AE1-11E0-84E1-18A905BCC53F")),
             "System.Runtime.InteropServices.WindowsRuntime.EventRegistrationToken" => new WinRTSignature.Struct(
                 "Windows.Foundation.EventRegistrationToken",
                 ImmutableArray.Create<WinRTSignature>(new WinRTSignature.Primitive("i8"))),
@@ -288,7 +288,37 @@ public class WinMDTypeResolver : IWinRTTypeResolver, IDisposable
                 ImmutableArray.Create<WinRTSignature>(
                     new WinRTSignature.Primitive("string"),
                     new WinRTSignature.Enum("Windows.UI.Xaml.Interop.TypeKind", new WinRTSignature.Primitive("i4")))),
-            
+
+            // IDisposable → IClosable
+            "System.IDisposable" =>
+                new WinRTSignature.Guid(new System.Guid("30D5A829-7FA4-4026-83BB-D75BAE4EA99E")),
+
+            // ICommand
+            "System.Windows.Input.ICommand" =>
+                new WinRTSignature.Guid(new System.Guid("E5AF3542-CA67-4081-995B-709DD13792DF")),
+
+            // Event handlers/delegates
+            "System.ComponentModel.PropertyChangedEventHandler" =>
+                new WinRTSignature.Guid(new System.Guid("50F19C16-0A22-4D8E-A089-1EA9951657D2")),
+            "System.Collections.Specialized.NotifyCollectionChangedEventHandler" =>
+                new WinRTSignature.Guid(new System.Guid("CA10B37C-F382-4591-8557-5E24965279B0")),
+
+            // Event args
+            "System.ComponentModel.PropertyChangedEventArgs" => new WinRTSignature.RuntimeClass(
+                "Windows.UI.Xaml.Data.PropertyChangedEventArgs",
+                new WinRTSignature.Guid(new System.Guid("4F33A9A0-5CF4-47A4-B16F-D7FAAF17457E"))),
+            "System.Collections.Specialized.NotifyCollectionChangedEventArgs" => new WinRTSignature.RuntimeClass(
+                "Windows.UI.Xaml.Interop.NotifyCollectionChangedEventArgs",
+                new WinRTSignature.Guid(new System.Guid("4CF68D33-E3F2-4964-B85E-945B4F7E2F21"))),
+
+            // Enums
+            "System.AttributeTargets" => new WinRTSignature.Enum(
+                "Windows.Foundation.Metadata.AttributeTargets",
+                new WinRTSignature.Primitive("u4")),
+            "System.Collections.Specialized.NotifyCollectionChangedAction" => new WinRTSignature.Enum(
+                "Windows.UI.Xaml.Interop.NotifyCollectionChangedAction",
+                new WinRTSignature.Primitive("i4")),
+
             _ => null!
         };
 
