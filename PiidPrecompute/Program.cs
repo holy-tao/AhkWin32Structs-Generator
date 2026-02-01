@@ -1,6 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Collections.Immutable;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using MetadataUtils;
@@ -13,6 +11,7 @@ public class Program
 {
     // TODO take these in as command-line arguments
     public static string MetadataDir = "", OutputPath = "";
+    private static readonly Lock ErrorLock = new();
 
     public static int Main(string[] args)
     {
@@ -64,6 +63,7 @@ public class Program
         GenericSignatureTypeProvider genericSignatureProvider, WinRTSignatureTypeProvider winRTSignatureProvider)
     {
         return reader.MethodDefinitions
+            .AsParallel()
             .Select(reader.GetMethodDefinition)
             .SelectMany(methodDef =>
             {
@@ -93,9 +93,12 @@ public class Program
                     string declarerName = reader.GetString(declarer.Name);
                     string methodName = reader.GetString(methodDef.Name);
 
-                    Console.Error.WriteLine(
-                        $"Warning: could not decode param(s) in method {declarerNamespace}.{declarerName}::{methodName}: {ex.Message}");
-                    Debug.WriteLine(ex.StackTrace);
+                    lock (ErrorLock)
+                    {
+                        Console.Error.WriteLine(
+                            $"Warning: could not decode param(s) in method {declarerNamespace}.{declarerName}::{methodName}: {ex.Message}");
+                        Debug.WriteLine(ex.StackTrace);
+                    }
                     return [];
                 }
             });
@@ -104,10 +107,11 @@ public class Program
     /// <summary>
     /// Finds all generic interface instantiations in interface implementations
     /// </summary>
-    private static IEnumerable<string> PrecomputeFromTypeRefs(MetadataReader reader, 
+    private static IEnumerable<string> PrecomputeFromTypeRefs(MetadataReader reader,
         GenericSignatureTypeProvider genericSignatureProvider, WinRTSignatureTypeProvider winRTSignatureProvider)
     {
         return reader.TypeDefinitions
+            .AsParallel()
             .Select(reader.GetTypeDefinition)
             .SelectMany(typeDef => typeDef.GetInterfaceImplementations())
             .Select(reader.GetInterfaceImplementation)
@@ -131,8 +135,11 @@ public class Program
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"Warning: Could not decode type spec: {ex.Message}");
-                    Debug.WriteLine(ex.StackTrace);
+                    lock (ErrorLock)
+                    {
+                        Console.Error.WriteLine($"Warning: Could not decode type spec: {ex.Message}");
+                        Debug.WriteLine(ex.StackTrace);
+                    }
                     return "";
                 }
             })
@@ -146,6 +153,7 @@ public class Program
         GenericSignatureTypeProvider genericSignatureProvider, WinRTSignatureTypeProvider winRTSignatureProvider)
     {
         return reader.TypeDefinitions
+            .AsParallel()
             .Select(reader.GetTypeDefinition)
             .SelectMany(typeDef => typeDef.GetEvents())
             .Select(reader.GetEventDefinition)
@@ -169,8 +177,11 @@ public class Program
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"Warning: Could not decode event type spec: {ex.Message}");
-                    Debug.WriteLine(ex.StackTrace);
+                    lock (ErrorLock)
+                    {
+                        Console.Error.WriteLine($"Warning: Could not decode event type spec: {ex.Message}");
+                        Debug.WriteLine(ex.StackTrace);
+                    }
                     return "";
                 }
             })
@@ -184,6 +195,7 @@ public class Program
         GenericSignatureTypeProvider genericSignatureProvider, WinRTSignatureTypeProvider winRTSignatureProvider)
     {
         return reader.TypeDefinitions
+            .AsParallel()
             .Select(reader.GetTypeDefinition)
             .SelectMany(typeDef => typeDef.GetProperties())
             .Select(reader.GetPropertyDefinition)
@@ -206,8 +218,11 @@ public class Program
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"Warning: Could not decode property signature: {ex.Message}");
-                    Debug.WriteLine(ex.StackTrace);
+                    lock (ErrorLock)
+                    {
+                        Console.Error.WriteLine($"Warning: Could not decode property signature: {ex.Message}");
+                        Debug.WriteLine(ex.StackTrace);
+                    }
                     return [];
                 }
             });
@@ -220,6 +235,7 @@ public class Program
         GenericSignatureTypeProvider genericSignatureProvider, WinRTSignatureTypeProvider winRTSignatureProvider)
     {
         return reader.TypeDefinitions
+            .AsParallel()
             .Select(reader.GetTypeDefinition)
             .SelectMany(typeDef => typeDef.GetFields())
             .Select(reader.GetFieldDefinition)
@@ -242,8 +258,11 @@ public class Program
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"Warning: Could not decode field signature: {ex.Message}");
-                    Debug.WriteLine(ex.StackTrace);
+                    lock (ErrorLock)
+                    {
+                        Console.Error.WriteLine($"Warning: Could not decode field signature: {ex.Message}");
+                        Debug.WriteLine(ex.StackTrace);
+                    }
                     return [];
                 }
             });
