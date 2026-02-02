@@ -57,7 +57,7 @@ code: |
                 SetTimer(, 0)
                 callback.Call(op.GetResults())
             }
-            else if(timeout > 0 && DateDiff(start, A_Now, "seconds") > timeout){
+            else if(timeout > 0 && DateDiff(startTime, A_Now, "seconds") > timeout){
                 SetTimer(, 0)
                 throw TimeoutError(type(op) . " timed out", , timeout)
             }
