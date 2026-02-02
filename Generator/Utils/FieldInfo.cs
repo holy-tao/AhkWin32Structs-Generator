@@ -268,6 +268,9 @@ public record FieldInfo
     }
 
     /// <summary>
+    /// Returns code for a function which can be used to marshal a pointer as an AHK object of the type that this
+    /// FieldInfo instance represents. This can then be bound to or used by a generic type.
+    /// 
     /// We don't have generics in AHK, but we can bind arguments to functions - so instead we pass around functions
     /// that return objects of the generic type. In most case this is just Call, but in some cases we need to do
     /// other work.
@@ -283,12 +286,49 @@ public record FieldInfo
             TypeName is "HSTRING" ?     // except strings (usually)
                 $"(ptr) => HSTRING({{ Value: ptr }})" :
                 $"(ptr) => IPropertyValue(ptr).Get{TypeName}()",
+        SimpleFieldKind.String => "(ptr) => HSTRING({{ Value: ptr }})",
         SimpleFieldKind.OpenGeneric => $"this.{TypeName}",      // Type comes from implementer
-        _ => HasGenericArgs ? 
+        SimpleFieldKind.Class or SimpleFieldKind.COM => HasGenericArgs ? 
             // Generic - bind generic types / getters to Call method of the type of the return value
-            $"{GetTypeDefNameNoBacktick()}.Call.Bind({GetTypeDefNameNoBacktick()}, {string.Join(", ", GenericArguments.Select(arg => arg.GetTypeAsGenericCallable()))})" :
-            GetTypeDefNameNoBacktick()
+            $"{GetTypeDefNameNoBacktick()}.Call.Bind({GetTypeDefNameNoBacktick()}, {string.Join(", ", GenericArguments.Select(arg => arg.GetTypeAsGenericCallable()))})" : 
+            GetTypeDefNameNoBacktick(),
+        _ => throw new NotSupportedException($"Cannot get generic marshaller for {Kind} {TypeName}")
     };
+
+    /// <summary>
+    /// Substitutes open generic type parameters in this FieldInfo with concrete types.
+    /// If this type or its generic arguments contain OpenGeneric kinds, replaces them
+    /// with the corresponding types from the substitution array.
+    /// </summary>
+    /// <param name="concreteTypes">Array of concrete types to substitute, indexed by generic parameter position</param>
+    /// <returns>A new FieldInfo with generics substituted, or this instance if no substitution needed</returns>
+    public FieldInfo SubstituteGenerics(ImmutableArray<FieldInfo> concreteTypes)
+    {
+        if (concreteTypes.IsEmpty)
+            return this;
+
+        // If this is an open generic parameter, substitute it directly
+        if (Kind == SimpleFieldKind.OpenGeneric)
+        {
+            if (int.TryParse(TypeName, out int index) && index < concreteTypes.Length)
+                return concreteTypes[index];
+            return this;
+        }
+
+        // If this type has generic arguments, recursively substitute them
+        if (GenericArguments.Length > 0)
+        {
+            var substitutedArgs = GenericArguments
+                .Select(arg => arg.SubstituteGenerics(concreteTypes))
+                .ToImmutableArray();
+
+            // Only create a new FieldInfo if something actually changed
+            if (!substitutedArgs.SequenceEqual(GenericArguments))
+                return this with { GenericArguments = substitutedArgs };
+        }
+
+        return this;
+    }
 
     [MemberNotNull(nameof(Reader), nameof(TypeDef))]
     public string GetTypeDefName()
@@ -344,6 +384,12 @@ public record FieldInfo
         return AhkStruct.Get(Reader, TypeDef.Value) ?? throw new TypeAccessException($"Could not resolve '{GetTypeDefFqn()}'");
     }
 
+    /// <summary>
+    /// Gets the canonical Windows Runtime type signature of the type represented by the FieldInfo. Note that generics
+    /// must be substituted before doing this. This signature can then be used to look up generated piids.
+    /// </summary>
+    /// <returns></returns>
+    /// <exception cref="NotSupportedException"></exception>
     public string GetFullTypeSignature()
     {
         switch(Kind)
@@ -380,6 +426,12 @@ public record FieldInfo
 
     private static Dictionary<PrimitiveTypeCode, FieldInfo> _primitiveCache = [];
 
+    /// <summary>
+    /// Creates a FieldInfo for a primitive type, or returns an existing instance. Primitives are cached because
+    /// they're so common.
+    /// </summary>
+    /// <param name="primitiveTypeCode"></param>
+    /// <returns></returns>
     public static FieldInfo Primitive(PrimitiveTypeCode primitiveTypeCode)
     {
         if(_primitiveCache.TryGetValue(primitiveTypeCode, out FieldInfo? cached))

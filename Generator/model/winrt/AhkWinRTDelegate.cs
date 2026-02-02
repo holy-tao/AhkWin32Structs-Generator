@@ -18,7 +18,7 @@ class AhkWinRTDelegate : AhkComInterface
         BaseInterface = (baseReader, baseReader.GetTypeDefinition(hDef));
 
         Properties.Clear();
-        VTableOffset = 2;
+        VTableOffset = 3;
         Methods.RemoveAll((method) => method.Name is not "Invoke");   // Remove .ctor and anything else
         Methods.Single().VTableIndex = 3; // Invoke is the third method in the vtable, this gets thrown off by the constructor
     }
@@ -30,11 +30,6 @@ class AhkWinRTDelegate : AhkComInterface
 
         MaybeAddTypeDocumentation(sb);
         sb.AppendLine($"class {Name} extends IUnknown {{");
-
-        sb.AppendLine();
-        AppendConstructor(sb);
-        sb.AppendLine();
-        sb.AppendLine("    Call(params*) => this.Invoke(params*)"); // Make delegates callable objects
 
         BodyToAhk(sb);
 
@@ -63,33 +58,4 @@ class AhkWinRTDelegate : AhkComInterface
         
         extensions?.ForEach(ex => sb.AppendLine(GetExtensionCodeTokenized(ex)));
     }
-
-    private void AppendConstructor(StringBuilder sb)
-    {
-        sb.AppendLine(AhkCtorDocComment);
-        sb.AppendLine($"    __New({string.Join(", ", OpenGenericProperties.Append("callbackOrPtrOrImplObj, callbackCreateOptions := \"\""))}) {{");
-        sb.AppendLine($"        if(HasMethod(callbackOrPtrOrImplObj)) {{");
-        sb.AppendLine($"            callbackOrPtrOrImplObj := {{ Invoke: callbackOrPtrOrImplObj }}");
-        sb.AppendLine($"        }}");
-        if(OpenGenericProperties.Count > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine("        ; Register generic parameter types");
-            OpenGenericProperties.ForEach(prop => sb.AppendLine($"        this.{prop} := {prop}"));
-        }
-        sb.AppendLine();
-        sb.AppendLine($"        super.__New(callbackOrPtrOrImplObj, callbackCreateOptions)");
-        sb.AppendLine($"    }}");
-    }
-
-    private static readonly string AhkCtorDocComment = """
-        /**
-        * Constructor - create a new delegate instance
-        *
-        * @param {Object | Function | Number} callbackOrPtrOrImplObj callback function, pointer to the
-        *             interface to wrap, or an implementation object with an Invoke method.
-        * @param {String} callbackCreateOptions options for creating the callbacks in `callbackOrPtrOrImplObj`
-        *             is a function or implementation object.
-        */
-    """;
 }

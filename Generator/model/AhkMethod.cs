@@ -285,7 +285,7 @@ public class AhkMethod
                     SimpleFieldKind.OpenGeneric => "this." + mr.GetString(Declarer.GetGenericParameters()
                         .Select(mr.GetGenericParameter)
                         .Single(generic => generic.Index == int.Parse(arg.TypeName)).Name),
-                    _ => arg.TypeName
+                    _ => arg.GetTypeAsGenericCallable()
                 }));
             if(!string.IsNullOrEmpty(genericArgs))
                 genericArgs += ", ";
@@ -444,6 +444,19 @@ public class AhkMethod
                 referencedTypes.Add($"{freeWith.Namespace}.Apis");
             }
         }
+
+        // Add any concrete types held as generics
+        AhkParameter returnParam = outputParameter ?? parameters[0];
+        referencedTypes.AddRange(returnParam.FieldInfo.UnderlyingType?.GenericArguments
+            .SelectMany(arg => arg.GenericArguments)
+            .Concat(returnParam.FieldInfo.UnderlyingType?.GenericArguments ?? [])
+            .Where(arg => arg.Kind is SimpleFieldKind.Class or SimpleFieldKind.Struct or SimpleFieldKind.COM or SimpleFieldKind.NativeTypedef or SimpleFieldKind.Primitive)
+            .Select(arg => arg.Kind switch
+            {
+                SimpleFieldKind.Primitive or SimpleFieldKind.Struct => "Windows.Foundation.IPropertyValue",
+                _ => arg.GetTypeDefFqn()
+            }) ?? []);
+
 
         // Check HSTRINGS
         if(parameters.Any(p => p.FieldInfo.AhkType is "HSTRING" || (p.IsPtrToPrimitive && p.FieldInfo.UnderlyingType?.AhkType is "HSTRING")))

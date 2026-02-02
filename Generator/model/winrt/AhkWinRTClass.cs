@@ -38,16 +38,11 @@ class AhkWinRTClass : AhkType
     }
     """.Replace(Environment.NewLine, $"{Environment.NewLine}    ");
 
-    private static readonly string ClosableDeleteCode = """
-    __Delete() {
-        ; Note it's safe to call close multiple times, so no need to check anything
-        this.Close()
-    }
-    """.Replace(Environment.NewLine, $"{Environment.NewLine}    ");
-
     public readonly List<AhkWinRTMethod> InstanceMethods;
 
     public readonly List<AhkComProperty> InstanceProperties;
+
+    public readonly List<AhkWinRTEvent> Events;
 
     public readonly List<AhkComInterface> StaticInterfaces;
 
@@ -98,6 +93,7 @@ class AhkWinRTClass : AhkType
 
         InstanceMethods = CollectInstanceMethods();
         InstanceProperties = CollectInstanceProperties();
+        Events = CollectEvents();
 
         StaticInterfaces = CollectStaticInterfaces();
         StaticMethods = CollectStaticMethods();
@@ -131,6 +127,7 @@ class AhkWinRTClass : AhkType
 
         imports.AddRange(InstanceMethods.Select(m => $"{m.DeclaringInterfaceNamespace}.{m.DeclaringInterfaceName}"));
         imports.AddRange(StaticInterfaces.Select(iface => $"{iface.Namespace}.{iface.Name}"));
+        imports.AddRange(Events.SelectMany(evt => evt.GetReferencedTypes()));
         if(extensions?.Count > 0)
             imports.AddRange(extensions.SelectMany(ex => ex.Requirements));
 
@@ -143,6 +140,10 @@ class AhkWinRTClass : AhkType
         sb.AppendLine();
         AppendImports(sb);
         sb.AppendLine($"#Include {GetPathToBase()}Guid.ahk");
+        if(Events.Count > 0)
+        {
+            sb.AppendLine($"#Include {GetPathToBase()}WinRTEventHandler.ahk");
+        }
         sb.AppendLine();
 
         MaybeAddTypeDocumentation(sb);
@@ -193,6 +194,12 @@ class AhkWinRTClass : AhkType
                 sb.AppendLine();
             }
 
+            foreach(AhkWinRTEvent evt in Events)
+            {
+                evt.ToAhk(sb);
+                sb.AppendLine();
+            }
+
             sb.AppendLine($";@endregion Instance Properties");
             sb.AppendLine();
         }
@@ -200,6 +207,7 @@ class AhkWinRTClass : AhkType
         sb.AppendLine($";@region Instance Methods");
         ApendAhkConstructor(sb);
         sb.AppendLine();
+        AppendAhkDestructor(sb);
         foreach(AhkWinRTMethod method in InstanceMethods)
         {
             method.ToAhk(sb);
@@ -209,12 +217,6 @@ class AhkWinRTClass : AhkType
         if(IsEnumerable)
         {
             sb.AppendLine("    " + EnumCode);
-            sb.AppendLine();
-        }
-
-        if (IsClosable)
-        {
-            sb.AppendLine("    " + ClosableDeleteCode);
             sb.AppendLine();
         }
 
@@ -274,7 +276,31 @@ class AhkWinRTClass : AhkType
         }
 
         sb.AppendLine($"        super.__New(ptr)");
+
         sb.AppendLine($"    }}");
+    }
+
+    private void AppendAhkDestructor(StringBuilder sb)
+    {
+        if(!IsClosable && Events.Count == 0)
+            return;
+
+        sb.AppendLine("    __Delete() {");
+        foreach(AhkWinRTEvent evt in Events)
+        {
+            evt.AppendCleanupCode(sb);
+            sb.AppendLine();
+        }
+
+        if(IsClosable)
+        {
+            sb.AppendLine("        this.Close()");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("        super.__Delete()");
+        sb.AppendLine("    }");
+        sb.AppendLine();
     }
 
     /// <summary>
@@ -325,6 +351,35 @@ class AhkWinRTClass : AhkType
         }
 
         return properties;
+    }
+
+    private List<AhkWinRTEvent> CollectEvents()
+    {
+        List<AhkWinRTEvent> events = [];
+
+        foreach(AhkWinRTMethod method in InstanceMethods.Where(m => m.IsSpecialName && m.Name.StartsWith("add_")))
+        {
+            string normalizedName = method.Name.Split('_', 2).Last();
+            if(events.Any(e => e.Name == normalizedName))
+                continue;
+
+            FieldInfo handlerType = method.parameters.Single(p => p.SequenceNumber == 1).FieldInfo;
+
+            // Substitute open generic type parameters with concrete types from the declaring interface
+            if (method.DeclarerGenericArgs.Length > 0)
+            {
+                handlerType = handlerType.SubstituteGenerics(method.DeclarerGenericArgs);
+            }
+
+            events.Add(new AhkWinRTEvent(
+                method.DeclaringInterface, 
+                method.mr,
+                normalizedName,
+                handlerType
+                ));
+        }
+
+        return events;
     }
 
     /// <summary>
