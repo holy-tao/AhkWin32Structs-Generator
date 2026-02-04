@@ -297,6 +297,9 @@ public class WinMDTypeResolver : IWinRTTypeResolver, IDisposable
             "System.Windows.Input.ICommand" =>
                 new WinRTSignature.Guid(new System.Guid("E5AF3542-CA67-4081-995B-709DD13792DF")),
 
+            // Compiler-generated modifier types (used in C++ metadata, should be ignored)
+            "System.Runtime.CompilerServices.IsConst" => new WinRTSignature.Primitive("cinterface(IInspectable)"),
+
             // Event handlers/delegates
             "System.ComponentModel.PropertyChangedEventHandler" =>
                 new WinRTSignature.Guid(new System.Guid("50F19C16-0A22-4D8E-A089-1EA9951657D2")),
