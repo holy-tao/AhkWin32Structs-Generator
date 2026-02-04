@@ -69,25 +69,7 @@ namespace MetadataUtils
                 return mapped;
             }
 
-            switch (scope.Kind)
-            {
-                case HandleKind.ModuleReference:
-                    return "[.module  " + reader.GetString(reader.GetModuleReference((ModuleReferenceHandle)scope).Name) + "]" + name;
-
-                case HandleKind.AssemblyReference:
-                    if(reader.GetString(reference.Namespace).StartsWith("Windows"))
-                        return name;
-
-                    var assemblyReferenceHandle = (AssemblyReferenceHandle)scope;
-                    var assemblyReference = reader.GetAssemblyReference(assemblyReferenceHandle);
-                    return "[" + reader.GetString(assemblyReference.Name) + "]" + name;
-
-                case HandleKind.TypeReference:
-                    return GetTypeFromReference(reader, (TypeReferenceHandle)scope) + "/" + name;
-
-                default:
-                    return name;
-            }
+            return name;
         }
 
         public virtual string GetTypeFromSpecification(MetadataReader reader, GenericContext genericContext, TypeSpecificationHandle handle, byte rawTypeKind = 0)
