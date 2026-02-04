@@ -62,4 +62,6 @@ code: |
         if(!this.owned){
             this.Release()
         }
+
+        super.__Delete()
     }
