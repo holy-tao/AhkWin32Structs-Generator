@@ -44,6 +44,12 @@ public static class FieldSignatureDecoder
             return DecodeTypeDef(mappedType.Value.reader, mappedType.Value.handle);
         }
 
+        // Carve-out - marker type for the c++ compiler. We can safely ignore it, but we must resolve it to something
+        if(typeNamespace is "System.Runtime.CompilerServices" && typeName is "IsConst")
+        {
+            return new FieldInfo(SimpleFieldKind.Other, "Ignored");
+        }
+
         if (!string.IsNullOrWhiteSpace(typeNamespace) && !typeNamespace.StartsWith("Windows") && typeName is not "Guid")
         {
             // Non-Windows type that isn't accounted for - not necessarily a fatal error, but we should log it
