@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using MetadataUtils;
@@ -43,7 +44,7 @@ public class Program
             .Concat(PrecomputeFromProperties(reader, genericSignatureProvider, winRTSignatureProvider))
             .Concat(PrecomputeFromFields(reader, genericSignatureProvider, winRTSignatureProvider))
             .Concat(PrecomputeFromMethodParams(reader, genericSignatureProvider, winRTSignatureProvider))
-            .Distinct();
+            .ToImmutableSortedSet();
         
         File.WriteAllLines(OutputPath, closedGenericTypeSignatures);
 
