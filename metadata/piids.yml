@@ -23,6 +23,7 @@ Windows.Foundation.Collections.IIterable`1<Windows.Foundation.Collections.IKeyVa
 Windows.Foundation.Collections.IIterable`1<Windows.Foundation.Collections.IKeyValuePair`2<Windows.Win32.System.WinRT.HSTRING,Windows.Graphics.Imaging.BitmapTypedValue>>: 05f9430c-2f22-5638-aa89-8c9abcd54ff9
 Windows.Foundation.Collections.IIterable`1<Windows.Foundation.Collections.IKeyValuePair`2<Windows.Win32.System.WinRT.HSTRING,Windows.UI.Composition.ICompositionAnimationBase>>: c739c420-64b2-53f2-89b9-05906aba7cb0
 Windows.Foundation.Collections.IIterable`1<Windows.Foundation.Collections.IKeyValuePair`2<Windows.Win32.System.WinRT.HSTRING,Windows.UI.Composition.Scenes.SceneAttributeSemantic>>: a3e30221-7ca2-5a3c-a54a-378fee7369cc
+Windows.Foundation.Collections.IIterable`1<Windows.Foundation.Collections.IKeyValuePair`2<Windows.Win32.System.WinRT.HSTRING,Int32>>: a3e30221-7ca2-5a3c-a54a-378fee7369cc
 Windows.Foundation.Collections.IIterable`1<Windows.Foundation.Collections.IKeyValuePair`2<Windows.Win32.System.WinRT.HSTRING,Windows.Win32.System.WinRT.HSTRING>>: e9bdaaf0-cbf6-5c72-be90-29cbf3a1319b
 Windows.Foundation.Collections.IIterable`1<Windows.Foundation.Collections.IKeyValuePair`2<Windows.Win32.System.WinRT.HSTRING,Windows.Win32.System.WinRT.IInspectable>>: fe2f3d47-5d47-5499-8374-430c7cda0204
 Windows.Foundation.Collections.IIterable`1<Windows.Foundation.Collections.IKeyValuePair`2<Windows.Win32.System.WinRT.IInspectable,Windows.Win32.System.WinRT.IInspectable>>: 33ac68f0-1084-529a-8a17-4e7c8adb7a0c
@@ -113,6 +114,7 @@ Windows.Foundation.Collections.IMap`2<Windows.Win32.System.WinRT.HSTRING,Windows
 Windows.Foundation.Collections.IMap`2<Windows.Win32.System.WinRT.HSTRING,Windows.Storage.Streams.RandomAccessStreamReference>: e5d2ccfc-825a-5a8e-82aa-095ed5dbd5d1
 Windows.Foundation.Collections.IMap`2<Windows.Win32.System.WinRT.HSTRING,Windows.UI.Composition.ICompositionAnimationBase>: 4ba9aa1d-57ac-54de-a807-b52e689bfc04
 Windows.Foundation.Collections.IMap`2<Windows.Win32.System.WinRT.HSTRING,Windows.UI.Composition.Scenes.SceneAttributeSemantic>: 41f50f14-9a3c-5240-b042-1bff02e57028
+Windows.Foundation.Collections.IMap`2<Windows.Win32.System.WinRT.HSTRING,Int32>: 41f50f14-9a3c-5240-b042-1bff02e57028
 Windows.Foundation.Collections.IMap`2<Windows.Win32.System.WinRT.HSTRING,Windows.Win32.System.WinRT.HSTRING>: f6d1f700-49c2-52ae-8154-826f9908773c
 Windows.Foundation.Collections.IMap`2<Windows.Win32.System.WinRT.HSTRING,Windows.Win32.System.WinRT.IInspectable>: 1b0d3570-0877-5ec2-8a2c-3b9539506aca
 Windows.Foundation.Collections.IMap`2<Windows.Win32.System.WinRT.IInspectable,Windows.Win32.System.WinRT.IInspectable>: f5f69427-55ed-5512-8429-d4f6626dfcdd
