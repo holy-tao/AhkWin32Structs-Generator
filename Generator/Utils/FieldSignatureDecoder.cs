@@ -38,22 +38,21 @@ public static class FieldSignatureDecoder
     {
         string typeName = reader.GetString(td.Name).Split('`').First();
         string typeNamespace = reader.GetString(td.Namespace);
+        string? asmName = reader.GetAssemblyDefinition().GetAssemblyName().Name;
         
         if(NetTypeMappings.TryGetMappedType($"{typeNamespace}.{typeName}", out var mappedType))
         {
             return DecodeTypeDef(mappedType.Value.reader, mappedType.Value.handle);
         }
 
-        // Carve-out - marker type for the c++ compiler. We can safely ignore it, but we must resolve it to something
-        if(typeNamespace is "System.Runtime.CompilerServices" && typeName is "IsConst")
+        if(ShouldIgnoreType(asmName, typeNamespace, typeName))
         {
-            return new FieldInfo(SimpleFieldKind.Other, "Ignored");
+            return FieldInfo.Ignored;
         }
 
         if (!string.IsNullOrWhiteSpace(typeNamespace) && !typeNamespace.StartsWith("Windows") && typeName is not "Guid")
         {
             // Non-Windows type that isn't accounted for - not necessarily a fatal error, but we should log it
-            string? asmName = reader.GetAssemblyDefinition().GetAssemblyName().Name;
             Trace.TraceWarning($"Unexpected non-Windows type {asmName}!{typeNamespace}.{typeName} - generation may fail or produce incorrect results");
             Trace.TraceWarning("If possible, this type should be mapped to a Win32 or WinRT type in type-mappings.yml");
         }
@@ -89,6 +88,34 @@ public static class FieldSignatureDecoder
         }
 
         throw new TypeAccessException($"Could not decode {typeNamespace}.{typeName}");
+    }
+
+    /// <summary>
+    /// Determines whether the type in question is safe to ignore. In this case, we can return some boilerplate that
+    /// doesn't matter. However, we do need to return something, as the decoder is not allowed to fail (or rather,
+    /// if it fails, generation for the current type is aborted)
+    /// </summary>
+    /// <returns></returns>
+    public static bool ShouldIgnoreType(string? asmName, string ns, string name)
+    {
+        // Marker type for the c++ compiler that shows up in function signatures where a parameter is declared const
+        if(ns is "System.Runtime.CompilerServices" && name is "IsConst")
+        {
+            return true;
+        }
+
+        // Ignore contracts some malformed contract types
+        if(asmName is "Windows.Foundation.FoundationContract" && ns is "oundationContract.winmd" && name is "ctions")
+        {
+            return true;
+        }
+
+        // Compiler-generated types, probably. These show up in WinRT XAML APIs. Anyways, nonsense and safe to ignore
+        if(asmName is "System" && $"{ns}.{name}" is "897E722F93481EB.SE64_ENCODED" or "O_QUOTING_FLAG._EXTENSION_FLAG") {
+            return true;
+        }
+
+        return false;
     }
 
     public static bool IsComInterface(MetadataReader reader, TypeDefinitionHandle handle)

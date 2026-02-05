@@ -443,4 +443,5 @@ public record FieldInfo
         _primitiveCache[primitiveTypeCode] = newFieldInfo;
         return newFieldInfo;
     }
+    public static readonly FieldInfo Ignored = new(SimpleFieldKind.Other, "Ignored");
 }

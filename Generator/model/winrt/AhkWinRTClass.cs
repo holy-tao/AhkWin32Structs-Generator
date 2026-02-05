@@ -98,7 +98,7 @@ class AhkWinRTClass : AhkType
         //  The WinRT metadata unfortunately contains .NET specific constructs like System.IEnumerable
         // which we need to filter out. They made this for CSWin32, the rest of us have to suffer
         ImplementedInterfaces = GetInterfaceImplementations()
-            .Where(i => i.GetTypeDefNamespace().StartsWith("Windows"))
+            .Where(i => i.Reader is not null && i.GetTypeDefNamespace().StartsWith("Windows"))
             .ToList();
 
         IsEnumerable = ImplementedInterfaces.Any(i => i.GetTypeDefName() is "IIterable`1");
