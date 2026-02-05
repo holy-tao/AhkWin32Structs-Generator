@@ -38,6 +38,21 @@ class AhkWinRTClass : AhkType
     }
     """.Replace(Environment.NewLine, $"{Environment.NewLine}    ");
 
+    private static readonly string IIDDocString = """
+    /**
+     * The IID of this class's default interface. This allows it to be cast using IUnknown::As like any
+     * Windows Runtime interface
+     * @type {Guid}
+     */
+    """.Replace(Environment.NewLine, $"{Environment.NewLine}    ");
+    private static readonly string DefaultInterfaceDocString = """
+    /**
+     * The default interface of is Windows Runtime class. At the ABI level, the class is really
+     * just a pointer to this interface
+     * @type {Class}
+     */
+    """.Replace(Environment.NewLine, $"{Environment.NewLine}    ");
+
     public readonly List<AhkWinRTMethod> InstanceMethods;
 
     public readonly List<AhkComProperty> InstanceProperties;
@@ -149,9 +164,23 @@ class AhkWinRTClass : AhkType
         MaybeAddTypeDocumentation(sb);
         sb.AppendLine($"class {Name} extends {(baseTypeName is "Object" ? "IInspectable" : baseTypeName)} {{");
 
-        if(StaticProperties.Count > 0)
+        if(StaticProperties.Count > 0 || ImplementedInterfaces.Count > 0)
         {
             sb.AppendLine($";@region Static Properties");
+
+            if(ImplementedInterfaces.Count > 0)
+            {
+                // Some static-only WinRT classes don't implement any interfaces
+                FieldInfo defaultInterface = ImplementedInterfaces.First();
+                string defaultInterfaceName = defaultInterface.GetTypeDefNameNoBacktick();
+                sb.AppendLine($"    {DefaultInterfaceDocString}");
+                sb.AppendLine($"    DefaultInterface => {defaultInterfaceName}");
+                sb.AppendLine();
+                sb.AppendLine($"    {IIDDocString}");
+                sb.AppendLine($"    IID => {defaultInterfaceName}.IID");
+                sb.AppendLine();
+            }
+
             foreach(AhkComProperty prop in StaticProperties)
             {
                 prop.ToAhk(sb);
