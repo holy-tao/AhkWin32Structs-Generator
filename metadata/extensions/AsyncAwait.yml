@@ -21,7 +21,7 @@ code: |
      * @returns {Generic} The result of the $Class
      */
     Await(timeout := 0, interval := 10) {
-        static info := this.As(IAsyncInfo)
+        info := this.As(IAsyncInfo)
 
         start := A_Now
         while(!info.Status) {
@@ -69,7 +69,7 @@ code: |
      * undefined behavior and will probably cause an Error.
      */
     ThrowIfFailed() {
-        static info := this.As(IAsyncInfo)
+        info := this.As(IAsyncInfo)
         if(info.ErrorCode != 0)
             throw OSError(info.ErrorCode, -1, this)
     }
