@@ -354,6 +354,7 @@ class AhkWinRTClass : AhkType
                     iface.TypeDef.Value, 
                     false, 
                     false,
+                    false,
                     iface.GenericArguments)));
         }
 
@@ -423,7 +424,8 @@ class AhkWinRTClass : AhkType
         return CustomAttributes
             .Where(c => { 
                 return c.Name is "StaticAttribute" || 
-                    (c.Name is "ActivatableAttribute" && c.Attr.FixedArguments.First().Type is "System.Type");
+                    (c.Name is "ActivatableAttribute" && c.Attr.FixedArguments.First().Type is "System.Type") ||
+                    (c.Name is "ComposableAttribute" && (uint)(c.Attr.FixedArguments[1].Value!) == 2);
             })
             .Select(c =>
             {
@@ -447,12 +449,25 @@ class AhkWinRTClass : AhkType
             .Where(c => c.Name is "ActivatableAttribute" && c.Attr.FixedArguments.First().Type is "System.Type")
             .Select(c => (string)(c.Attr.FixedArguments.First().Value ?? throw new NullReferenceException()));
 
+        var composableInterfaceNames = CustomAttributes
+            .Where(c => c.Name is "ComposableAttribute" && c.Attr.FixedArguments.First().Type is "System.Type")
+            .Select(c => (string)(c.Attr.FixedArguments.First().Value ?? throw new NullReferenceException()));
+
         return StaticInterfaces.SelectMany(iface => 
                 iface.Methods.Select(m =>
                 {
                     string ifaceFqn = $"{iface.Namespace}.{iface.Name}";
                     bool isConstructor = activatableInterfaceNames.Contains(ifaceFqn);
-                    return new AhkWinRTMethod(this, m.mr, m.methodDef, iface.typeDef, true, isConstructor, []);
+                    bool isComposableActivator = composableInterfaceNames.Contains(ifaceFqn);
+                    return new AhkWinRTMethod(
+                        this, 
+                        m.mr, 
+                        m.methodDef, 
+                        iface.typeDef, 
+                        true, 
+                        isConstructor, 
+                        isComposableActivator, 
+                        []);
                 })
             )
             .ToList();

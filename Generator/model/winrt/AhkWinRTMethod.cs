@@ -10,6 +10,7 @@ class AhkWinRTMethod : AhkMethod
     public readonly TypeDefinition DeclaringInterface;
     public readonly bool IsStatic;
     public readonly bool IsConstructor;
+    public readonly bool IsComposableActivator;
 
     /// <summary>
     /// Generic arguments for the declaring interface, if any
@@ -25,12 +26,13 @@ class AhkWinRTMethod : AhkMethod
     private readonly AhkComMethod interfaceMethod;
 
     public AhkWinRTMethod(AhkWinRTClass declarer, MetadataReader mr, MethodDefinition methodDef, TypeDefinition declaringInterface, 
-        bool isStatic, bool isConstructor, ImmutableArray<FieldInfo> declarerGenericArgs) : base(mr, methodDef)
+        bool isStatic, bool isConstructor, bool isComposableActivator, ImmutableArray<FieldInfo> declarerGenericArgs) : base(mr, methodDef)
     {
         DeclaringClass = declarer;
         DeclaringInterface = declaringInterface;
         IsStatic = isStatic;
         IsConstructor = isConstructor;
+        IsComposableActivator = isComposableActivator;
         DeclarerGenericArgs = declarerGenericArgs;
 
         OverloadName = GetOverloadName();
@@ -38,6 +40,13 @@ class AhkWinRTMethod : AhkMethod
         
         string nameForDoc = IsConstructor ? "#ctor" : (OverloadName ?? Name);
         apiDetails = DocumentationUtils.GetApiDetails($"{DeclaringClass.Fqn}.{nameForDoc.Split('`').First()}", null);
+
+        if (IsComposableActivator)
+        {
+            // We will add these back into the generated code with hardocoded inputs, they should be invisible
+            // to consumers
+            parameters.RemoveAll(p => p.Name is "baseInterface" or "innerInterface");
+        }
     }
 
     private string? GetOverloadName()
@@ -120,6 +129,13 @@ class AhkWinRTMethod : AhkMethod
         sb.AppendLine($"            {DeclaringClass.Name}.__{DeclaringInterfaceName} := {DeclaringInterfaceName}(factoryPtr)");
         sb.AppendLine($"        }}");
         sb.AppendLine();
+
+        if(IsComposableActivator)
+        {
+            argList = string.IsNullOrWhiteSpace(argList) ? 
+                "0, Buffer(A_PtrSize)" :
+                string.Join(", ", argList, "0", "Buffer(A_PtrSize)");
+        }
         sb.AppendLine($"        return {DeclaringClass.Name}.__{DeclaringInterfaceName}.{interfaceMethod.GetDeduplicatedName()}({argList})");
         sb.AppendLine("    }");
     }
