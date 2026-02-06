@@ -140,6 +140,10 @@ class AhkWinRTClass : AhkType
                 .Select(info => info.GetTypeDefFqn()));
         }
 
+        // Add default interface, if any
+        if(ImplementedInterfaces.Count > 0)
+            imports.Add(ImplementedInterfaces.First().GetTypeDefFqn().Split("`").First());
+
         imports.AddRange(InstanceMethods.Select(m => $"{m.DeclaringInterfaceNamespace}.{m.DeclaringInterfaceName}"));
         imports.AddRange(StaticInterfaces.Select(iface => $"{iface.Namespace}.{iface.Name}"));
         imports.AddRange(Events.SelectMany(evt => evt.GetReferencedTypes()));
