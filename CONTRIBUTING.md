@@ -70,34 +70,61 @@ Extensions are custom code added to generated types. Extensions can be added to 
 > [!Important]
 > You must add tests for extension methods in the bindings project in addition to the extension definition files here.
 
-Extensions are defined in [YAML](https://yaml.org/) files. The generator will read files in the [/extensions](./metadata/extensions/) subdirectory of whichever directory is passed in as its metadata directory with the extensions `.yml` and `.yaml`. The file format is as follows (example is a snippet of the [RECT / RECTL](./metadata/RECT.yml) extension definition):
+Extensions run the gamut from nifty helpers (see [`COLORREF`](./metadata/extensions/COLORREF.yml)) to core parts of the projection - the [code](./metadata/extensions/IIterator.yml) that makes `IIterator` objects iterable in native AHK for-loops lives in an extension file, as do `IUnknown::As` (a core utilty that enables casting between interfaces and WinRT classes) and the core [`BSTR`](./metadata/extensions/BSTR.yml) and [`HSTRING`](./metadata/extensions/HSTRING.yml) methods. As such, some parts of the generator rely on extensions to be in place, and other extensions may rely on each other. All this to say, extension changes are code changes and must be tested.
+
+#### Writing Extensions 
+
+Extensions are defined in [YAML](https://yaml.org/) files. The generator will read files in the [/extensions](./metadata/extensions/) subdirectory of whichever directory is passed in as its metadata directory with the extensions `.yml` and `.yaml`. The definition has three parts:
+
+| Name | Type | Description |
+| ---- | ---- | ----------- |
+| `add-to` | sequence | The fully qualified names of all types to which code must be added
+| `requires` | sequence | The fully qualified names of all types which must be included in generated files for the extension to work. This should include all types required by your extension, even if the types it extends already include them, as this may change in the future. The generator will not produce duplicate `#Include` statements. <br><br>To indicate that *nothing* needs to be imported, specify an empty sequence: `[]`.
+| `code` | string | The actual code to add to the class. Oftentimes this can be written directly into the relevant file and copy/pasted into extension YAML without modification. This code is added to the end of the files specified in `add-to` without modification. <br><br> See [yaml multiline strings](https://yaml-multiline.info/) for details on the syntax, or just use the pipe (`\|`) and don't worry about it. 
+
+A single extension file can only include one extension definition, though said definition can apply to as many types as you want. Note it is not currently possible to add extensions to nested structs or to extend existing methods like `__New`.
+
+<details>
+
+<summary>Example: the extension for AsyncAction / Operation Await()</summary>
+
 ```yaml
-# Fully qualified names of types to which the extensions should be added, not including 
-# backtick arity
 add-to:
-  - Windows.Win32.Foundation.RECT
-  - Windows.Win32.Foundation.RECTL
-
-# Fully qualified names of types for which #Include directives must be added
-# The generator will resolve these to relative paths when it runs
-requires:
-  - Windows.Win32.Graphics.Gdi.Apis
-  - Windows.Win32.Foundation.POINT
-
-# The code to add to the generated type. Code is added to the body of the generated class
+  - Windows.Foundation.IAsyncAction
+  - Windows.Foundation.IAsyncActionWithProgress
+  - Windows.Foundation.IAsyncOperation
+  - Windows.Foundation.IAsyncOperationWithProgress
+requires: 
+  - Windows.Foundation.IAsyncInfo
 code: |
-    height => this.top - this.bottom
+    /**
+     * Synchronously waits until the $Class is complete. Best for actions that you expect to complete very
+     * quickly or which *must* finish before some other action can continue.
+     *
+     * @param {Integer} timeout If greater than zero, the maximum number of seconds to wait
+     * @param {Integer} interval The number of milliseconds to wait between checks (default: 10)
+     * @returns {Generic} The result of the $Class
+     */
+    Await(timeout := 0, interval := 10) {
+        info := this.As(IAsyncInfo)
 
-    width => this.right - this.left
+        start := A_Now
+        while(!info.Status) {
+            if(timeout > 0 && DateDiff(start, A_Now, "seconds") > timeout) {
+                throw TimeoutError(type(this) " timed out", -1, timeout)
+            }
+            sleep(10)
+        }
 
-    area => this.width * this.height
-
-    ...
+        return this.GetResults()
+    }
 ```
+
+</details>
 
 #### Aliases
 The generator suports the following aliases, using the `$Name` convention (like bash or PowerShell - this is because `%%` is valid AHK syntax and would make parsing a nightmare). All aliases are case-sensitive:
-- `$Class`: the name of the class to which the extensions are being added
+- `$Class`: the name of the class to which the extensions are being added. This can be used for documentation, or to access the static members of the class on which the type is being added.
 
 ## Maintenance
 
