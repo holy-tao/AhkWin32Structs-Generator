@@ -11,6 +11,7 @@ add-to:
   - Windows.Foundation.IAsyncOperationWithProgress
 requires: 
   - Windows.Foundation.IAsyncInfo
+  - Windows.Foundation.AsyncStatus
 code: |
     /**
      * Synchronously waits until the $Class is complete. Best for actions that you expect to complete very
@@ -24,13 +25,14 @@ code: |
         info := this.As(IAsyncInfo)
 
         start := A_Now
-        while(!info.Status) {
+        while(info.Status == AsyncStatus.Started) {
             if(timeout > 0 && DateDiff(start, A_Now, "seconds") > timeout) {
                 throw TimeoutError(type(this) " timed out", -1, timeout)
             }
             sleep(10)
         }
 
+        this.ThrowIfFailed()
         return this.GetResults()
     }
 
@@ -39,7 +41,8 @@ code: |
      * long-running operations or operations whose results you don't need immediate access to.
      *
      * @param {Func(Generic) => Any} callback The function to call when the operation finishes. The function
-     *      is called with the result of the $Class appended to its parameter list
+     *      is called with the $Class appended to its parameter list. Note that the operation may have failed; the
+     *      callback should check its status before accessing any other information.
      * @param {Integer} Timeout If greater than zero, the number of seconds to wait (default: 0)
      * @param {Integer} Interval the number of milliseconds between polling attempts (default: 250)
      * @returns {Func} A reference to the timer function created, which can be used to cancel it.
@@ -53,9 +56,9 @@ code: |
         return callbackFunc
 
         Poll(op, info, startTime, timeout, callback) {
-            if(info.Status){
+            if(info.Status != AsyncStatus.Started){
                 SetTimer(, 0)
-                callback.Call(op.GetResults())
+                callback.Call(op)
             }
             else if(timeout > 0 && DateDiff(startTime, A_Now, "seconds") > timeout){
                 SetTimer(, 0)
@@ -65,11 +68,17 @@ code: |
     }
 
     /**
-     * If the async action errored out, throws an OSError. Calling this method before the action has completed is
-     * undefined behavior and will probably cause an Error.
+     * Throws an error if the status of the $Class is `Cancelled` or `Error`.
      */
     ThrowIfFailed() {
         info := this.As(IAsyncInfo)
-        if(info.ErrorCode != 0)
-            throw OSError(info.ErrorCode, -1, this)
+        switch(info.Status) {
+            case AsyncStatus.Canceled:
+                throw Error("$Class was cancelled")
+            case AsyncStatus.Error:
+                err := OSError(info.ErrorCode)
+                if(err.message == "")
+                    err.message := "$Class failed"
+                throw err
+        }
     }
