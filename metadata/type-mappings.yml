@@ -33,10 +33,10 @@ System.Exception:
   Assembly: Windows.Win32
   Namespace: Windows.Win32.Foundation
   Name: HRESULT
-System.IDIsposable: 
+System.IDisposable: 
   Assembly: Windows
   Namespace: Windows.Foundation
-  Name: IDisposable
+  Name: IClosable
 System.Nullable:
   Assembly: Windows
   Namespace: Windows.Foundation
