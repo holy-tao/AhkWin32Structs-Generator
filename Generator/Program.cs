@@ -59,12 +59,16 @@ public class Program
 
         Trace.TraceInformation("Generating bindings...");
 
+        // Keep PEReaders alive to prevent corruption of MetadataReaders
+        List<PEReader> peReaders = new();
+
         int total = 0, errors = 0;
         foreach(FileStream fileStream in winmdFiles)
         {
             PEReader peReader = new(fileStream);
+            peReaders.Add(peReader); // Keep alive to prevent GC
             MetadataReader reader = peReader.GetMetadataReader();
-            
+
             // Pull version info
             AssemblyName assemblyName = reader.GetAssemblyDefinition().GetAssemblyName();
             versionInfo.AppendLine($"{assemblyName.Name?.TrimEnd(".winmd")} = {assemblyName.Version}");

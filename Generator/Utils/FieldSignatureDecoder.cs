@@ -7,8 +7,9 @@ public static class FieldSignatureDecoder
 {
     /// <summary>
     /// Cache for loaded external (non-Win32Metadata) assemblies
+    /// Stores PEReader to keep it alive (PEReader owns the stream and will keep it alive)
     /// </summary>
-    private static readonly Dictionary<string, MetadataReader> _assemblyReaders = [];
+    private static readonly Dictionary<string, (PEReader peReader, MetadataReader metadataReader)> _assemblyReaders = [];
 
     private static readonly Dictionary<(string ns, string name), (MetadataReader reader, TypeDefinitionHandle handle)> _typeCache = [];
 
@@ -105,10 +106,10 @@ public static class FieldSignatureDecoder
         }
 
         // Ignore contracts some malformed contract types
-        if(asmName is "Windows.Foundation.FoundationContract" && ns is "oundationContract.winmd" && name is "ctions")
-        {
-            return true;
-        }
+        // if(asmName is "Windows.Foundation.FoundationContract" && ns is "oundationContract.winmd" && name is "ctions")
+        // {
+        //    return true;
+        // }
 
         // Compiler-generated types, probably. These show up in WinRT XAML APIs. Anyways, nonsense and safe to ignore
         if(asmName is "System" && $"{ns}.{name}" is "897E722F93481EB.SE64_ENCODED" or "O_QUOTING_FLAG._EXTENSION_FLAG") {
@@ -297,7 +298,7 @@ public static class FieldSignatureDecoder
     public static (MetadataReader reader, TypeDefinition typeDef) ResolveTypeReference(MetadataReader reader, TypeReferenceHandle trHandle)
     {
         TypeDefinitionHandle hFound = ResolveTypeReference(reader, trHandle, out var foundReader);
-        return (foundReader, reader.GetTypeDefinition(hFound));
+        return (foundReader, foundReader.GetTypeDefinition(hFound));
     }
 
     /// <summary>
@@ -309,8 +310,10 @@ public static class FieldSignatureDecoder
     public static MetadataReader LoadAssemblyReader(string assemblyName)
     {
         assemblyName = assemblyName.TrimEnd(".winmd").TrimEnd(".dll");
-        if (_assemblyReaders.TryGetValue(assemblyName, out MetadataReader? cached))
-            return cached;
+        if (_assemblyReaders.TryGetValue(assemblyName, out var cached))
+        {
+            return cached.metadataReader;
+        }
 
         string baseDir = AppContext.BaseDirectory;
 
@@ -402,12 +405,17 @@ public static class FieldSignatureDecoder
 
         if (!string.IsNullOrWhiteSpace(found))
         {
-            PEReader peReader = new(File.OpenRead(found));
-            var reader = peReader.GetMetadataReader();
+            // PEReader takes ownership of the stream, so we only need to keep PEReader alive
+            FileStream fileStream = File.OpenRead(found);
+            PEReader peReader = new(fileStream);
+            MetadataReader reader = peReader.GetMetadataReader();
 
-            _assemblyReaders[assemblyName.TrimEnd(".winmd").TrimEnd(".dll")] = reader;
+            // Cache PEReader to keep it (and its owned stream) alive
+            _assemblyReaders[assemblyName.TrimEnd(".winmd").TrimEnd(".dll")] = (peReader, reader);
 
             Trace.TraceInformation($"Loaded assembly '{assemblyName}' from '{found}'");
+            Trace.TraceInformation($"  File path: {found}");
+            Trace.TraceInformation($"  Assembly def name: {reader.GetAssemblyDefinition().GetAssemblyName().Name}");
             return reader;
         }
         
@@ -417,6 +425,7 @@ public static class FieldSignatureDecoder
 
     /// <summary>
     /// Register a metadata reader that was loaded by another process
+    /// Note: This should only be used for assemblies loaded in the main loop where the PEReader is kept alive externally
     /// </summary>
     /// <param name="asmName"></param>
     /// <param name="reader"></param>
@@ -425,7 +434,9 @@ public static class FieldSignatureDecoder
         asmName = asmName.TrimEnd(".winmd").TrimEnd(".dll");
         if (!_assemblyReaders.ContainsKey(asmName))
         {
-            _assemblyReaders[asmName] = reader;
+            // For externally-loaded assemblies, we assume the caller keeps the PEReader alive
+            // Store null for PEReader since we don't own it
+            _assemblyReaders[asmName] = (null!, reader);
         }
     }
 
