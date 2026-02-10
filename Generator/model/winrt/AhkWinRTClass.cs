@@ -179,7 +179,7 @@ class AhkWinRTClass : AhkType
                 FieldInfo defaultInterface = ImplementedInterfaces.First();
                 string defaultInterfaceName = defaultInterface.GetTypeDefNameNoBacktick();
                 sb.AppendLine($"    {DefaultInterfaceDocString}");
-                sb.AppendLine($"    DefaultInterface => {defaultInterfaceName}");
+                sb.AppendLine($"    WinRTDefaultInterface => {defaultInterfaceName}");
                 sb.AppendLine();
                 sb.AppendLine($"    {IIDDocString}");
                 sb.AppendLine($"    IID => {defaultInterfaceName}.IID");
