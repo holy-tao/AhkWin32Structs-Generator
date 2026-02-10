@@ -330,6 +330,9 @@ public record FieldInfo
         return this;
     }
 
+    public IEnumerable<FieldInfo> CollectGenerics() =>
+        GenericArguments.Concat(GenericArguments.SelectMany(arg => arg.CollectGenerics()));
+
     [MemberNotNull(nameof(Reader), nameof(TypeDef))]
     public string GetTypeDefName()
     {

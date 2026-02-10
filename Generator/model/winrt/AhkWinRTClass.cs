@@ -135,7 +135,7 @@ class AhkWinRTClass : AhkType
         {
             imports.Add("Windows.Foundation.IPropertyValue");   // Required for boxing / unboxing generics
             imports.AddRange(ImplementedInterfaces
-                .SelectMany(iface => iface.GenericArguments)
+                .SelectMany(iface => iface.CollectGenerics())
                 .Where(info => info.Kind is not (SimpleFieldKind.OpenGeneric or SimpleFieldKind.Primitive or SimpleFieldKind.String))
                 .Select(info => info.GetTypeDefFqn())
                 .Where(fqn => fqn is not "System.Guid"));       // Guid is a Special snowflake, as usual

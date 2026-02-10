@@ -387,9 +387,7 @@ public class AhkMethod
     }
 
     /// <summary>
-    /// Get a list of the types referenced in the method - this is currently only the 
-    /// LibraryLoader and Foundations APIs for ordinal methods, but in the future might
-    /// be e.g. return values.
+    /// Get a list of the types referenced in the method which will need to be #Included
     /// </summary>
     /// <returns></returns>
     public List<string> GetReferencedTypes()
@@ -445,25 +443,27 @@ public class AhkMethod
             }
         }
 
-        // Add any concrete types held as generics
-        AhkParameter returnParam = outputParameter ?? parameters[0];
-        referencedTypes.AddRange(returnParam.FieldInfo.UnderlyingType?.GenericArguments
-            .SelectMany(arg => arg.GenericArguments)
-            .Concat(returnParam.FieldInfo.UnderlyingType?.GenericArguments ?? [])
-            .Where(arg => arg.Kind is SimpleFieldKind.Class or SimpleFieldKind.Struct or SimpleFieldKind.COM or SimpleFieldKind.NativeTypedef or SimpleFieldKind.Primitive)
-            .Select(arg => arg.Kind switch
-            {
-                SimpleFieldKind.Primitive or SimpleFieldKind.Struct => "Windows.Foundation.IPropertyValue",
-                _ => arg.GetTypeDefFqn()
-            }) ?? []);
+        AhkParameter fnRetVal = outputParameter ?? parameters[0];
 
+        // Add all concrete generics referenced in this type or its generic arguments, recursively
+        foreach (FieldInfo generic in fnRetVal.FieldInfo.UnderlyingType?.CollectGenerics() ?? [])
+        {
+            if(generic.Kind is SimpleFieldKind.Class or SimpleFieldKind.Struct or 
+                SimpleFieldKind.COM or SimpleFieldKind.NativeTypedef or SimpleFieldKind.Primitive)
+            {
+                referencedTypes.Add(generic.Kind switch {
+                    // Always boxed as IPropertyValues in WinRT
+                    SimpleFieldKind.Primitive or SimpleFieldKind.Struct => "Windows.Foundation.IPropertyValue",
+                    _ => generic.GetTypeDefFqn()
+                });
+            }
+        }
 
         // Check HSTRINGS
         if(parameters.Any(p => p.FieldInfo.AhkType is "HSTRING" || (p.IsPtrToPrimitive && p.FieldInfo.UnderlyingType?.AhkType is "HSTRING")))
             referencedTypes.Add("Windows.Win32.System.WinRT.HSTRING");
 
         // Check for Objects - they're IInspectables
-        AhkParameter fnRetVal = outputParameter ?? parameters[0];
         if (fnRetVal.IsPrimitive && fnRetVal.FieldInfo.TypeName is "Object")
             referencedTypes.Add("Windows.Win32.System.WinRT.IInspectable");
 
