@@ -137,7 +137,8 @@ class AhkWinRTClass : AhkType
             imports.AddRange(ImplementedInterfaces
                 .SelectMany(iface => iface.GenericArguments)
                 .Where(info => info.Kind is not (SimpleFieldKind.OpenGeneric or SimpleFieldKind.Primitive or SimpleFieldKind.String))
-                .Select(info => info.GetTypeDefFqn()));
+                .Select(info => info.GetTypeDefFqn())
+                .Where(fqn => fqn is not "System.Guid"));       // Guid is a Special snowflake, as usual
         }
 
         // Add default interface, if any
