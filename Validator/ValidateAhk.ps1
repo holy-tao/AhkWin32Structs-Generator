@@ -45,10 +45,12 @@ foreach($file in $ahkFiles){
     $proc.WaitForExit()
 
     if (-not [string]::IsNullOrWhiteSpace($stdout)) {
+        Write-Output "Warning parsing $($file):"
         Write-Output $stdout
     }
     if (-not [string]::IsNullOrWhiteSpace($stderr)) {
         # Write-Error prints a stack, which I don't want
+        $Host.UI.WriteErrorLine("Error parsing $($file):")
         $Host.UI.WriteErrorLine($stderr)
     }
 

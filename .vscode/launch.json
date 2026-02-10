@@ -15,15 +15,56 @@
             "console": "internalConsole"
         },
         {
-            "name": "Validate Generated AutoHotkey Syntax",
+            "name": "Validate AHK (All)",
             "type": "PowerShell",
             "request": "launch",
             "script": "${workspaceFolder}/Validator/ValidateAhk.ps1",
             "args": [
                     "-AhkExePath", "\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe\"",
-                    "-Directory", "\"${workspaceFolder}\\ahk\\Windows\"",
+                    "-Directory", "\"${workspaceFolder}\\AhkWin32Projection\\Windows\"",
                 ],
             "cwd": "${cwd}"
+        },
+        {
+            "name": "Validate AHK (Win32)",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/Validator/ValidateAhk.ps1",
+            "args": [
+                    "-AhkExePath", "\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe\"",
+                    "-Directory", "\"${workspaceFolder}\\AhkWin32Projection\\Windows\\Win32\"",
+                ],
+            "cwd": "${cwd}"
+        },
+        {
+            "name": "Validate AHK (WDK)",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/Validator/ValidateAhk.ps1",
+            "args": [
+                    "-AhkExePath", "\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe\"",
+                    "-Directory", "\"${workspaceFolder}\\AhkWin32Projection\\Windows\\WDK\"",
+                ],
+            "cwd": "${cwd}"
+        },
+        {
+            "name": "Validate AHK (By subdirectory)",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/Validator/ValidateAhk.ps1",
+            "args": [
+                    "-AhkExePath", "\"C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe\"",
+                    "-Directory", "\"${workspaceFolder}\\AhkWin32Projection\\Windows\\${input:validationDirectory}\"",
+                ],
+            "cwd": "${cwd}"
+        }
+    ],
+    "inputs": [
+        {
+        "id": "validationDirectory",
+        "type": "promptString",
+        "description": "Enter the subdirectory of the \\Windows directory containing AHK scripts to validate (e.g. \"Networking\"",
+        "default": "Foundation"
         }
     ]
 }
