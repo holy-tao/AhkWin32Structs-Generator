@@ -239,7 +239,8 @@ class AhkConstant
         }
         else if (IsStruct)
         {
-            return fieldInfo.AhkType;
+            // Use ResolvedAhkType to ensure type references match actual class names
+            return fieldInfo.ResolvedAhkType;
         }
         else
         {

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Text;
@@ -5,10 +6,18 @@ using Microsoft.Windows.SDK.Win32Docs;
 
 public abstract class AhkType : IAhkEmitter
 {
-    // List of globally-defined names in AutoHotkey that we must check for conflics. Most of these words
-    // are also reserved in other languages so it's a non-issue, but at least string has a conflict with a
-    // kernel struct
-    private static readonly List<string> globalReservedNames = ["string", "number", "float", "integer"];
+
+    /// <summary>
+    /// List of top-level AutoHotkey built-in class names, to prevent collisions.
+    /// See <a href="https://www.autohotkey.com/docs/v2/ObjList.htm">Built-in Classes</a> in the AHK docs
+    /// </summary>
+    public static readonly ImmutableArray<string> BuiltinClassNames = [
+        "Any", "Object", "Array", "Buffer", "ClipboardAll", "Class", "Error", "MemoryError", "OSError", "TargetError", 
+        "TimeoutError", "TypeError", "UnsetError", "MemberError", "PropertyError", "MethodError", "UnsetItemError", 
+        "ValueError", "IndexError", "ZeroDivisionError", "File", "Func", "BoundFunc", "Closure", "Enumerator", "Gui",
+        "InputHook", "Map", "Menu", "MenuBar", "RegExMatchInfo", "Primitive", "Number", "Float", "Integer", "String",
+        "VarRef", "ComValue", "ComObjArray", "ComObject", "ComValueRef"
+    ];
 
     public readonly MetadataReader mr;
     public readonly TypeDefinition typeDef;
@@ -17,19 +26,27 @@ public abstract class AhkType : IAhkEmitter
 
     private protected readonly List<AhkExtension>? extensions;
 
+    /// <summary>
+    /// The original type name from metadata without conflict resolution
+    /// </summary>
+    public string MetadataName => mr.GetString(typeDef.Name)
+        .TrimEnd("_e__Struct")
+        .Split('`').First();
+
     public virtual string Name
     {
         get
         {
-            string candidate = mr.GetString(typeDef.Name)
-                .TrimEnd("_e__Struct")
-                .Split('`').First();
-            if (globalReservedNames.Contains(candidate, StringComparer.CurrentCultureIgnoreCase))
+            string candidate = MetadataName;
+            string resolved = TypeNameResolver.ResolveConflict(candidate, IsWinRT);
+
+            if (candidate != resolved)
             {
-                candidate = "Win32" + candidate;
+                System.Diagnostics.Trace.TraceInformation(
+                    $"Name conflict resolved: {Namespace}.{candidate} → {resolved}");
             }
 
-            return candidate;
+            return resolved;
         }
     }
 
@@ -102,9 +119,8 @@ public abstract class AhkType : IAhkEmitter
     public string GetDesiredFilepath(string root)
     {
         string namespacePath = Path.Join(Namespace.Split("."));
-        string canonicalName = mr.GetString(typeDef.Name).Split('`').First();
-
-        return Path.Join(root, namespacePath, $"{canonicalName}.ahk");
+        // Use Name property to ensure filename matches class name (with conflict resolution)
+        return Path.Join(root, namespacePath, $"{Name}.ahk");
     }
 
     protected virtual void AppendImports(StringBuilder sb)
@@ -113,7 +129,11 @@ public abstract class AhkType : IAhkEmitter
         {
             List<string> parts = [.. import.Split(".")];
             string importNamespace = string.Join(".", parts[0..^1]);    // All but last
-            string importName = parts.Last().Split('`').First();
+            string rawImportName = parts.Last().Split('`').First();
+
+            // Apply same conflict resolution as Name property to ensure #Include matches actual filename
+            bool isImportWinRT = TypeNameResolver.IsWinRTNamespace(importNamespace);
+            string importName = TypeNameResolver.ResolveConflict(rawImportName, isImportWinRT);
 
             string sbPath = AhkStruct.RelativePathBetweenNamespaces(Namespace, importNamespace);
             sb.AppendLine($"#Include {sbPath}{importName}.ahk");

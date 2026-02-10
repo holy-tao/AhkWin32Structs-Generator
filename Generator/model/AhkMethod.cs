@@ -586,7 +586,8 @@ public class AhkMethod
             if (param.Reserved || param == outputParameter)
                 continue;
 
-            string typeNote = param.IsComOutPtr ? $"Pointer<{param.FieldInfo.AhkType}>" : param.FieldInfo.AhkType;
+            // Use ResolvedAhkType to ensure type references match actual class names
+            string typeNote = param.IsComOutPtr ? $"Pointer<{param.FieldInfo.ResolvedAhkType}>" : param.FieldInfo.ResolvedAhkType;
             sb.Append($"     * @param {{{typeNote}}} {param.Name} ");
 
             // Add docstring if available. Param name may have an underscore appended if it conflicts with a reserved
@@ -603,9 +604,10 @@ public class AhkMethod
             if (outputParameter != null)
             {
                 AhkParameter param = outputParameter.Value;
-                string? actualValueName = param.IsPtr ? param.FieldInfo.UnderlyingType?.AhkType : param.FieldInfo.AhkType;
+                // Use ResolvedAhkType to ensure type references match actual class names
+                string? actualValueName = param.IsPtr ? param.FieldInfo.UnderlyingType?.ResolvedAhkType : param.FieldInfo.ResolvedAhkType;
                 actualValueName = param.IsComOutPtr? $"Pointer<{actualValueName}>" : actualValueName;
-                
+
                 sb.Append($"     * @returns {{{actualValueName}}} ");
                 if (apiDetails?.Parameters.TryGetValue(param.Name, out string? docString) ?? false)
                 {
@@ -615,7 +617,8 @@ public class AhkMethod
             }
             else
             {
-                sb.AppendLine($"     * @returns {{{parameters[0].FieldInfo.AhkType}}} {AhkType.EscapeDocs(apiDetails?.ReturnValue, "    ")}");
+                // Use ResolvedAhkType to ensure type references match actual class names
+                sb.AppendLine($"     * @returns {{{parameters[0].FieldInfo.ResolvedAhkType}}} {AhkType.EscapeDocs(apiDetails?.ReturnValue, "    ")}");
             }
         }
         else

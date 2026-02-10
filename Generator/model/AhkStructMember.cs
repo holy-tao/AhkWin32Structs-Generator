@@ -217,7 +217,8 @@ public class AhkStructMember
             sb.AppendLine($"     * @deprecated {message}");
         }
 
-        sb.AppendLine($"     * @type {{{(fieldInfo.Kind == SimpleFieldKind.Struct ? embeddedStruct?.Name : fieldInfo.AhkType)}}}");
+        // Use ResolvedAhkType to ensure type references match actual class names (with conflict resolution)
+        sb.AppendLine($"     * @type {{{(fieldInfo.Kind == SimpleFieldKind.Struct ? embeddedStruct?.Name : fieldInfo.ResolvedAhkType)}}}");
         sb.AppendLine("     */");
     }
 

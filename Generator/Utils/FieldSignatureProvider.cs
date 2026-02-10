@@ -131,8 +131,9 @@ public sealed class FieldSignatureProvider : ISignatureTypeProvider<FieldInfo, G
 
     public FieldInfo GetFunctionPointerType(MethodSignature<FieldInfo> signature)
     {
-        string paramStr = string.Join(", ", signature.ParameterTypes.Select(p => p.AhkType));
-        return new(SimpleFieldKind.Pointer, $"Function Pointer: ({paramStr}) => {signature.ReturnType.AhkType}");
+        // Use ResolvedAhkType to ensure type references match actual class names
+        string paramStr = string.Join(", ", signature.ParameterTypes.Select(p => p.ResolvedAhkType));
+        return new(SimpleFieldKind.Pointer, $"Function Pointer: ({paramStr}) => {signature.ReturnType.ResolvedAhkType}");
     }
 
     public FieldInfo GetPrimitiveType(SignatureTypeCode typeCode)

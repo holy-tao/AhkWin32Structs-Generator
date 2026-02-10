@@ -99,7 +99,8 @@ record class AhkWinRTEvent
                 sb.AppendLine("     * @remarks");
                 sb.AppendLine("     * " + AhkType.EscapeDocs(apiDetails.Remarks, "    "));
             }
-            sb.AppendLine($"     * @type {{{HandlerType.AhkType}}}");
+            // Use ResolvedAhkType to ensure type references match actual class names
+            sb.AppendLine($"     * @type {{{HandlerType.ResolvedAhkType}}}");
             sb.AppendLine("    */");
         }
     }

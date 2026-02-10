@@ -281,17 +281,18 @@ public record FieldInfo
     {
         // Object is just IInspectable, all other primitives and structs are boxed in IPropertyValue, which we can use to unbox them
         // This generator won't work for the Get*Array methods. None appear in WinRT, but worth noting
-        SimpleFieldKind.Primitive or SimpleFieldKind.Struct => TypeName.ToLower() is "object" ? 
+        SimpleFieldKind.Primitive or SimpleFieldKind.Struct => TypeName.ToLower() is "object" ?
             "IInspectable" :            // non-object Objects are boxed as PropertyValues...
             TypeName is "HSTRING" ?     // except strings (usually)
                 $"(ptr) => HSTRING({{ Value: ptr }})" :
                 $"(ptr) => IPropertyValue(ptr).Get{TypeName}()",
         SimpleFieldKind.String => "(ptr) => HSTRING({{ Value: ptr }})",
         SimpleFieldKind.OpenGeneric => $"this.{TypeName}",      // Type comes from implementer
-        SimpleFieldKind.Class or SimpleFieldKind.COM => HasGenericArgs ? 
+        SimpleFieldKind.Class or SimpleFieldKind.COM => HasGenericArgs ?
             // Generic - bind generic types / getters to Call method of the type of the return value
-            $"{GetTypeDefNameNoBacktick()}.Call.Bind({GetTypeDefNameNoBacktick()}, {string.Join(", ", GenericArguments.Select(arg => arg.GetTypeAsGenericCallable()))})" : 
-            GetTypeDefNameNoBacktick(),
+            // Use resolved name for generic binding to match actual class names
+            $"{GetResolvedTypeDefNameNoBacktick()}.Call.Bind({GetResolvedTypeDefNameNoBacktick()}, {string.Join(", ", GenericArguments.Select(arg => arg.GetTypeAsGenericCallable()))})" :
+            GetResolvedTypeDefNameNoBacktick(),
         _ => throw new NotSupportedException($"Cannot get generic marshaller for {Kind} {TypeName}")
     };
 
@@ -341,6 +342,119 @@ public record FieldInfo
     }
 
     public string GetTypeDefNameNoBacktick() => GetTypeDefName().Split("`").First();
+
+    /// <summary>
+    /// Gets the type definition name with conflict resolution applied
+    /// </summary>
+    [MemberNotNull(nameof(Reader), nameof(TypeDef))]
+    public string GetResolvedTypeDefName()
+    {
+        if (Reader is null || TypeDef is null)
+            throw new NullReferenceException("Reader and TypeDef must be set");
+
+        return TypeNameResolver.ResolveTypeName(Reader, TypeDef.Value);
+    }
+
+    /// <summary>
+    /// Gets the type definition name without backtick, with conflict resolution applied
+    /// </summary>
+    [MemberNotNull(nameof(Reader), nameof(TypeDef))]
+    public string GetResolvedTypeDefNameNoBacktick()
+    {
+        return GetResolvedTypeDefName().Split("`").First();
+    }
+
+    /// <summary>
+    /// Gets the resolved type name for use in AHK code (respects conflict resolution)
+    /// </summary>
+    public string ResolvedAhkType
+    {
+        get
+        {
+            if (Kind == SimpleFieldKind.Primitive)
+            {
+                // Primitives use the same logic as AhkType
+                switch (TypeName.ToLower())
+                {
+                    case "single":
+                    case "double":
+                        return "Float";
+                    case "boolean":
+                        return "Boolean";
+                    case "int32":
+                    case "uint32":
+                    case "int64":
+                    case "uint64":
+                    case "int16":
+                    case "uint16":
+                    case "byte":
+                    case "sbyte":
+                    case "char":
+                        return "Integer";
+                    case "uintptr":
+                    case "intptr":
+                    case "ptr":
+                        return "Pointer";
+                    case "void":
+                        return "Void";
+                    case "string":
+                        return "HSTRING";
+                    case "object":
+                        return "IInspectable";
+                    default:
+                        throw new NotSupportedException(TypeName);
+                }
+            }
+            else if (Kind == SimpleFieldKind.String)
+            {
+                return "String";
+            }
+            else if (Kind == SimpleFieldKind.Array)
+            {
+                // For arrays, resolve the element type name
+                return $"Array<{GetResolvedElementTypeName()}>";
+            }
+            else if (Kind == SimpleFieldKind.Pointer)
+            {
+                return UnderlyingType == null ? $"Pointer<{TypeName}>" : $"Pointer<{UnderlyingType?.ResolvedAhkType}>";
+            }
+            else if (Kind == SimpleFieldKind.COM)
+            {
+                // COM types need conflict resolution
+                return HasGenericArgs
+                    ? $"{GetResolvedTypeDefNameNoBacktick()}<{string.Join(", ", GenericArguments.Select(arg => arg.ResolvedAhkType))}>"
+                    : GetResolvedTypeDefNameNoBacktick();
+            }
+            else if (Kind == SimpleFieldKind.HRESULT)
+            {
+                return "HRESULT";
+            }
+            else if (Kind == SimpleFieldKind.Struct || Kind == SimpleFieldKind.Class || Kind == SimpleFieldKind.NativeTypedef)
+            {
+                // These types need conflict resolution
+                return HasGenericArgs
+                    ? $"{GetResolvedTypeDefNameNoBacktick()}<{string.Join(", ", GenericArguments.Select(arg => arg.ResolvedAhkType))}>"
+                    : GetResolvedTypeDefNameNoBacktick();
+            }
+            else if (Kind == SimpleFieldKind.OpenGeneric)
+            {
+                return "Generic";
+            }
+            else
+            {
+                return "Pointer";
+            }
+        }
+    }
+
+    private string GetResolvedElementTypeName()
+    {
+        if (UnderlyingType != null && UnderlyingType.Kind == SimpleFieldKind.Struct && UnderlyingType.Reader != null && UnderlyingType.TypeDef != null)
+        {
+            return UnderlyingType.GetResolvedTypeDefNameNoBacktick();
+        }
+        return TypeName;
+    }
 
     [MemberNotNull(nameof(Reader), nameof(TypeDef))]
     public string GetTypeDefNamespace()

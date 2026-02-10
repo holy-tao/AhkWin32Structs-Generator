@@ -177,7 +177,8 @@ class AhkWinRTClass : AhkType
             {
                 // Some static-only WinRT classes don't implement any interfaces
                 FieldInfo defaultInterface = ImplementedInterfaces.First();
-                string defaultInterfaceName = defaultInterface.GetTypeDefNameNoBacktick();
+                // Use resolved name to match actual interface class name (with conflict resolution)
+                string defaultInterfaceName = defaultInterface.GetResolvedTypeDefNameNoBacktick();
                 sb.AppendLine($"    {DefaultInterfaceDocString}");
                 sb.AppendLine($"    WinRTDefaultInterface => {defaultInterfaceName}");
                 sb.AppendLine();
@@ -303,7 +304,8 @@ class AhkWinRTClass : AhkType
         if (hasNoArgCtor)
         {
             sb.AppendLine($"        if(ptr == 0) {{");
-            sb.AppendLine($"            activatableClassId := HSTRING.Create(\"{Namespace}.{Name}\")");
+            // IMPORTANT: Use MetadataName (original name) for WinRT activation, not the resolved Name
+            sb.AppendLine($"            activatableClassId := HSTRING.Create(\"{Namespace}.{MetadataName}\")");
             sb.AppendLine($"            ptr := WinRT.RoActivateInstance(activatableClassId)");
             sb.AppendLine($"        }}");
             sb.AppendLine();

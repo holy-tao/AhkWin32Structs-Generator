@@ -63,7 +63,8 @@ public record struct AhkComProperty(AhkType Interface, string Name, AhkMethod? G
         if(param is not null)
         {
             AhkParameter typeParam = (AhkParameter)param;
-            string? actualValueName = typeParam.IsPtr ? typeParam.FieldInfo.UnderlyingType?.AhkType : typeParam.FieldInfo.AhkType;
+            // Use ResolvedAhkType to ensure type references match actual class names
+            string? actualValueName = typeParam.IsPtr ? typeParam.FieldInfo.UnderlyingType?.ResolvedAhkType : typeParam.FieldInfo.ResolvedAhkType;
             sb.AppendLine($"     * @type {{{actualValueName}}} ");
         }
 
