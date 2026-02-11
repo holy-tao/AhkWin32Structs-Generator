@@ -1,6 +1,4 @@
-﻿using Microsoft.Windows.SDK.Win32Docs;
-using MessagePack;
-using System.Reflection.Metadata;
+﻿using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Diagnostics;
@@ -8,8 +6,6 @@ using System.Reflection;
 
 public class Program
 {
-    public static Dictionary<string, ApiDetails> ApiDocs = [];
-
     public static Dictionary<string, List<AhkExtension>> Extensions = [];
 
     public static string MetadataDir = "";
@@ -34,9 +30,7 @@ public class Program
         Stopwatch stopwatch = new();
         stopwatch.Start();
 
-        using FileStream apiDocFileStream = File.OpenRead(Path.Join(MetadataDir, "apidocs.msgpack"));
-
-        ApiDocs = MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream);
+        DocumentationUtils.Load(Path.Join(MetadataDir, "apidocs.msgpack"));
         Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(MetadataDir, "extensions"));
 
         IEnumerable<FileStream> winmdFiles = CollectWinmdFiles(MetadataDir);
