@@ -11,6 +11,8 @@ using Microsoft.Windows.SDK.Win32Docs;
 /// </summary>
 record class AhkWinRTEvent
 {
+    public readonly AhkWinRTClass DeclaringClass;
+
     /// <summary>
     /// The interface on which this event's add_* and remove_* methoids are declared
     /// </summary>
@@ -41,8 +43,11 @@ record class AhkWinRTEvent
 
     public string DeclaringInterfaceFqn => mr.GetFullyQualifiedName(DeclaringInterface);
 
-    public AhkWinRTEvent(TypeDefinition DeclaringInterface, MetadataReader mr, string Name, FieldInfo HandlerType)
+    private ApiDetails? ApiDocs { get; init; }
+
+    public AhkWinRTEvent(AhkWinRTClass DeclaringClass, TypeDefinition DeclaringInterface, MetadataReader mr, string Name, FieldInfo HandlerType)
     {
+        this.DeclaringClass = DeclaringClass;
         this.DeclaringInterface = DeclaringInterface;
         this.mr = mr;
         this.Name = Name;
@@ -88,7 +93,9 @@ record class AhkWinRTEvent
 
     private void AppendDocumentation(StringBuilder sb)
     {
-        ApiDetails? apiDetails = DocumentationUtils.GetApiDetails($"{DeclaringInterfaceFqn}.{Name}", null);
+        string lookupKey = $"{DeclaringClass.mr.GetFullyQualifiedName(DeclaringClass.typeDef)}.{Name}";
+        ApiDetails? apiDetails = DocumentationUtils.GetApiDetails(lookupKey, null);
+        
         if(apiDetails is not null)
         {
             sb.AppendLine("    /**");

@@ -180,10 +180,10 @@ class AhkWinRTClass : AhkType
                 // Use resolved name to match actual interface class name (with conflict resolution)
                 string defaultInterfaceName = defaultInterface.GetResolvedTypeDefNameNoBacktick();
                 sb.AppendLine($"    {DefaultInterfaceDocString}");
-                sb.AppendLine($"    WinRTDefaultInterface => {defaultInterfaceName}");
+                sb.AppendLine($"    static WinRTDefaultInterface => {defaultInterfaceName}");
                 sb.AppendLine();
                 sb.AppendLine($"    {IIDDocString}");
-                sb.AppendLine($"    IID => {defaultInterfaceName}.IID");
+                sb.AppendLine($"    static IID => {defaultInterfaceName}.IID");
                 sb.AppendLine();
             }
 
@@ -409,6 +409,7 @@ class AhkWinRTClass : AhkType
             }
 
             events.Add(new AhkWinRTEvent(
+                this,
                 method.DeclaringInterface, 
                 method.mr,
                 normalizedName,

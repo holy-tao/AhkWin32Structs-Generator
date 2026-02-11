@@ -1,17 +1,41 @@
-using System.Reflection;
+using System.Diagnostics;
 using System.Reflection.Metadata;
+using Gma.DataStructures.StringSearch;
+using MessagePack;
 using Microsoft.Windows.SDK.Win32Docs;
 
 class DocumentationUtils
 {
     static readonly CaTypeProvider attrProvider = new();
 
+    public static readonly PatriciaTrie<ApiDetails> ApiDocs = new();
+
+    public static void Load(string filepath)
+    {
+        Trace.TraceInformation($"Loading ApiDocs from {filepath}...");
+        Stopwatch watch = Stopwatch.StartNew();
+        using FileStream apiDocFileStream = File.OpenRead(filepath);
+
+        int count = 0;
+        foreach(var pair in MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(apiDocFileStream))
+        {
+            ApiDocs.Add(pair.Key, pair.Value);
+            count++;
+        }
+
+        watch.Stop();
+        Trace.TraceInformation($"Loaded {count} ApiDetails records in {watch.ElapsedMilliseconds} ms");
+    }
+
     public static ApiDetails? GetApiDetails(MetadataReader mr, TypeDefinition typeDef)
     {
         // try type name and namespace.type
         CustomAttribute? docAttr = CustomAttributeDecoder.GetAttribute(mr, typeDef, "DocumentationAttribute");
 
-        ApiDetails? found = GetApiDetails($"{mr.GetFullyQualifiedName(typeDef).Split('`').First()}", docAttr);
+        string fqn = mr.GetFullyQualifiedName(typeDef);
+
+        ApiDetails? found = GetApiDetails(fqn, docAttr);
+        found ??= GetApiDetails(fqn.Split('`').First(), docAttr);
         found ??= GetApiDetails(mr.GetString(typeDef.Name), docAttr);
         
         return found;
@@ -23,34 +47,55 @@ class DocumentationUtils
         CustomAttribute? documentationAttr = CustomAttributeDecoder.GetAttribute(mr, def, "DocumentationAttribute");
         ApiDetails? details = null;
 
-        // First check parent to see if method is an interface method
+        // First check parent to see if method is on a class or interface
         TypeDefinitionHandle handle = def.GetDeclaringType();
         if (!handle.IsNil)
         {
             TypeDefinition parentTypeDef = mr.GetTypeDefinition(handle);
-            if ((parentTypeDef.Attributes & TypeAttributes.ClassSemanticsMask) == TypeAttributes.Interface)
-            {
-                string interfaceName = mr.GetString(parentTypeDef.Name);
-                string qualifiedName = interfaceName + "." + methodName;
-
-                // Try interface.method and namespace.interface.method
-                details = GetApiDetails($"{mr.GetFullyQualifiedName(def).Split('`').First()}", documentationAttr);
-                details ??= GetApiDetails(qualifiedName, documentationAttr);
-            }
+            details = GetApiDetails(mr, parentTypeDef, def);
         }
 
-        // Fallback to method name only
+        // Fallback to method name only (for e.g. Win32 free functions)
         details ??= GetApiDetails(methodName, documentationAttr);
 
         return details;
     }
 
+    public static ApiDetails? GetApiDetails(MetadataReader mr, TypeDefinition parentTypeDef, MethodDefinition def)
+    {
+        ApiDetails? details;
+
+        string methodName = mr.GetString(def.Name);
+        CustomAttribute? documentationAttr = CustomAttributeDecoder.GetAttribute(mr, def, "DocumentationAttribute");
+
+        int arity = def.GetParameters().Count;
+
+        string declarerName = mr.GetString(parentTypeDef.Name);
+        string declarerNamespace = mr.GetString(parentTypeDef.Namespace);
+        string qualifiedName = $"{declarerName}.{methodName}";
+        string fullyQualifiedName = $"{declarerNamespace}.{declarerName}.{methodName}";
+
+        // TODO we could probably optimize this further now that Program.ApiDetails is a Trie - might be worth it, doc lookup was a major bottleneck when it was just a dictionary
+        // Try, in order: namespace.declarer.method-arity, declarer.method-arity, namespace.declarer-method, declarer.method, method
+        // Arity is used by WinRT methods to distinguish between overloads
+        details = GetApiDetails($"{fullyQualifiedName}-{arity}", documentationAttr);
+        details ??= GetApiDetails(qualifiedName, documentationAttr);
+        details ??= GetApiDetails($"{fullyQualifiedName}", documentationAttr);
+        details ??= GetApiDetails($"{qualifiedName}-{arity}", documentationAttr);
+
+        return details == default(ApiDetails) ? null : details;
+    }
+
     public static ApiDetails? GetApiDetails(string forName, CustomAttribute? documentationAttr)
     {
-        bool foundDetails = Program.ApiDocs.TryGetValue(forName, out ApiDetails? details);
+        IEnumerable<ApiDetails> matches = ApiDocs.Retrieve(forName);
+        if(!matches.Any())
+            return null;
+
+        ApiDetails details = matches.First();
         
         // Fall back to the [Documentation] attribute if HelpLink is null
-        if(foundDetails && details?.HelpLink == null && documentationAttr != null)
+        if(details?.HelpLink == null && documentationAttr != null)
         {
             details ??= new();
             var decoded = documentationAttr.Value.DecodeValue(attrProvider);

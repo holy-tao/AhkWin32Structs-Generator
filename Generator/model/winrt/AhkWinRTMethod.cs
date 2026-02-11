@@ -38,8 +38,9 @@ class AhkWinRTMethod : AhkMethod
         OverloadName = GetOverloadName();
         interfaceMethod = new AhkComMethod(mr, methodDef, -1);
         
-        string nameForDoc = IsConstructor ? "#ctor" : (OverloadName ?? Name);
-        apiDetails = DocumentationUtils.GetApiDetails($"{DeclaringClass.Fqn}.{nameForDoc.Split('`').First()}", null);
+        apiDetails = IsConstructor ?
+            DocumentationUtils.GetApiDetails($"{DeclaringClass.Fqn}.#ctor-{parameters.Count(p => p.SequenceNumber > 0)}", null) :
+            DocumentationUtils.GetApiDetails(mr, declarer.typeDef, methodDef);
 
         if (IsComposableActivator)
         {
