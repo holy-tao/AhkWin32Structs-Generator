@@ -103,6 +103,12 @@ public abstract class AhkType : IAhkEmitter
     {
         foreach (string import in GetReferencedTypes().Distinct())
         {
+            if(import is "System.Guid")
+            {
+                sb.AppendLine($"#Include {GetPathToBase()}Guid.ahk");
+                continue;
+            }
+
             List<string> parts = [.. import.Split(".")];
             string importNamespace = string.Join(".", parts[0..^1]);    // All but last
             string importName = parts.Last();
