@@ -1,11 +1,12 @@
 # Contributing
-Contributions are welcome, though I'll admit that I haven't kept this repository as clean as I'd have liked and the generator is not terribly well documented. Some simple changes that can be made through configuration are documented below.
+Contributions are welcome, though I'll admit that I haven't kept this repository as clean as I'd have liked and the generator is not terribly well documented. This document documents the required ongoing maintenance tasks and changes that can be made through configuration.
 
 ## Table of Contents
 - [Table of Contents](#table-of-contents)
 - [Running the Generator](#running-the-generator)
+  - [Validating Generated AHK code](#validating-generated-ahk-code)
 - [Manually generated metadata](#manually-generated-metadata)
-  - [External (.NET) Type Mappings](#external-net-type-mappings)
+  - [Type Mappings](#type-mappings)
   - [Extensions](#extensions)
 - [Maintenance](#maintenance)
   - [Generating Parameterized Interface IDs (PIIDs)](#generating-parameterized-interface-ids-piids)
@@ -19,7 +20,9 @@ The generator compiles to a command-line program that can be run like so:
 AhkWin32Structs.exe <metadataDirectory> <outputDirectory>
 ```
 
-Ideally, the output directory should be the root of a local clone of the [bindings repository](https://github.com/holy-tao/AhkWin32Projection). The metadata directory should point to a directory containing the metadata you want to generate bindings for. The folder structure of that directory is as follows:
+Ideally, the output directory should be the root of a local clone of the [bindings repository](https://github.com/holy-tao/AhkWin32Projection). This is included as a submodule of the generator by default. If you've initialized the submodule, you can run the generator in release mode by simply runing [`Run-Generator-Release.ps1`](./Scripts/Run-Generator-Release.ps1). In vscode, the generator can be run in debug mode using the launch option "Build and Generate AHK".
+
+The metadata directory should point to a directory containing the metadata you want to generate bindings for. The folder structure of that directory is as follows:
 
 ```
 metadata/
@@ -38,12 +41,33 @@ The generator will generate bindings for all .winmd files in the metadata direct
 
 In addition to the actual bindings, the generator will produce a file called `generation.log` in the output directory which will include a log of every file generated, notes on where external assemblies are loaded from, and any errors encountered during generation.
 
+### Validating Generated AHK code
+
+Validating outputs is difficult due to the sheer scale of this project. 
+
+The projection project has a suite of tests you can run to verify that the basics are working. These will catch changes that totally break generation of e.g. functions or WinRT classes, but cannot comprehensively test the generated bindings.
+
+You can also run [`ValidateAhk.ps1`](./Validator/ValidateAhk.ps1) to validate the AutoHotkey for sytax errors and the following load-time [warnings](https://www.autohotkey.com/docs/v2/lib/_Warn.htm):
+
+- [`VarUnset`](https://www.autohotkey.com/docs/v2/lib/_Warn.htm#VarUnset)
+- [`Unreachable`](https://www.autohotkey.com/docs/v2/lib/_Warn.htm#Unreachable)
+
+The most common of these is a `VarUnset` warning or load-time error caused by malformed or missing `#Include` statements for required types. The script works by running AutoHotkey64.exe with the [`/Validate`](https://www.autohotkey.com/docs/v2/Scripts.htm#cmd) flag. As such, it is extremely slow. You may also see a series of duplicate warnings or errors, since alerts caused in one file will generally also get flagged in all files that include it.
+
+> [!NOTE]
+> A version of the validator script also runs over all modified `.ahk` files included in pull requests opened against the bindings repository in GitHub actions.
+
+There are a also few vscode launch configurations that you can use to validate files in a specific directory, which can speed things up considerably when spot checking generator changes.
+
 ## Manually generated metadata
 
 Some of the generator's behavior can be modified with manual build.
 
-### External (.NET) Type Mappings
-Windows metadata, especially WinRT metadata, may reference types not in the WinRT or Win32 namespaces. The WinRT metadata does this a lot, since it was generated originally to enable .NET interop. If these types have equivalent WinRT or Win32 concepts, they can be mapped to those types using [type-mappings.yml](./metadata/type-mappings.yml), for example:
+### Type Mappings
+
+Type mappings are used to force the generator to resolve one type - identified by its fully qualifeid name - as another.
+
+Windows metadata, especially WinRT metadata, may reference types not in the WinRT or Win32 namespaces. The WinRT metadata does this a lot with .NET types, since it was generated originally to enable .NET interop. If these types have equivalent WinRT or Win32 concepts, they can be mapped to those types using [type-mappings.yml](./metadata/type-mappings.yml), for example:
 
 ```yml
 System.Collections.Generic.IEnumerable:
@@ -52,17 +76,23 @@ System.Collections.Generic.IEnumerable:
   Name: IIterable`1
 ```
 
-This will cause the generator to treat all instances of and references to the .NET type [`IEnumerable`](https://learn.microsoft.com/en-us/dotnet/api/system.collections.generic.ienumerable-1?view=dotnet-uwp-10.0&preserve-view=true) as instances or references to the WinRT type [`IIterable`](https://learn.microsoft.com/en-us/uwp/api/windows.foundation.collections.iiterable-1?view=winrt-26100). See also [.NET mappings of WinRT types in C#/WinRT - Windows Apps | Microsoft Learn](https://learn.microsoft.com/en-us/windows/apps/develop/platform/csharp-winrt/net-mappings-of-winrt-types)
+This will cause the generator to treat all instances of and references to the .NET type [`System.Collections.Generic.IEnumerable`](https://learn.microsoft.com/en-us/dotnet/api/system.collections.generic.ienumerable-1?view=dotnet-uwp-10.0&preserve-view=true) as instances or references to the WinRT type [`Windows.Foundation.Collections.IIterable`](https://learn.microsoft.com/en-us/uwp/api/windows.foundation.collections.iiterable-1?view=winrt-26100). See also [.NET mappings of WinRT types in C#/WinRT - Windows Apps | Microsoft Learn](https://learn.microsoft.com/en-us/windows/apps/develop/platform/csharp-winrt/net-mappings-of-winrt-types)
 
 > [!IMPORTANT]
 > Mappings for generic types _must_ include the backtick number indicating the number of generic arguments, but the fqn entry _must not_ include it. In the above example, `Name` must include the ``IIterable`1``, but the fqn for the type we are mapping _from_, `IEnumerable`, does not contain the generic argument count.
 
-Note that `Assembly` does not include any file extensions (.dll / .winmd). Currently, it's only possible to map from one type to another type, the generator has no mechanism to map primitives to types or vice versa (e.g. `System.Object -> Windows.Win32.System.WinRT.IInspectable`); such mappings wil require code changes to the genererator.
+Note that `Assembly` does not include any file extensions (.dll / .winmd). 
+
+Currently, it's only possible to map from one type to another type, the generator has no mechanism to map primitives to types or vice versa (e.g. `System.Object -> Windows.Win32.System.WinRT.IInspectable`); such mappings wil require code changes to the genererator.
 
 > [!CAUTION]
 > [`System.Guid`](https://learn.microsoft.com/en-us/dotnet/api/system.guid?view=net-10.0) has special handling and must never be included in a type mapping.
 
-Type mappings can also be used to force the generator to use a type from one assembly even when it is redefined elsewhere, for example `RECT` and `HRESULT`, which are defined both in the Win32 and WinRT metadata. The Windows Runtime types reference the WinRT version, but to avoid polluting the namespace and causing duplicate declaration errors, we redirect all references to these structs to the Win32 versions. Note that this won't stop the generator for generating a file for the type, but it will prevent consumers from automatically `#Include`-ing them.
+#### Mapping between Win32, WDK, and WinRT types
+
+Type mappings can also be used to force the generator to use a type from one assembly even when it is redefined elsewhere. Notable examples include `RECT` and `HRESULT`, which are defined both in the Win32 and WinRT metadata. The Windows Runtime types reference the WinRT version, but to avoid polluting the namespace and causing duplicate declaration errors, we redirect all references to these structs to the Win32 versions. 
+
+Note that this won't stop the generator for generating a file for the type, but it will prevent consumers from automatically `#Include`-ing them and will prevent the projection from causing duplicate declaration errors.
 
 ### Extensions
 Extensions are custom code added to generated types. Extensions can be added to Structs, Enums, COM Interfaces, and Windows Runtime classes.
@@ -138,14 +168,41 @@ After updating the WinRT metadata, piids may need to be recalculated if new para
 
 ### Updating the ApiDocs
 
-`apidocs.msgpack` is generated using a fork of Microsoft's documentation scraper modified to work with the WinRT documentation. To update the documentation, simply re-run the generator on an updated version of the documentation repositories.
+`apidocs.msgpack` is generated using a [fork](https://github.com/holy-tao/win32metadata) of Microsoft's win32metadata project with the documentation scraper modified to work with the WinRT documentation. To update the documentation, you'll need to rerun the documentation scraper on updated versions of the documentation repositories. This process is not yet automated.
 
-> [!IMPORTANT]
-> TAO TODO UPDATE WITH LINK TO FORK AND BETTER INSTRUCTIONS
+> [!NOTE]
+> Previously, when this project only included Win32 APIs, documentation was updated using the [Win32Docs NuGet package](https://www.nuget.org/packages/Microsoft.Windows.SDK.Win32Docs/). This is no longer the case, since we need to also scrape the WinRT and WDK documentation, but you may see references to it in the codebase. For example, you'll note that [`Get-Win32Docs.ps1`](./Scripts/Get-Win32Docs.ps1) still exists.
+
+To set up the repository for documentation scraping (one-time only):
+1.  Clone the fork:
+  
+    ```bash
+    git clone git@github.com:holy-tao/win32metadata.git
+    ```
+
+2.  Initialize submodules - from anywhere in the repository, run:
+
+    ```bash
+    git submodule update --init --recursive
+    ```
+
+    This can take a few minutes - you're pulling several hundred thousand .md files for documentation.
+
+3.  [Make sure you can get a full build running](https://github.com/microsoft/win32metadata/blob/main/CONTRIBUTING.md). You won't need most of these tools, but some Microsoft's tooling assumes you have or want all of the tooling required to build the whole project and may fail with cryptic messages if you don't.
+
+To rebuild `apidocs.msgpack`, first update the submodules:
+1.  `cd` into `/ext/*` and run a git pull in the relevant submodule(s) to grab the latest changes. 
+2.  Commit the updated submodule back to the fork.
+
+You can now run the scraper. In vscode, `ScrapeDocs.csproj` is set up so you can just run it to build the .msgpack. Other IDEs may require different setup; you can use `scripts/BuildDocs.ps1` to compile it in Release configuration. The process takes a few minutes to finish. Once it does, copy the resulting `apidocs.msgpack` to the generator's `\metadata` repository. 
+
+You can ignore `documentationMappings.rsp`, though it is sometimes useful for quickly verifying that the scraper is finding the types and symbols that you expect it to and correctly parsing their names and namespaces.
 
 ### Updating the Metadata
 
-Routine updates to the metadata are automated via GitHub actions. The action will automatically regenerate the bindings and submit a pull request into the AHK repository with the changes. Automated metadata updates us the NuGet packages (see below).
+Routine updates to the metadata are automated via GitHub actions. The action will automatically regenerate the bindings and submit a pull request into the AHK repository with the changes. In most cases, review is trivial and no real action is required beyond merging the pull request. However, you should retitle the pull request to reflect the actual changes - e.g. "Update Win32 metadata to \<version\>". 
+
+Automated metadata updates pull packages off of NuGet - see below for details.
 
 > [!NOTE]
 > The NuGet package versions will sometimes lag behind the versions on GitHub, particularly for the Win32 and WDK metadata. If this is a problem, it's perfectly fine to update the `.winmd` files manually, just be sure to also update the relevant `.version` file to prevent automated update from running unnecessarily.
