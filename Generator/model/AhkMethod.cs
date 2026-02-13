@@ -314,7 +314,8 @@ public class AhkMethod
                 sb.AppendLine($"        return {genericType.TypeName}({typeArgs}, {fnRetVal.Name})");
             }
         }
-        else if (fnRetVal.IsPrimitive && fnRetVal.FieldInfo.TypeName is "Object")
+        else if (fnRetVal.IsPtrToPrimitive && 
+            (fnRetVal.FieldInfo.UnderlyingType?.TypeName.Equals("object", StringComparison.InvariantCultureIgnoreCase) ?? false))
         {
             // Carve-out - primitive Object is IInspectable
             sb.AppendLine($"        return IInspectable({fnRetVal.Name})");
