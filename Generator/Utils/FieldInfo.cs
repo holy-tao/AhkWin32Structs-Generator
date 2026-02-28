@@ -293,6 +293,7 @@ public record FieldInfo
             // Use resolved name for generic binding to match actual class names
             $"{GetResolvedTypeDefNameNoBacktick()}.Call.Bind({GetResolvedTypeDefNameNoBacktick()}, {string.Join(", ", GenericArguments.Select(arg => arg.GetTypeAsGenericCallable()))})" :
             GetResolvedTypeDefNameNoBacktick(),
+        SimpleFieldKind.HRESULT => $"(ptr) => IPropertyValue(ptr).Unbox()",
         _ => throw new NotSupportedException($"Cannot get generic marshaller for {Kind} {TypeName}")
     };
 

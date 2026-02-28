@@ -39,6 +39,8 @@ record class AhkWinRTEvent
     /// </summary>
     public readonly Guid? Piid;
 
+    public readonly ImmutableArray<FieldInfo> parameters;
+
     public string DeclaringInterfaceName => mr.GetString(DeclaringInterface.Name);
 
     public string DeclaringInterfaceFqn => mr.GetFullyQualifiedName(DeclaringInterface);
@@ -53,6 +55,21 @@ record class AhkWinRTEvent
         this.Name = Name;
         this.HandlerType = HandlerType;
         this.Piid = GetPiid();
+
+        parameters = CollectParameters();        
+    }
+
+    private ImmutableArray<FieldInfo> CollectParameters()
+    {
+        // TODO get the invoke method without parsing the entire interface
+        AhkComInterface iface = new(
+            HandlerType.Reader ?? throw new NullReferenceException(nameof(HandlerType.Reader)), 
+            HandlerType.TypeDef ?? throw new NullReferenceException(nameof(HandlerType.TypeDef)));
+
+        return iface.Methods.Single(m => m.Name is "Invoke")
+            .parameters[1..]    // parameter 0 is the return type, ignore it here
+            .Select(param => param.FieldInfo.SubstituteGenerics(HandlerType.GenericArguments))
+            .ToImmutableArray();
     }
 
     public void ToAhk(StringBuilder sb) 
@@ -112,19 +129,21 @@ record class AhkWinRTEvent
         }
     }
 
-    public IEnumerable<string> GetHandlerArgMarshallers() => HandlerType.GenericArguments
-        .Select(arg => arg.GetTypeAsGenericCallable());
+    public IEnumerable<string> GetHandlerArgMarshallers() => 
+        parameters.Select(arg => arg.GetTypeAsGenericCallable());
 
     public List<string> GetReferencedTypes()
     {
         List<string> imports = [HandlerType.GetTypeDefFqn()];
 
-        imports.AddRange(HandlerType.GenericArguments
+        imports.AddRange(parameters
             .Concat(HandlerType.GenericArguments.SelectMany(arg => arg.GenericArguments))
             .Where(arg => arg.Kind is SimpleFieldKind.Class or SimpleFieldKind.Struct or SimpleFieldKind.COM or SimpleFieldKind.NativeTypedef or SimpleFieldKind.Primitive)
             .Select(arg => arg.Kind switch
             {
-                SimpleFieldKind.Primitive or SimpleFieldKind.Struct => "Windows.Foundation.IPropertyValue",
+                SimpleFieldKind.Primitive or SimpleFieldKind.Struct => arg.TypeName is "Object" ? 
+                    "Windows.Win32.System.WinRT.IInspectable" : 
+                    "Windows.Foundation.IPropertyValue",
                 _ => arg.GetTypeDefFqn()
             })
         );
