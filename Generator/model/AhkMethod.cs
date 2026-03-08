@@ -162,17 +162,26 @@ public class AhkMethod
 
     private protected virtual void AppendErrorCheck(StringBuilder sb)
     {
-        // AHK code which will be ORed together
-        List<string> conditions = [];
+        List<string> conditions = [];       // Checks which will be ANDed together
+        List<string> errCodeSources = [];   // Error number sources which will be ORed together (e.g. leftmost wins)
+
+        var freeWithParams = parameters.Where(p => p.HasFreeWith).ToList();
+
+        if(parameters[0].FieldInfo.TypeName == "HRESULT" && freeWithParams.Count != 0)
+        {
+            conditions.Add("result != 0");
+            errCodeSources.Add("result");
+        }
 
         if (SetsLastError)
         {
-            conditions.Add(parameters[0].FieldInfo.TypeName == "BOOL"? "(!result && A_LastError)" : "A_LastError");
-        }
+            if(parameters[0].FieldInfo.TypeName == "BOOL") 
+            {
+                conditions.Add("!result");
+            }
 
-        if(ShouldThrowForReturnValue()) 
-        {
-            conditions.Add("result != 0");
+            conditions.Add("A_LastError");
+            errCodeSources.Add("A_LastError");
         }
 
         if(conditions.Count == 0)
@@ -180,16 +189,16 @@ public class AhkMethod
             return; // No error checking
         }
 
-        sb.AppendLine($"        if({string.Join(" || ", conditions)}) {{");
-                
+        sb.AppendLine($"        if({string.Join(" && ", conditions)}) {{");
+        
         // Free any [FreeWith] output parameters before throwing
-        foreach(AhkParameter param in parameters.Where(p => p.HasFreeWith))
+        foreach(AhkParameter param in freeWithParams)
         {
             AhkMethod freeWith = param.FreeWith ?? throw new NullReferenceException(nameof(param.FreeWith));
             sb.AppendLine($"            {freeWith.DeclarerName}.{freeWith.Name}({param.Name})");
         }
 
-        sb.AppendLine($"            throw OSError({(FuncHasReturnValue? "A_LastError || result" : "A_LastError")})");
+        sb.AppendLine($"            throw OSError({string.Join(" || ", errCodeSources)})");
         sb.AppendLine($"        }}");
         sb.AppendLine();
     }
@@ -415,7 +424,11 @@ public class AhkMethod
             }
 
             if (FuncHasReturnValue)
-                sb.Append(parameters[0].FieldInfo.GetDllCallType(true));
+            {
+                sb.Append(ShouldThrowForReturnValue() ? 
+                    "HRESULT" : 
+                    parameters[0].FieldInfo.GetDllCallType(true));
+            }
 
             sb.Append('"');
         }
@@ -539,7 +552,7 @@ public class AhkMethod
     }
 
     /// <summary>
-    /// Does this method return an HRESULT and, if so, should we throw an error if it's anything
+    /// Does this method return an HRESULT and, if so, should we throw an error immediately if it's anything
     /// other than 0 (S_OK)?
     /// 
     /// This is true by default, and false if [DllImport(..., PreserveSig = false)] is present OR EITHER
@@ -551,6 +564,13 @@ public class AhkMethod
     {
         // If the method doesn't return an HRESULT, this is always no
         if (!parameters[0].IsHRESULT)
+        {
+            return false;
+        }
+
+        // If we'd need to free resources before throwing, this is false
+        // To my knowledge the only one of these is Shell.SHGetKnownFolderPath
+        if(parameters.Any(p => p.HasFreeWith))
         {
             return false;
         }

@@ -112,9 +112,9 @@ class AhkComMethod : AhkMethod
                 sb.Append("CDecl ");
             }
 
-            if (FuncHasReturnValue)
-                sb.Append(parameters[0].FieldInfo.GetDllCallType(false));
-
+            sb.Append(ShouldThrowForReturnValue() ? 
+                "HRESULT" : 
+                parameters[0].FieldInfo.GetDllCallType(true));
             sb.Append('"');
         }
 
