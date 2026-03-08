@@ -44,6 +44,10 @@ public static class FieldSignatureDecoder
         {
             return new FieldInfo(SimpleFieldKind.HRESULT, "HRESULT", 0, td, null, reader);
         }
+        else if (typeName == "NTSTATUS")
+        {
+            return new FieldInfo(SimpleFieldKind.NTSTATUS, "NTSTATUS", 0, td, null, reader);
+        }
         else if (IsNonHandleNativeTypedef(reader, td))
         {
             return DecodeNativeTypedef(reader, td);

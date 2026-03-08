@@ -165,7 +165,7 @@ public class AhkStructMember
             case SimpleFieldKind.Primitive:
             case SimpleFieldKind.Pointer:
             case SimpleFieldKind.COM:
-            case SimpleFieldKind.HRESULT:
+            case SimpleFieldKind.HRESULT or SimpleFieldKind.NTSTATUS:
                 ToAhkNumericMember(sb, offset + embeddingOfset, fieldInfo);
                 break;
             case SimpleFieldKind.NativeTypedef:
