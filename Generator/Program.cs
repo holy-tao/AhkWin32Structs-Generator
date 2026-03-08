@@ -171,17 +171,20 @@ public class Program
     private static bool ShouldSkipType(MetadataReader mr, TypeDefinitionHandle typeDefHandle)
     {
         TypeDefinition typeDef = mr.GetTypeDefinition(typeDefHandle);
-        if(typeDef.BaseType.IsNil)
-            return true;
 
-        if (typeDef.BaseType.Kind != HandleKind.TypeReference)
+        if (typeDef.BaseType.IsNil)
+        {
+            return mr.StringComparer.Equals(typeDef.Name, "<Module>");
+        }
+
+        if (typeDef.BaseType.Kind is not HandleKind.TypeReference)
             return false;
 
         TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
         string baseTypeName = mr.GetString(baseTypeRef.Name);
 
         // MultiCastDelegate means function pointer
-        if (baseTypeName is "MulticastDelegate" or "Attribute")
+        if (baseTypeName is "MulticastDelegate" or "Attribute" or "<Module>")
             return true;
 
         // Handled in their parents
