@@ -129,8 +129,7 @@ class AhkComMethod : AhkMethod
     public string GetDeduplicatedName()
     {
         int counter = parent.Methods
-            .Where(m => (m.Name == Name) && (m.VTableIndex < VTableIndex))
-            .Count();
+            .Count(m => (m.Name == Name) && (m.VTableIndex < VTableIndex));
 
         return counter > 0 ? Name + counter : Name;
     }
