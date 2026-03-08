@@ -47,7 +47,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
                     return "ptr";   // A pointer-sized NativeTypedef
             }
         }
-        else if (Kind == SimpleFieldKind.HRESULT)
+        else if (Kind is SimpleFieldKind.HRESULT or SimpleFieldKind.NTSTATUS)
         {
             return "int";   // 32-bit integers under the hood
         }
@@ -129,7 +129,7 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
         {
             return 8;
         }
-        else if (Kind == SimpleFieldKind.HRESULT)
+        else if (Kind is SimpleFieldKind.HRESULT or SimpleFieldKind.NTSTATUS)
         {
             return 4;
         }
@@ -194,9 +194,9 @@ public record FieldInfo(SimpleFieldKind Kind, string TypeName, int Length = 0, T
             {
                 return TypeName;
             }
-            else if (Kind == SimpleFieldKind.HRESULT)
+            else if (Kind is SimpleFieldKind.HRESULT or SimpleFieldKind.NTSTATUS)
             {
-                return "HRESULT";
+                return Kind.ToString();
             }
             else if (Kind == SimpleFieldKind.Struct || Kind == SimpleFieldKind.Class || Kind == SimpleFieldKind.NativeTypedef)
             {
