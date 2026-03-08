@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.Windows.SDK.Win32Docs;
 using System.Reflection;
 using System.Dynamic;
+using System.Data.SqlTypes;
 
 public class AhkMethod
 {
@@ -162,6 +163,13 @@ public class AhkMethod
 
     private protected virtual void AppendErrorCheck(StringBuilder sb)
     {
+        // Special case for NTSTATUS returns, which don't interact with LastError stuff at all
+        if(parameters[0].FieldInfo.Kind is SimpleFieldKind.NTSTATUS)
+        {
+            sb.AppendLine("        NTSTATUS.ThrowIfError(result)");
+            return;
+        }
+
         List<string> conditions = [];       // Checks which will be ANDed together
         List<string> errCodeSources = [];   // Error number sources which will be ORed together (e.g. leftmost wins)
 
@@ -170,7 +178,6 @@ public class AhkMethod
         if(parameters[0].FieldInfo.TypeName == "HRESULT" && freeWithParams.Count != 0)
         {
             conditions.Add("result != 0");
-            errCodeSources.Add("result");
         }
 
         if (SetsLastError)
@@ -363,6 +370,12 @@ public class AhkMethod
                 parameters[0].FieldInfo.Reader ?? throw new NullReferenceException(nameof(FieldInfo.Reader)),
                 parameters[0].FieldInfo.TypeDef ?? throw new NullReferenceException(nameof(FieldInfo.TypeDef)))
             );
+        }
+
+        // If the return type is NTSTATUS, we need to import NTSTATUS for its utility methods
+        if(parameters[0].FieldInfo.Kind is SimpleFieldKind.NTSTATUS)
+        {
+            referencedTypes.Add("Windows.Win32.Foundation.NTSTATUS");
         }
 
         // If we have an output parameter, import its type if it's in the Win32Metadata
