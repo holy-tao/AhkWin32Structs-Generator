@@ -4,7 +4,11 @@ using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Text;
+using AhkWin32.Generator.Metadata;
+using AhkWin32.Generator.Model;
+using AhkWin32.Generator.Model.Types;
 using Microsoft.Extensions.Logging;
+using IRArchitecture = AhkWin32.Generator.Model.Architecture;
 
 public class Program
 {
@@ -34,6 +38,7 @@ public class Program
         assemblyOption.AddAlias("-a");
 
         var logLevelOption = new Option<LogLevel>("--log-level", () => LogLevel.Information, "Minimum log level");
+        var validateIrOption = new Option<bool>("--validate-ir", "Run IR extraction and print diagnostic report (no code generation)");
 
         var rootCommand = new RootCommand("AhkWin32Structs Generator — generates AutoHotkey v2 projections of Win32 and WDK APIs")
         {
@@ -41,22 +46,23 @@ public class Program
             outputDirArg,
             namespaceOption,
             assemblyOption,
-            logLevelOption
+            logLevelOption,
+            validateIrOption
         };
 
         int exitCode = 0;
         rootCommand.SetHandler(
-            (metadataDir, outputDir, namespaceFilter, assemblyFilter, logLevel) =>
+            (metadataDir, outputDir, namespaceFilter, assemblyFilter, logLevel, validateIr) =>
             {
-                exitCode = RunGenerator(metadataDir, outputDir, namespaceFilter ?? [], assemblyFilter ?? [], logLevel);
+                exitCode = RunGenerator(metadataDir, outputDir, namespaceFilter ?? [], assemblyFilter ?? [], logLevel, validateIr);
             },
-            metadataDirArg, outputDirArg, namespaceOption, assemblyOption, logLevelOption);
+            metadataDirArg, outputDirArg, namespaceOption, assemblyOption, logLevelOption, validateIrOption);
 
         rootCommand.Invoke(args);
         return exitCode;
     }
 
-    private static int RunGenerator(DirectoryInfo metadataDir, DirectoryInfo outputDir, string[] namespaceFilter, string[] assemblyFilter, LogLevel logLevel)
+    private static int RunGenerator(DirectoryInfo metadataDir, DirectoryInfo outputDir, string[] namespaceFilter, string[] assemblyFilter, LogLevel logLevel, bool validateIr = false)
     {
         _loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -94,6 +100,14 @@ public class Program
         Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(MetadataDir, "extensions"));
         phaseWatch.Stop();
         Logger.LogInformation("Loaded {Count} extension mappings in {Elapsed:F1}s", Extensions.Count, phaseWatch.Elapsed.TotalSeconds);
+
+        // --- New IR extraction (--validate-ir) ---
+        if (validateIr)
+        {
+            int irResult = RunIRValidation(MetadataDir, assemblyFilter, _loggerFactory!);
+            _loggerFactory!.Dispose();
+            return irResult;
+        }
 
         // Collect .winmd files
         phaseWatch.Restart();
@@ -156,6 +170,143 @@ public class Program
         _loggerFactory.Dispose();
 
         return -errors;
+    }
+
+    private static int RunIRValidation(string metadataDir, string[] assemblyFilter, ILoggerFactory loggerFactory)
+    {
+        Logger.LogInformation("=== IR Extraction Validation ===");
+
+        // Load documentation into the new DocumentationLoader
+        var docs = new DocumentationLoader(loggerFactory.CreateLogger<DocumentationLoader>());
+        docs.Load(Path.Join(metadataDir, "apidocs.msgpack"));
+
+        // Create MetadataLoader and extract
+        using var loader = new MetadataLoader(metadataDir, loggerFactory.CreateLogger<MetadataLoader>());
+        loader.LoadPrimaryAssemblies(assemblyFilter.Length > 0 ? assemblyFilter : null);
+
+        var extractor = new TypeExtractor(loader, docs, loggerFactory.CreateLogger<TypeExtractor>());
+        TypeRegistry registry = extractor.ExtractAll();
+
+        // --- Diagnostic report ---
+        Logger.LogInformation("=== Registry Summary ===");
+
+        int structCount = registry.GetAll<StructType>().Count(t => t is not HandleType);
+        int handleCount = registry.GetAll<HandleType>().Count();
+        int enumCount = registry.GetAll<EnumType>().Count();
+
+        Logger.LogInformation("  Structs: {Count}", structCount);
+        Logger.LogInformation("  Handles: {Count}", handleCount);
+        Logger.LogInformation("  Enums:   {Count}", enumCount);
+        Logger.LogInformation("  Total:   {Count}", registry.Count);
+
+        // Architecture-specific types
+        int archSpecific = registry.GetAll().Count(t => t.Arch != IRArchitecture.All);
+        Logger.LogInformation("  Architecture-specific: {Count}", archSpecific);
+
+        // --- Spot-checks ---
+        Logger.LogInformation("=== Spot Checks ===");
+
+        SpotCheckStruct(registry, "Windows.Win32.Foundation.RECT",
+            expectedFields: 4, expectedSize: 16, expectedPacking: 4);
+        SpotCheckStruct(registry, "Windows.Win32.Foundation.POINT",
+            expectedFields: 2, expectedSize: 8, expectedPacking: 4);
+        SpotCheckHandle(registry, "Windows.Win32.Foundation.HWND",
+            expectedInvalidValues: []);
+        SpotCheckHandle(registry, "Windows.Win32.Foundation.HANDLE",
+            expectedInvalidValues: new long[] { 0, -1 });
+        SpotCheckEnum(registry, "Windows.Win32.Foundation.WIN32_ERROR",
+            expectFlags: false);
+
+        // Look for WNDCLASSEXW if available
+        var wndClass = registry.Resolve("Windows.Win32.UI.WindowsAndMessaging.WNDCLASSEXW", IRArchitecture.All);
+        if (wndClass is StructType wcs)
+        {
+            Logger.LogInformation("  WNDCLASSEXW: {Fields} fields, {Size} bytes, StructSizeField={SizeField}",
+                wcs.Members.Count, wcs.Size, wcs.StructSizeFieldName ?? "null");
+        }
+
+        // Show a few handles with free functions
+        Logger.LogInformation("=== Sample Handles with Free Functions ===");
+        foreach (var handle in registry.GetAll<HandleType>().Where(h => h.FreeFunc != null).Take(5))
+        {
+            Logger.LogInformation("  {FQN}: Free={FuncName} in {Apis}, InvalidValues=[{Values}]",
+                handle.FQN, handle.FreeFunc!.Name, handle.FreeFunc.ApisFQN,
+                string.Join(", ", handle.InvalidValues));
+        }
+
+        // Show a few enums
+        Logger.LogInformation("=== Sample Enums ===");
+        foreach (var enumType in registry.GetAll<EnumType>().Take(3))
+        {
+            Logger.LogInformation("  {FQN}: {Count} constants, IsFlags={IsFlags}, Underlying={Type}",
+                enumType.FQN, enumType.Constants.Count, enumType.IsFlags, enumType.UnderlyingTypeName);
+        }
+
+        // Check for any architecture-specific structs
+        Logger.LogInformation("=== Architecture-Specific Types ===");
+        foreach (var t in registry.GetAll().Where(t => t.Arch != IRArchitecture.All).Take(5))
+        {
+            Logger.LogInformation("  {FQN} [{Arch}]", t.FQN, t.Arch);
+            if (t is StructType st)
+                Logger.LogInformation("    {Fields} fields, {Size} bytes", st.Members.Count, st.Size);
+        }
+
+        Logger.LogInformation("=== Validation Complete ===");
+        return 0;
+    }
+
+    private static void SpotCheckStruct(TypeRegistry registry, string fqn,
+        int expectedFields, int expectedSize, int expectedPacking)
+    {
+        var type = registry.Resolve(fqn, IRArchitecture.All);
+        if (type is not StructType st)
+        {
+            Logger.LogWarning("  {FQN}: NOT FOUND or not a struct", fqn);
+            return;
+        }
+
+        string status = (st.Members.Count == expectedFields && st.Size == expectedSize && st.PackingSize == expectedPacking)
+            ? "OK" : "MISMATCH";
+        Logger.LogInformation("  {FQN}: {Status} — {Fields} fields (exp {ExpFields}), {Size} bytes (exp {ExpSize}), packing {Packing} (exp {ExpPacking})",
+            fqn, status, st.Members.Count, expectedFields, st.Size, expectedSize, st.PackingSize, expectedPacking);
+
+        if (status == "MISMATCH")
+        {
+            foreach (var field in st.Members)
+                Logger.LogInformation("    {Name}: {Type} offset={Offset} size={Size}",
+                    field.Name, field.Type.DisplayName, field.Offset, field.Size);
+        }
+    }
+
+    private static void SpotCheckHandle(TypeRegistry registry, string fqn, long[] expectedInvalidValues)
+    {
+        var type = registry.Resolve(fqn, IRArchitecture.All);
+        if (type is not HandleType ht)
+        {
+            Logger.LogWarning("  {FQN}: NOT FOUND or not a handle", fqn);
+            return;
+        }
+
+        bool valuesMatch = ht.InvalidValues.OrderBy(v => v).SequenceEqual(expectedInvalidValues.OrderBy(v => v));
+        string status = valuesMatch ? "OK" : "MISMATCH";
+        Logger.LogInformation("  {FQN}: {Status} — InvalidValues=[{Actual}] (exp [{Expected}]), FreeFunc={Free}",
+            fqn, status,
+            string.Join(", ", ht.InvalidValues), string.Join(", ", expectedInvalidValues),
+            ht.FreeFunc?.Name ?? "null");
+    }
+
+    private static void SpotCheckEnum(TypeRegistry registry, string fqn, bool expectFlags)
+    {
+        var type = registry.Resolve(fqn, IRArchitecture.All);
+        if (type is not EnumType et)
+        {
+            Logger.LogWarning("  {FQN}: NOT FOUND or not an enum", fqn);
+            return;
+        }
+
+        string status = et.IsFlags == expectFlags ? "OK" : "MISMATCH";
+        Logger.LogInformation("  {FQN}: {Status} — {Count} constants, IsFlags={IsFlags} (exp {ExpFlags}), Underlying={Type}",
+            fqn, status, et.Constants.Count, et.IsFlags, expectFlags, et.UnderlyingTypeName);
     }
 
     private static (int total, int errors) GenerateBindings(MetadataReader mr, string outputDir, string[] namespaceFilter)
