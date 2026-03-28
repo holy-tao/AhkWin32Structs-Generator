@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection.Metadata;
 using Gma.DataStructures.StringSearch;
 using MessagePack;
+using Microsoft.Extensions.Logging;
 using Microsoft.Windows.SDK.Win32Docs;
 
 class DocumentationUtils
@@ -12,7 +13,7 @@ class DocumentationUtils
 
     public static void Load(string filepath)
     {
-        Trace.TraceInformation($"Loading ApiDocs from {filepath}...");
+        Program.Logger.LogInformation("Loading ApiDocs from {FilePath}...", filepath);
         Stopwatch watch = Stopwatch.StartNew();
         using FileStream apiDocFileStream = File.OpenRead(filepath);
 
@@ -24,7 +25,7 @@ class DocumentationUtils
         }
 
         watch.Stop();
-        Trace.TraceInformation($"Loaded {count} ApiDetails records in {watch.ElapsedMilliseconds} ms");
+        Program.Logger.LogInformation("Loaded {Count} ApiDetails records in {Elapsed}ms", count, watch.ElapsedMilliseconds);
     }
 
     public static ApiDetails? GetApiDetails(MetadataReader mr, TypeDefinition typeDef)

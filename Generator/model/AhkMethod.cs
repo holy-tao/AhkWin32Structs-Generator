@@ -1,6 +1,7 @@
 
 using System.Reflection.Metadata;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.Windows.SDK.Win32Docs;
 using System.Reflection;
 using System.Dynamic;
@@ -99,7 +100,7 @@ public class AhkMethod
         // always throw MethodErrors.
         if (CallingConvention == MethodImportAttributes.CallingConventionThisCall)
         {
-            Console.WriteLine($"!!! Found thiscall method: {Name}");
+            Program.Logger.LogWarning("Unsupported thiscall method: {MethodName}", Name);
             
             sb.AppendLine($"        throw MethodError(\"Not supported: AutoHotkey does not support the thiscall calling convention\", , A_ThisFunc)");
             sb.AppendLine("    }");

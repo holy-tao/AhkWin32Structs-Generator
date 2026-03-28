@@ -1,16 +1,18 @@
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
 
 public static class FieldSignatureDecoder
 {
     /// <summary>
-    /// Cache for loaded external (non-Win32Metadata) assemblies
+    /// Cache for loaded external (non-Win32Metadata) assemblies.
+    /// Both PEReader and MetadataReader are stored to prevent the PEReader (which owns
+    /// the underlying stream) from being garbage collected while the MetadataReader is in use.
     /// </summary>
-    private static readonly Dictionary<string, MetadataReader> _assemblyReaders = [];
+    private static readonly Dictionary<string, (PEReader PeReader, MetadataReader MetadataReader)> _assemblyReaders = [];
 
     /// <summary>
     /// List of namespaces of types which we are external to Windows.Win32 and which we don't
@@ -37,7 +39,7 @@ public static class FieldSignatureDecoder
 
         if(excludeNamespaces.Any(typeNamespace.StartsWith))
         {
-            Debug.WriteLine($"Treating Win32 external {typeNamespace}.{typeName} as a pointer");
+            Program.Logger.LogDebug("Treating Win32 external {Namespace}.{TypeName} as pointer", typeNamespace, typeName);
             return new FieldInfo(SimpleFieldKind.Pointer, typeName, 0, td);
         }
         else if (typeName == "HRESULT")
@@ -221,8 +223,8 @@ public static class FieldSignatureDecoder
 
     private static MetadataReader LoadAssemblyReader(string assemblyName)
     {
-        if (_assemblyReaders.TryGetValue(assemblyName, out MetadataReader? cached))
-            return cached;
+        if (_assemblyReaders.TryGetValue(assemblyName, out var cached))
+            return cached.MetadataReader;
 
         string baseDir = AppContext.BaseDirectory;
         string runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
@@ -282,26 +284,13 @@ public static class FieldSignatureDecoder
             PEReader peReader = new(File.OpenRead(path));
             var reader = peReader.GetMetadataReader();
 
-            _assemblyReaders[assemblyName] = reader;
+            _assemblyReaders[assemblyName] = (peReader, reader);
 
-            Debug.WriteLine($"Loaded external assembly '{assemblyName}' from '{path}'");
+            Program.Logger.LogDebug("Loaded external assembly {AssemblyName} from {Path}", assemblyName, path);
             return reader;
         }
 
         throw new DllNotFoundException($"Failed to load external assembly '{assemblyName}'");
-    }
-
-    /// <summary>
-    /// Register a metadata reader that was loaded by another process
-    /// </summary>
-    /// <param name="asmName"></param>
-    /// <param name="reader"></param>
-    public static void RegisterMetadataReader(string asmName, MetadataReader reader)
-    {
-        if (!_assemblyReaders.ContainsKey(asmName))
-        {
-            _assemblyReaders[asmName] = reader;
-        }
     }
 
     /// <summary>

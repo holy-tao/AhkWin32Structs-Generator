@@ -1,8 +1,10 @@
-﻿using System.Reflection.Metadata;
-using System.Reflection.PortableExecutable;
-using System.Text;
+using System.CommandLine;
 using System.Diagnostics;
 using System.Reflection;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
+using System.Text;
+using Microsoft.Extensions.Logging;
 
 public class Program
 {
@@ -10,59 +12,127 @@ public class Program
 
     public static string MetadataDir = "";
 
+    public static ILogger Logger = null!;
+
+    private static ILoggerFactory? _loggerFactory;
+
     public static int Main(string[] args)
     {
-        if (args.Length != 2)
+        var metadataDirArg = new Argument<DirectoryInfo>("metadata-dir", "Path to directory containing .winmd files and metadata");
+        var outputDirArg = new Argument<DirectoryInfo>("output-dir", "Path to output directory for generated .ahk files");
+
+        var namespaceOption = new Option<string[]>("--namespace", "Filter: only generate types in these namespaces (prefix match)")
         {
-            Console.Error.WriteLine("Usage: AhkWin32Structs.exe <metadata-directory> <output-root>");
-            return -1;
-        }
+            AllowMultipleArgumentsPerToken = true
+        };
+        namespaceOption.AddAlias("-n");
 
-        MetadataDir = args[0];
-        string ahkOutputDir = args[1];
+        var assemblyOption = new Option<string[]>("--assembly", "Filter: only process these .winmd assemblies")
+        {
+            AllowMultipleArgumentsPerToken = true
+        };
+        assemblyOption.AddAlias("-a");
 
-        Console.WriteLine("Starting AhkWin32Structs Generator...");
-        Console.WriteLine($"\tMetadata Directory: {MetadataDir}");
-        Console.WriteLine($"\tOutput Directory: {ahkOutputDir}");
+        var logLevelOption = new Option<LogLevel>("--log-level", () => LogLevel.Information, "Minimum log level");
 
-        Console.WriteLine("Reading metadata...");
+        var rootCommand = new RootCommand("AhkWin32Structs Generator — generates AutoHotkey v2 projections of Win32 and WDK APIs")
+        {
+            metadataDirArg,
+            outputDirArg,
+            namespaceOption,
+            assemblyOption,
+            logLevelOption
+        };
 
-        Stopwatch stopwatch = new();
-        stopwatch.Start();
+        int exitCode = 0;
+        rootCommand.SetHandler(
+            (metadataDir, outputDir, namespaceFilter, assemblyFilter, logLevel) =>
+            {
+                exitCode = RunGenerator(metadataDir, outputDir, namespaceFilter ?? [], assemblyFilter ?? [], logLevel);
+            },
+            metadataDirArg, outputDirArg, namespaceOption, assemblyOption, logLevelOption);
 
+        rootCommand.Invoke(args);
+        return exitCode;
+    }
+
+    private static int RunGenerator(DirectoryInfo metadataDir, DirectoryInfo outputDir, string[] namespaceFilter, string[] assemblyFilter, LogLevel logLevel)
+    {
+        _loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.SetMinimumLevel(logLevel);
+            builder.AddSimpleConsole(opts =>
+            {
+                opts.SingleLine = true;
+                opts.TimestampFormat = "HH:mm:ss ";
+            });
+        });
+        Logger = _loggerFactory.CreateLogger("Generator");
+
+        MetadataDir = metadataDir.FullName;
+        string ahkOutputDir = outputDir.FullName;
+
+        Logger.LogInformation("Starting AhkWin32Structs Generator...");
+        Logger.LogInformation("Metadata Directory: {MetadataDir}", MetadataDir);
+        Logger.LogInformation("Output Directory: {OutputDir}", ahkOutputDir);
+
+        if (namespaceFilter.Length > 0)
+            Logger.LogInformation("Namespace filter: {Namespaces}", string.Join(", ", namespaceFilter));
+        if (assemblyFilter.Length > 0)
+            Logger.LogInformation("Assembly filter: {Assemblies}", string.Join(", ", assemblyFilter));
+
+        Stopwatch totalStopwatch = Stopwatch.StartNew();
+
+        // Load API documentation
+        Stopwatch phaseWatch = Stopwatch.StartNew();
         DocumentationUtils.Load(Path.Join(MetadataDir, "apidocs.msgpack"));
-        Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(MetadataDir, "extensions"));
+        phaseWatch.Stop();
+        Logger.LogInformation("Loaded API documentation in {Elapsed:F1}s", phaseWatch.Elapsed.TotalSeconds);
 
-        IEnumerable<FileStream> winmdFiles = CollectWinmdFiles(MetadataDir);
+        // Load extensions
+        phaseWatch.Restart();
+        Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(MetadataDir, "extensions"));
+        phaseWatch.Stop();
+        Logger.LogInformation("Loaded {Count} extension mappings in {Elapsed:F1}s", Extensions.Count, phaseWatch.Elapsed.TotalSeconds);
+
+        // Collect .winmd files
+        phaseWatch.Restart();
+        IEnumerable<FileStream> winmdFiles = CollectWinmdFiles(MetadataDir, assemblyFilter);
+        phaseWatch.Stop();
+        Logger.LogInformation("Collected .winmd files in {Elapsed:F1}s", phaseWatch.Elapsed.TotalSeconds);
 
         StringBuilder versionInfo = new();
         versionInfo.AppendLine("[Assemblies]");
 
-        Console.WriteLine("Generating bindings...");
+        Logger.LogInformation("Generating bindings...");
 
         int total = 0, errors = 0;
-        foreach(FileStream fileStream in winmdFiles)
+        foreach (FileStream fileStream in winmdFiles)
         {
             PEReader peReader = new(fileStream);
             MetadataReader reader = peReader.GetMetadataReader();
-            
+
             // Pull version info
             AssemblyName assemblyName = reader.GetAssemblyDefinition().GetAssemblyName();
             versionInfo.AppendLine($"{assemblyName.Name?.TrimEnd(".winmd")} = {assemblyName.Version}");
-            Console.Write($"\t{assemblyName.Name?.TrimEnd(".winmd")} v{assemblyName.Version}... ");
 
-            (int fileTotal, int fileErrors) = GenerateBindings(reader, ahkOutputDir);
+            Stopwatch assemblyWatch = Stopwatch.StartNew();
+            (int fileTotal, int fileErrors) = GenerateBindings(reader, ahkOutputDir, namespaceFilter);
+            assemblyWatch.Stop();
 
-            Console.WriteLine($"done. {fileTotal} files generated with {fileErrors} errors.");
+            Logger.LogInformation("{Assembly} v{Version}: {Total} files, {Errors} errors in {Elapsed:F1}s",
+                assemblyName.Name?.TrimEnd(".winmd"), assemblyName.Version,
+                fileTotal, fileErrors, assemblyWatch.Elapsed.TotalSeconds);
+
             total += fileTotal;
             errors += fileErrors;
 
             peReader.Dispose();
             fileStream.Dispose();
         }
-    
+
         // Finalize version.ini with package info
-        Console.WriteLine("Finalizing version.ini file...");
+        Logger.LogInformation("Finalizing version.ini...");
         versionInfo.AppendLine();
         versionInfo.AppendLine("[Packages]");
 
@@ -74,25 +144,37 @@ public class Program
             .ToList()
             .ForEach(info => {
                 versionInfo.AppendLine($"{info[0]} = {info[1]}");
-                Console.WriteLine($"\t{info[0]}: {info[1]}");
+                Logger.LogInformation("Package {Name}: {Version}", info[0], info[1]);
             });
 
         File.WriteAllText(Path.Join(ahkOutputDir, "version.ini"), versionInfo.ToString());
-        
-        Console.WriteLine($"Done! Emitted {total} files with {errors} errors in {stopwatch.Elapsed.TotalSeconds} seconds");
+
+        totalStopwatch.Stop();
+        Logger.LogInformation("Done! Emitted {Total} files with {Errors} errors in {Elapsed:F1}s",
+            total, errors, totalStopwatch.Elapsed.TotalSeconds);
+
+        _loggerFactory.Dispose();
+
         return -errors;
     }
 
-    private static (int total, int errors) GenerateBindings(MetadataReader mr, string outputDir)
+    private static (int total, int errors) GenerateBindings(MetadataReader mr, string outputDir, string[] namespaceFilter)
     {
         int total = 0, errors = 0;
 
-        foreach(TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
+        foreach (TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
         {
             TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
 
             string typeNamespace = mr.GetString(typeDef.Namespace);
             string typeName = mr.GetString(typeDef.Name);
+
+            // Apply namespace filter before any processing
+            if (namespaceFilter.Length > 0 &&
+                !namespaceFilter.Any(prefix => typeNamespace.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
 
             if (ShouldSkipType(mr, hTypeDef))
                 continue;
@@ -102,7 +184,7 @@ public class Program
                 IAhkEmitter? emitter = ParseType(mr, typeDef);
                 if (emitter == null)
                 {
-                    Debug.WriteLine($"Non-explicit skip for {mr.GetString(typeDef.Namespace)}.{typeName}");
+                    Logger.LogDebug("Non-explicit skip: {Namespace}.{TypeName}", typeNamespace, typeName);
                     continue;
                 }
 
@@ -116,28 +198,27 @@ public class Program
             catch (Exception ex)
             {
                 errors++;
-                Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
-                Console.Error.WriteLine(ex.Message);
-                Console.Error.WriteLine(ex.StackTrace);
-                Console.Error.WriteLine();
+                Logger.LogError(ex, "Failed to parse {Namespace}.{TypeName}", typeNamespace, typeName);
             }
 
-            if (total % 1000 == 0)
+            if (total > 0 && total % 1000 == 0)
             {
-                Debug.WriteLine($"Emitted: {total}");
+                Logger.LogDebug("Progress: {Total} files emitted", total);
             }
         }
 
         return (total, errors);
     }
 
-    private static IEnumerable<FileStream> CollectWinmdFiles(string directoryPath)
+    private static List<FileStream> CollectWinmdFiles(string directoryPath, string[] assemblyFilter)
     {
-        Console.WriteLine($"Scanning '{directoryPath}' for .winmd files...");
+        Logger.LogInformation("Scanning {Directory} for .winmd files...", directoryPath);
 
         return Directory.EnumerateFiles(directoryPath)
             .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".winmd")
-            .Select(path => { Console.WriteLine($"\t{path}"); return path; })
+            .Where(path => assemblyFilter.Length == 0 || assemblyFilter.Any(filter =>
+                Path.GetFileNameWithoutExtension(path).Equals(filter, StringComparison.OrdinalIgnoreCase)))
+            .Select(path => { Logger.LogDebug("Found: {Path}", path); return path; })
             .Select(File.OpenRead)
             .ToList();
     }

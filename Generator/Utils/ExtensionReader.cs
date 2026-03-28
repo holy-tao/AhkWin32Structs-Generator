@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using YamlDotNet.Serialization;
 
 class ExtensionReader
@@ -12,7 +12,7 @@ class ExtensionReader
         {
             if (Path.GetExtension(path).ToLowerInvariant() is not ".yml" or ".yaml")
             {
-                Debug.WriteLine($"\tSkipping {Path.GetExtension(path)} file in extensions directory: {Path.GetFileName(path)}");
+                Program.Logger.LogDebug("Skipping non-YAML file in extensions directory: {FileName}", Path.GetFileName(path));
                 continue;
             }
 

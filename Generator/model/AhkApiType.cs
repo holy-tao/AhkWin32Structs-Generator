@@ -1,6 +1,7 @@
 
 using System.Reflection.Metadata;
 using System.Text;
+using Microsoft.Extensions.Logging;
 using Microsoft.Windows.SDK.Win32Docs;
 using System.Reflection;
 
@@ -37,10 +38,7 @@ class AhkApiType : AhkType
                 {
                     string methodName = mr.GetString(methodDefinition.Name);
 
-                    Console.Error.WriteLine($"{ex.GetType().Name} parsing {Namespace}.{Name}::{methodName}: {ex.Message}");
-                    Console.Error.WriteLine(ex.Message);
-                    Console.Error.WriteLine(ex.StackTrace);
-                    Console.Error.WriteLine();
+                    Program.Logger.LogError(ex, "Failed to parse method {Namespace}.{Type}::{Method}", Namespace, Name, methodName);
 
                     return null;
                 }
