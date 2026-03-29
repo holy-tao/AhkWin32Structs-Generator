@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Metadata;
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Metadata;
@@ -13,8 +14,8 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 public sealed class MetadataLoader : IDisposable
 {
-    private readonly Dictionary<string, (PEReader PeReader, MetadataReader Reader)> _primaryAssemblies = [];
-    private readonly Dictionary<string, (PEReader PeReader, MetadataReader Reader)> _externalAssemblies = [];
+    private readonly ConcurrentDictionary<string, (PEReader PeReader, MetadataReader Reader)> _primaryAssemblies = [];
+    private readonly ConcurrentDictionary<string, (PEReader PeReader, MetadataReader Reader)> _externalAssemblies = [];
     private readonly string _metadataDir;
     private readonly ILogger<MetadataLoader> _logger;
 

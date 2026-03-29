@@ -104,7 +104,7 @@ public sealed class TypeExtractor
         int archSkipCount = 0, nestedSkipCount = 0, delegateSkipCount = 0, otherSkipCount = 0;
         int errorCount = 0;
 
-        foreach (TypeDefinitionHandle hTypeDef in reader.TypeDefinitions)
+        reader.TypeDefinitions.AsParallel().ForAll(hTypeDef =>
         {
             TypeDefinition typeDef = reader.GetTypeDefinition(hTypeDef);
             string typeName = reader.GetString(typeDef.Name);
@@ -118,11 +118,11 @@ public sealed class TypeExtractor
                 _logger.LogDebug("Skipping type {FQN}: {Reason}", fqn, skipReason.Value);
                 switch (skipReason.Value)
                 {
-                    case SkipReason.Nested: nestedSkipCount++; break;
-                    case SkipReason.Delegate: delegateSkipCount++; break;
-                    default: otherSkipCount++; break;
+                    case SkipReason.Nested: Interlocked.Increment(ref nestedSkipCount); break;
+                    case SkipReason.Delegate: Interlocked.Increment(ref delegateSkipCount); break;
+                    default: Interlocked.Increment(ref otherSkipCount); break;
                 }
-                continue;
+                return;
             }
 
             try
@@ -137,10 +137,10 @@ public sealed class TypeExtractor
                     Architecture arch = attrs.SupportedArchitecture.Value;
                     if (!arch.HasFlag(Architecture.X64) && !arch.HasFlag(Architecture.Arm64))
                     {
-                        archSkipCount++;
+                        Interlocked.Increment(ref archSkipCount);
                         _logger.LogDebug("Skipping type {FQN}: unsupported architecture {Arch}",
                             fqn, arch);
-                        continue;
+                        return;
                     }
                 }
 
@@ -149,8 +149,8 @@ public sealed class TypeExtractor
                 if (kind == null)
                 {
                     _logger.LogDebug("Skipping type {FQN}: non-extractable", fqn);
-                    otherSkipCount++;
-                    continue;
+                    Interlocked.Increment(ref otherSkipCount);
+                    return;
                 }
 
                 Win32Type? extracted = kind.Value switch
@@ -170,29 +170,29 @@ public sealed class TypeExtractor
                     switch (extracted)
                     {
                         case HandleType:
-                            handleCount++;
+                            Interlocked.Increment(ref handleCount);
                             break;
                         case StructType:
-                            structCount++;
+                            Interlocked.Increment(ref structCount);
                             break;
                         case EnumType:
-                            enumCount++;
+                            Interlocked.Increment(ref enumCount);
                             break;
                         case ComInterfaceType:
-                            comCount++;
+                            Interlocked.Increment(ref comCount);
                             break;
                         case ApiType:
-                            apiCount++;
+                            Interlocked.Increment(ref apiCount);
                             break;
                     }
                 }
             }
             catch (Exception ex)
             {
-                errorCount++;
+                Interlocked.Increment(ref errorCount);
                 _logger.LogError(ex, "Failed to extract {FQN}", fqn);
             }
-        }
+        });
 
         return new ExtractionCounts(
             structCount, handleCount, enumCount,

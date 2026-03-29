@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Model;
 
+using System.Collections.Concurrent;
 using AhkWin32.Generator.Model.Types;
 
 /// <summary>
@@ -8,8 +9,8 @@ using AhkWin32.Generator.Model.Types;
 /// </summary>
 public class TypeRegistry
 {
-    private readonly Dictionary<TypeIdentity, Win32Type> _types = [];
-    private readonly Dictionary<string, List<Win32Type>> _byFqn = [];
+    private readonly ConcurrentDictionary<TypeIdentity, Win32Type> _types = [];
+    private readonly ConcurrentDictionary<string, List<Win32Type>> _byFqn = [];
 
     /// <summary>Total number of type entries (including architecture variants).</summary>
     public int Count => _types.Count;
