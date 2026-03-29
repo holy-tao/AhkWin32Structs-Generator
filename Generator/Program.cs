@@ -184,7 +184,7 @@ public class Program
         using var loader = new MetadataLoader(metadataDir, loggerFactory.CreateLogger<MetadataLoader>());
         loader.LoadPrimaryAssemblies(assemblyFilter.Length > 0 ? assemblyFilter : null);
 
-        var extractor = new TypeExtractor(loader, docs, loggerFactory.CreateLogger<TypeExtractor>());
+        var extractor = new TypeExtractor(loader, docs, loggerFactory);
         TypeRegistry registry = extractor.ExtractAll();
 
         // --- Diagnostic report ---
@@ -193,11 +193,15 @@ public class Program
         int structCount = registry.GetAll<StructType>().Count(t => t is not HandleType);
         int handleCount = registry.GetAll<HandleType>().Count();
         int enumCount = registry.GetAll<EnumType>().Count();
+        int comCount = registry.GetAll<ComInterfaceType>().Count();
+        int apiCount = registry.GetAll<ApiType>().Count();
 
-        Logger.LogInformation("  Structs: {Count}", structCount);
-        Logger.LogInformation("  Handles: {Count}", handleCount);
-        Logger.LogInformation("  Enums:   {Count}", enumCount);
-        Logger.LogInformation("  Total:   {Count}", registry.Count);
+        Logger.LogInformation("  Structs:        {Count}", structCount);
+        Logger.LogInformation("  Handles:        {Count}", handleCount);
+        Logger.LogInformation("  Enums:          {Count}", enumCount);
+        Logger.LogInformation("  COM Interfaces: {Count}", comCount);
+        Logger.LogInformation("  API Types:      {Count}", apiCount);
+        Logger.LogInformation("  Total:          {Count}", registry.Count);
 
         // Architecture-specific types
         int archSpecific = registry.GetAll().Count(t => t.Arch != IRArchitecture.All);
@@ -240,6 +244,43 @@ public class Program
         {
             Logger.LogInformation("  {FQN}: {Count} constants, IsFlags={IsFlags}, Underlying={Type}",
                 enumType.FQN, enumType.Constants.Count, enumType.IsFlags, enumType.UnderlyingTypeName);
+        }
+
+        // Spot-check COM interfaces
+        Logger.LogInformation("=== Sample COM Interfaces ===");
+        var iUnknown = registry.Resolve("Windows.Win32.System.Com.IUnknown", IRArchitecture.All);
+        if (iUnknown is ComInterfaceType iu)
+        {
+            Logger.LogInformation("  IUnknown: {Methods} methods, VTableOffset={Offset}, Base={Base}",
+                iu.Methods.Count, iu.VTableOffset, iu.BaseInterfaceName ?? "null");
+        }
+        else
+        {
+            Logger.LogWarning("  IUnknown not found or wrong type");
+        }
+
+        var iDispatch = registry.Resolve("Windows.Win32.System.Com.IDispatch", IRArchitecture.All);
+        if (iDispatch is ComInterfaceType id)
+        {
+            Logger.LogInformation("  IDispatch: {Methods} methods, VTableOffset={Offset}, Base={Base}",
+                id.Methods.Count, id.VTableOffset, id.BaseInterfaceName ?? "null");
+        }
+
+        // Spot-check API types
+        Logger.LogInformation("=== Sample API Types ===");
+        var foundationApis = registry.Resolve("Windows.Win32.Foundation.Apis", IRArchitecture.All);
+        if (foundationApis is ApiType fa)
+        {
+            Logger.LogInformation("  Foundation.Apis: {Constants} constants, {Methods} methods",
+                fa.Constants.Count, fa.Methods.Count);
+            var closeHandle = fa.Methods.FirstOrDefault(m => m.Name == "CloseHandle");
+            if (closeHandle != null)
+                Logger.LogInformation("    CloseHandle: {Params} params, DLL={Dll}, SetsLastError={SLE}",
+                    closeHandle.Parameters.Count - 1, closeHandle.DllName, closeHandle.SetsLastError);
+        }
+        else
+        {
+            Logger.LogWarning("  Foundation.Apis not found or wrong type");
         }
 
         // Check for any architecture-specific structs
