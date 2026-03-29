@@ -138,6 +138,24 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         return new FunctionPointerType("FnPtr", sig);
     }
 
+    // --- Method signature decoding ---
+
+    /// <summary>
+    /// Decode a method's full signature into ResolvedType return type and parameter types.
+    /// Convenience wrapper that creates a SignatureDecoder and invokes DecodeSignature.
+    /// </summary>
+    public static (ResolvedType ReturnType, ResolvedType[] ParameterTypes) DecodeMethodSignature(
+        MetadataReader reader, MethodDefinition methodDef,
+        MetadataLoader loader, ILogger logger,
+        TypeDefinition? resolutionContext = null)
+    {
+        var decoder = new SignatureDecoder(reader, loader, logger, resolutionContext);
+#pragma warning disable CS8620 // Argument nullability — Win32Metadata has no generics
+        var sig = methodDef.DecodeSignature(decoder, null);
+#pragma warning restore CS8620
+        return (sig.ReturnType, [.. sig.ParameterTypes]);
+    }
+
     // --- Type classification ---
 
     /// <summary>

@@ -26,13 +26,22 @@ public sealed class TypeExtractor
     private readonly DocumentationLoader _docs;
     private readonly ILogger<TypeExtractor> _logger;
     private readonly FieldExtractor _fieldExtractor;
+    private readonly MethodExtractor _methodExtractor;
+    private readonly ComInterfaceExtractor _comExtractor;
 
-    public TypeExtractor(MetadataLoader loader, DocumentationLoader docs, ILogger<TypeExtractor> logger)
+    public TypeExtractor(MetadataLoader loader, DocumentationLoader docs,
+        ILoggerFactory loggerFactory)
     {
         _loader = loader;
         _docs = docs;
-        _logger = logger;
-        _fieldExtractor = new FieldExtractor(loader, logger, ExtractStructRecursive);
+        _logger = loggerFactory.CreateLogger<TypeExtractor>();
+        _fieldExtractor = new FieldExtractor(loader, _logger, ExtractStructRecursive);
+
+        var paramExtractor = new ParameterExtractor(loader, loggerFactory.CreateLogger<ParameterExtractor>());
+        _methodExtractor = new MethodExtractor(docs, paramExtractor,
+            loggerFactory.CreateLogger<MethodExtractor>());
+        _comExtractor = new ComInterfaceExtractor(loader, docs, _methodExtractor,
+            loggerFactory.CreateLogger<ComInterfaceExtractor>());
     }
 
     /// <summary>
@@ -53,11 +62,9 @@ public sealed class TypeExtractor
             asmWatch.Stop();
 
             _logger.LogInformation(
-                "Extracted {StructCount} structs, {HandleCount} handles, {EnumCount} enums from {AssemblyName} in {Elapsed:F1}s",
-                counts.Structs, counts.Handles, counts.Enums, assemblyName, asmWatch.Elapsed.TotalSeconds);
-            _logger.LogInformation(
-                "  Deferred: {ComCount} COM interfaces, {ApiCount} API types",
-                counts.DeferredCom, counts.DeferredApi);
+                "Extracted {StructCount} structs, {HandleCount} handles, {EnumCount} enums, {ComCount} COM, {ApiCount} APIs from {AssemblyName} in {Elapsed:F1}s",
+                counts.Structs, counts.Handles, counts.Enums, counts.ComInterfaces, counts.ApiTypes,
+                assemblyName, asmWatch.Elapsed.TotalSeconds);
             _logger.LogInformation(
                 "  Skipped: {Arch} arch-filtered, {Nested} nested, {Delegate} delegates, {Other} other, {Errors} errors",
                 counts.SkippedArch, counts.SkippedNested, counts.SkippedDelegate, counts.SkippedOther, counts.Errors);
@@ -82,7 +89,7 @@ public sealed class TypeExtractor
     /// </summary>
     public sealed record ExtractionCounts(
         int Structs, int Handles, int Enums,
-        int DeferredCom, int DeferredApi,
+        int ComInterfaces, int ApiTypes,
         int SkippedArch, int SkippedNested, int SkippedDelegate, int SkippedOther,
         int Errors);
 
@@ -93,7 +100,7 @@ public sealed class TypeExtractor
         MetadataReader reader, string assemblyName, string version, TypeRegistry registry)
     {
         int structCount = 0, handleCount = 0, enumCount = 0;
-        int deferredCom = 0, deferredApi = 0;
+        int comCount = 0, apiCount = 0;
         int archSkipCount = 0, nestedSkipCount = 0, delegateSkipCount = 0, otherSkipCount = 0;
         int errorCount = 0;
 
@@ -151,21 +158,10 @@ public sealed class TypeExtractor
                     TypeKind.Handle => ExtractHandle(reader, typeDef, assemblyName, version, attrs),
                     TypeKind.Struct => ExtractStruct(reader, typeDef, assemblyName, version, attrs),
                     TypeKind.Enum => ExtractEnum(reader, typeDef, assemblyName, version, attrs),
-                    TypeKind.ComInterface => null,
-                    TypeKind.ApiType => null,
+                    TypeKind.ComInterface => _comExtractor.ExtractComInterface(reader, typeDef, assemblyName, version, attrs),
+                    TypeKind.ApiType => ExtractApiType(reader, typeDef, assemblyName, version, attrs),
                     _ => null
                 };
-
-                if (kind.Value == TypeKind.ComInterface)
-                {
-                    deferredCom++;
-                    _logger.LogDebug("Skipping ComInterface type {FQN} — deferred to Step 3", fqn);
-                }
-                else if (kind.Value == TypeKind.ApiType)
-                {
-                    deferredApi++;
-                    _logger.LogDebug("Skipping ApiType type {FQN} — deferred to Step 3", fqn);
-                }
 
                 if (extracted != null)
                 {
@@ -182,6 +178,12 @@ public sealed class TypeExtractor
                         case EnumType:
                             enumCount++;
                             break;
+                        case ComInterfaceType:
+                            comCount++;
+                            break;
+                        case ApiType:
+                            apiCount++;
+                            break;
                     }
                 }
             }
@@ -194,7 +196,7 @@ public sealed class TypeExtractor
 
         return new ExtractionCounts(
             structCount, handleCount, enumCount,
-            deferredCom, deferredApi,
+            comCount, apiCount,
             archSkipCount, nestedSkipCount, delegateSkipCount, otherSkipCount,
             errorCount);
     }
@@ -452,6 +454,89 @@ public sealed class TypeExtractor
 
         _logger.LogDebug("Extracted EnumType {FQN} ({ConstantCount} constants, flags={IsFlags})",
             fqn, constants.Count, attrs.IsFlags);
+
+        return result;
+    }
+
+    // --- API type extraction ---
+
+    /// <summary>
+    /// Extract an ApiType from an "Apis" TypeDefinition.
+    /// Port of AhkApiType constructor.
+    /// </summary>
+    private ApiType ExtractApiType(
+        MetadataReader reader, TypeDefinition typeDef,
+        string assemblyName, string version, TypeAttrs attrs)
+    {
+        string typeName = reader.GetString(typeDef.Name);
+        string typeNamespace = reader.GetString(typeDef.Namespace);
+        string fqn = $"{typeNamespace}.{typeName}";
+
+        TypeIdentity identity = BuildIdentity(fqn, attrs);
+
+        // Get API documentation
+        ApiDetails? apiDetails = _docs.GetApiDetails(reader, typeDef);
+
+        // Extract constants (same as enum constants — reuse existing logic)
+        List<ConstantMember> constants = [];
+        foreach (FieldDefinitionHandle fieldHandle in typeDef.GetFields())
+        {
+            FieldDefinition fieldDef = reader.GetFieldDefinition(fieldHandle);
+            string fieldName = reader.GetString(fieldDef.Name);
+
+            if (fieldName == "value__")
+                continue;
+
+            ConstantMember? constant = ExtractEnumConstant(reader, fieldDef, fieldName, apiDetails);
+            if (constant != null)
+                constants.Add(constant);
+        }
+
+        // Extract methods, deduplicating by name (matching legacy AhkApiType behavior)
+        List<MethodMember> methods = [];
+        HashSet<string> seenMethodNames = [];
+        foreach (MethodDefinitionHandle hMethod in typeDef.GetMethods())
+        {
+            MethodDefinition methodDef = reader.GetMethodDefinition(hMethod);
+            string methodName = reader.GetString(methodDef.Name);
+
+            if (!seenMethodNames.Add(methodName))
+                continue; // Deduplicate by name
+
+            MethodMember? method = _methodExtractor.ExtractMethod(reader, methodDef, typeNamespace);
+            if (method != null)
+                methods.Add(method);
+        }
+
+        // Collect referenced types from both constants and methods
+        List<string> referencedTypes = [];
+        foreach (ConstantMember c in constants)
+            referencedTypes.AddRange(c.ReferencedTypes);
+        foreach (MethodMember m in methods)
+            referencedTypes.AddRange(m.ReferencedTypes);
+
+        string displayName = DeconflictName(typeName);
+
+        ApiType result = new()
+        {
+            Identity = identity,
+            Name = displayName,
+            CanonicalName = typeName,
+            AssemblyName = assemblyName,
+            MetadataVersion = $"{assemblyName} v{version}",
+            Flags = attrs.Flags,
+            Constants = constants,
+            Methods = methods,
+            Description = apiDetails?.Description,
+            Remarks = apiDetails?.Remarks,
+            HelpLink = apiDetails?.HelpLink,
+            DeprecationMessage = attrs.DeprecationMessage,
+            SupportedOSPlatform = attrs.SupportedOSPlatform,
+            ReferencedTypes = referencedTypes.Distinct().ToList()
+        };
+
+        _logger.LogDebug("Extracted ApiType {FQN} ({ConstantCount} constants, {MethodCount} methods)",
+            fqn, constants.Count, methods.Count);
 
         return result;
     }

@@ -30,6 +30,16 @@ public sealed record FieldAttrs(
     IReadOnlyList<BitfieldMember>? Bitfields);
 
 /// <summary>
+/// Decoded attributes for a Parameter. Computed once and reused.
+/// </summary>
+public sealed record ParameterAttrs(
+    ParameterFlags Flags,
+    int SizedBufferBytesParamIndex,
+    IReadOnlyList<string>? IgnoreIfReturnValues,
+    string? RAIIFreeFuncName,
+    string? FreeWithFuncName);
+
+/// <summary>
 /// Cached attribute decoding utilities. Decodes attributes in a single pass
 /// and returns result records for reuse.
 /// </summary>
@@ -232,6 +242,92 @@ public static class AttributeReader
             return null;
 
         return new FreeFuncRef(funcName, typeNamespace, $"{typeNamespace}.Apis");
+    }
+
+    /// <summary>
+    /// Decode all relevant attributes for a Parameter in a single pass.
+    /// </summary>
+    public static ParameterAttrs DecodeParameterAttributes(MetadataReader reader, Parameter param)
+    {
+        ParameterFlags flags = ParameterFlags.None;
+        int sizedBufferBytesParamIndex = -1;
+        List<string>? ignoreIfReturnValues = null;
+        string? raiiFreeFunc = null;
+        string? freeWithFunc = null;
+
+        foreach (CustomAttributeHandle attrHandle in param.GetCustomAttributes())
+        {
+            CustomAttribute attr = reader.GetCustomAttribute(attrHandle);
+            (_, string attrName) = GetAttributeTypeName(reader, attr);
+
+            switch (attrName)
+            {
+                case "ReservedAttribute":
+                    flags |= ParameterFlags.Reserved;
+                    break;
+
+                case "ConstAttribute":
+                    flags |= ParameterFlags.Constant;
+                    break;
+
+                case "MemorySizeAttribute":
+                {
+                    flags |= ParameterFlags.SizedBuffer;
+                    CustomAttributeValue<string> decoded = attr.DecodeValue(s_caProvider);
+                    foreach (var arg in decoded.NamedArguments)
+                    {
+                        if (arg.Name == "BytesParamIndex")
+                            sizedBufferBytesParamIndex = (short)(arg.Value
+                                ?? throw new InvalidOperationException("Null BytesParamIndex"));
+                    }
+                    break;
+                }
+
+                case "ComOutPtrAttribute":
+                    flags |= ParameterFlags.ComOutPtr;
+                    break;
+
+                case "RetValAttribute":
+                    flags |= ParameterFlags.RetVal;
+                    break;
+
+                case "DoNotReleaseAttribute":
+                    flags |= ParameterFlags.DoNotRelease;
+                    break;
+
+                case "IgnoreIfReturnAttribute":
+                {
+                    flags |= ParameterFlags.HasIgnoreIfReturn;
+                    CustomAttributeValue<string> decoded = attr.DecodeValue(s_caProvider);
+                    string val = (string)(decoded.FixedArguments[0].Value
+                        ?? throw new InvalidOperationException("Null IgnoreIfReturnAttribute value"));
+                    ignoreIfReturnValues ??= [];
+                    ignoreIfReturnValues.Add(val);
+                    break;
+                }
+
+                case "RAIIFreeAttribute":
+                {
+                    flags |= ParameterFlags.HasRAIIFree;
+                    CustomAttributeValue<string> decoded = attr.DecodeValue(s_caProvider);
+                    raiiFreeFunc = (string)(decoded.FixedArguments[0].Value
+                        ?? throw new InvalidOperationException("Null RAIIFreeAttribute value"));
+                    break;
+                }
+
+                case "FreeWithAttribute":
+                {
+                    flags |= ParameterFlags.HasFreeWith;
+                    CustomAttributeValue<string> decoded = attr.DecodeValue(s_caProvider);
+                    freeWithFunc = (string)(decoded.FixedArguments[0].Value
+                        ?? throw new InvalidOperationException("Null FreeWithAttribute value"));
+                    break;
+                }
+            }
+        }
+
+        return new ParameterAttrs(flags, sizedBufferBytesParamIndex,
+            ignoreIfReturnValues, raiiFreeFunc, freeWithFunc);
     }
 
     /// <summary>
