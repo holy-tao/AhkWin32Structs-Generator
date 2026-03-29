@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Metadata;
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Metadata;
@@ -417,20 +418,11 @@ public sealed class TypeExtractor
             FindTypeDefHandle(reader, typeDef));
 
         // Extract constants
-        List<ConstantMember> constants = [];
-        foreach (FieldDefinitionHandle fieldHandle in typeDef.GetFields())
-        {
-            FieldDefinition fieldDef = reader.GetFieldDefinition(fieldHandle);
-            string fieldName = reader.GetString(fieldDef.Name);
-
-            // Skip the backing value__ field
-            if (fieldName == "value__")
-                continue;
-
-            ConstantMember? constant = ExtractEnumConstant(reader, fieldDef, fieldName, apiDetails);
-            if (constant != null)
-                constants.Add(constant);
-        }
+       List<ConstantMember> constants = [.. typeDef.GetFields()
+            .Select(reader.GetFieldDefinition)
+            .Where(fieldDef => !reader.StringComparer.Equals(fieldDef.Name, "value__", true))
+            .Select(fieldDef => ExtractEnumConstant(reader, fieldDef, reader.GetString(fieldDef.Name), apiDetails))
+            .OfType<ConstantMember>()];
 
         string displayName = DeconflictName(typeName);
 
@@ -478,42 +470,23 @@ public sealed class TypeExtractor
         ApiDetails? apiDetails = _docs.GetApiDetails(reader, typeDef);
 
         // Extract constants (same as enum constants — reuse existing logic)
-        List<ConstantMember> constants = [];
-        foreach (FieldDefinitionHandle fieldHandle in typeDef.GetFields())
-        {
-            FieldDefinition fieldDef = reader.GetFieldDefinition(fieldHandle);
-            string fieldName = reader.GetString(fieldDef.Name);
-
-            if (fieldName == "value__")
-                continue;
-
-            ConstantMember? constant = ExtractEnumConstant(reader, fieldDef, fieldName, apiDetails);
-            if (constant != null)
-                constants.Add(constant);
-        }
+        List<ConstantMember> constants = [.. typeDef.GetFields()
+            .Select(reader.GetFieldDefinition)
+            .Where(fieldDef => !reader.StringComparer.Equals(fieldDef.Name, "value__", true))
+            .Select(fieldDef => ExtractEnumConstant(reader, fieldDef, reader.GetString(fieldDef.Name), apiDetails))
+            .OfType<ConstantMember>()];
 
         // Extract methods, deduplicating by name (matching legacy AhkApiType behavior)
-        List<MethodMember> methods = [];
-        HashSet<string> seenMethodNames = [];
-        foreach (MethodDefinitionHandle hMethod in typeDef.GetMethods())
-        {
-            MethodDefinition methodDef = reader.GetMethodDefinition(hMethod);
-            string methodName = reader.GetString(methodDef.Name);
-
-            if (!seenMethodNames.Add(methodName))
-                continue; // Deduplicate by name
-
-            MethodMember? method = _methodExtractor.ExtractMethod(reader, methodDef, typeNamespace);
-            if (method != null)
-                methods.Add(method);
-        }
-
+        List<MethodMember> methods = [.. typeDef.GetMethods()
+            .Select(reader.GetMethodDefinition)
+            .DistinctBy(methodDef => reader.GetString(methodDef.Name))
+            .Select(methodDef => _methodExtractor.ExtractMethod(reader, methodDef, typeNamespace))
+            .OfType<MethodMember>()];
+            
         // Collect referenced types from both constants and methods
-        List<string> referencedTypes = [];
-        foreach (ConstantMember c in constants)
-            referencedTypes.AddRange(c.ReferencedTypes);
-        foreach (MethodMember m in methods)
-            referencedTypes.AddRange(m.ReferencedTypes);
+        List<string> referencedTypes =[
+            .. constants.SelectMany(c => c.ReferencedTypes), 
+            .. methods.SelectMany(m => m.ReferencedTypes)];
 
         string displayName = DeconflictName(typeName);
 
