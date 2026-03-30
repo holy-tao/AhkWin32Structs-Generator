@@ -16,6 +16,7 @@ public sealed class MetadataLoader : IDisposable
 {
     private readonly ConcurrentDictionary<string, (PEReader PeReader, MetadataReader Reader)> _primaryAssemblies = [];
     private readonly ConcurrentDictionary<string, (PEReader PeReader, MetadataReader Reader)> _externalAssemblies = [];
+    private readonly Dictionary<string, string> _packageVersions = [];
     private readonly string _metadataDir;
     private readonly ILogger<MetadataLoader> _logger;
 
@@ -27,11 +28,14 @@ public sealed class MetadataLoader : IDisposable
 
     /// <summary>
     /// Load all .winmd files from the metadata directory, optionally filtered by assembly name.
+    /// Also reads .version files to resolve NuGet package versions for each assembly.
     /// </summary>
     public void LoadPrimaryAssemblies(string[]? assemblyFilter = null)
     {
         _logger.LogInformation("Loading primary assemblies from {MetadataDir}...", _metadataDir);
         Stopwatch watch = Stopwatch.StartNew();
+
+        LoadPackageVersions();
 
         var winmdPaths = Directory.EnumerateFiles(_metadataDir)
             .Where(path => Path.GetExtension(path).Equals(".winmd", StringComparison.OrdinalIgnoreCase));
@@ -56,14 +60,58 @@ public sealed class MetadataLoader : IDisposable
 
             _primaryAssemblies[name] = (peReader, reader);
 
+            string packageVersion = ResolvePackageVersion(name);
             int typeCount = reader.TypeDefinitions.Count;
-            _logger.LogInformation("Loaded {AssemblyName} v{Version} ({TypeCount} types)",
-                name, asmName.Version, typeCount);
+            _logger.LogInformation("Loaded {AssemblyName} (package {PackageVersion}, {TypeCount} types)",
+                name, packageVersion, typeCount);
         }
 
         watch.Stop();
         _logger.LogInformation("Loaded {Count} primary assemblies in {Elapsed:F1}s",
             _primaryAssemblies.Count, watch.Elapsed.TotalSeconds);
+    }
+
+    /// <summary>
+    /// Read .version files from the metadata directory (NuGet package versions).
+    /// </summary>
+    private void LoadPackageVersions()
+    {
+        foreach (string path in Directory.EnumerateFiles(_metadataDir, "*.version"))
+        {
+            string packageName = Path.GetFileNameWithoutExtension(path);
+            string version = File.ReadAllText(path).Trim();
+            _packageVersions[packageName] = version;
+            _logger.LogDebug("Found package version: {PackageName} = {Version}", packageName, version);
+        }
+    }
+
+    /// <summary>
+    /// Known mapping from assembly name to NuGet package name.
+    /// </summary>
+    private static readonly Dictionary<string, string> s_assemblyToPackage = new()
+    {
+        ["Windows.Win32"] = "Microsoft.Windows.SDK.Win32Metadata",
+        ["Windows.Wdk"] = "Microsoft.Windows.WDK.Win32Metadata",
+    };
+
+    /// <summary>
+    /// Resolve the NuGet package version for a loaded assembly.
+    /// </summary>
+    private string ResolvePackageVersion(string assemblyName)
+    {
+        // Normalize: strip .winmd suffix if present (AssemblyName.Name includes it for .winmd files)
+        string normalized = assemblyName.EndsWith(".winmd", StringComparison.OrdinalIgnoreCase)
+            ? assemblyName[..^".winmd".Length]
+            : assemblyName;
+
+        if (s_assemblyToPackage.TryGetValue(normalized, out string? packageName) &&
+            _packageVersions.TryGetValue(packageName, out string? version))
+        {
+            return version;
+        }
+
+        _logger.LogWarning("No package version found for assembly {AssemblyName}", assemblyName);
+        return "unknown";
     }
 
     /// <summary>
@@ -75,14 +123,14 @@ public sealed class MetadataLoader : IDisposable
     }
 
     /// <summary>
-    /// Get all primary assemblies as (AssemblyName, Version, MetadataReader) tuples.
+    /// Get all primary assemblies as (AssemblyName, PackageVersion, MetadataReader) tuples.
+    /// PackageVersion comes from the NuGet .version files in the metadata directory.
     /// </summary>
-    public IEnumerable<(string AssemblyName, string Version, MetadataReader Reader)> GetPrimaryAssemblies()
+    public IEnumerable<(string AssemblyName, string PackageVersion, MetadataReader Reader)> GetPrimaryAssemblies()
     {
         foreach (var (name, (_, reader)) in _primaryAssemblies)
         {
-            AssemblyName asmName = reader.GetAssemblyDefinition().GetAssemblyName();
-            yield return (name, asmName.Version?.ToString() ?? "unknown", reader);
+            yield return (name, ResolvePackageVersion(name), reader);
         }
     }
 
