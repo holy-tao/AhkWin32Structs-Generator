@@ -200,65 +200,14 @@ public class Program
         var extractor = new TypeExtractor(loader, docs, loggerFactory);
         TypeRegistry registry = extractor.ExtractAll();
 
-        // Create emitters
+        // Emit
         ITypeEmitter[] emitters = [new EnumEmitter(), new ApiTypeEmitter()];
+        var pipeline = new TypeEmissionPipeline(emitters, loggerFactory.CreateLogger<TypeEmissionPipeline>());
+        var (emitted, _, errors) = pipeline.EmitAll(registry, outputDir,
+            namespaceFilter.Length > 0 ? namespaceFilter : null);
 
-        // Emit all types
-        int emitted = 0, skipped = 0, errors = 0;
-        Stopwatch emitWatch = Stopwatch.StartNew();
-
-        foreach (Win32Type type in registry.GetAll())
-        {
-            // Apply namespace filter
-            if (namespaceFilter.Length > 0 &&
-                !namespaceFilter.Any(prefix => type.Namespace.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            ITypeEmitter? emitter = null;
-            foreach (var e in emitters)
-            {
-                if (e.CanEmit(type))
-                {
-                    emitter = e;
-                    break;
-                }
-            }
-
-            if (emitter is null)
-            {
-                skipped++;
-                continue;
-            }
-
-            try
-            {
-                EmitResult result = emitter.Emit(type, outputDir);
-                string dirPath = Path.GetDirectoryName(result.FilePath)!;
-                Directory.CreateDirectory(dirPath);
-                File.WriteAllText(result.FilePath, result.Content);
-                emitted++;
-
-                if (emitted % 1000 == 0)
-                    Logger.LogInformation("  Emitted {Count} files...", emitted);
-            }
-            catch (Exception ex)
-            {
-                errors++;
-                Logger.LogError(ex, "Failed to emit {TypeName}", type.FQN);
-            }
-        }
-
-        emitWatch.Stop();
         totalWatch.Stop();
-
-        Logger.LogInformation("=== Emission Complete ===");
-        Logger.LogInformation("  Emitted: {Emitted} files", emitted);
-        Logger.LogInformation("  Skipped: {Skipped} types (no emitter)", skipped);
-        Logger.LogInformation("  Errors:  {Errors}", errors);
-        Logger.LogInformation("  Emission time: {Elapsed:F1}s", emitWatch.Elapsed.TotalSeconds);
-        Logger.LogInformation("  Total time:    {Elapsed:F1}s", totalWatch.Elapsed.TotalSeconds);
+        Logger.LogInformation("Total time: {Elapsed:F1}s", totalWatch.Elapsed.TotalSeconds);
 
         return -errors;
     }
