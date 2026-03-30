@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
@@ -421,7 +422,7 @@ public sealed class TypeExtractor
        List<ConstantMember> constants = [.. typeDef.GetFields()
             .Select(reader.GetFieldDefinition)
             .Where(fieldDef => !reader.StringComparer.Equals(fieldDef.Name, "value__", true))
-            .Select(fieldDef => ExtractEnumConstant(reader, fieldDef, reader.GetString(fieldDef.Name), apiDetails))
+            .Select(fieldDef => ExtractConstant(reader, fieldDef, reader.GetString(fieldDef.Name), apiDetails))
             .OfType<ConstantMember>()];
 
         string displayName = DeconflictName(typeName);
@@ -473,7 +474,7 @@ public sealed class TypeExtractor
         List<ConstantMember> constants = [.. typeDef.GetFields()
             .Select(reader.GetFieldDefinition)
             .Where(fieldDef => !reader.StringComparer.Equals(fieldDef.Name, "value__", true))
-            .Select(fieldDef => ExtractEnumConstant(reader, fieldDef, reader.GetString(fieldDef.Name), apiDetails))
+            .Select(fieldDef => ExtractConstant(reader, fieldDef, reader.GetString(fieldDef.Name), apiDetails))
             .OfType<ConstantMember>()];
 
         // Extract methods, deduplicating by name (matching legacy AhkApiType behavior)
@@ -515,31 +516,44 @@ public sealed class TypeExtractor
     }
 
     /// <summary>
-    /// Extract a single enum constant from a FieldDefinition.
+    /// Extract a single constant from a FieldDefinition.
+    /// Handles GUID, primitive, handle, and struct constants.
     /// </summary>
-    private ConstantMember? ExtractEnumConstant(
+    private ConstantMember? ExtractConstant(
         MetadataReader reader, FieldDefinition fieldDef, string fieldName,
         ApiDetails? apiDetails)
     {
+        FieldAttrs fieldAttrs = AttributeReader.DecodeFieldAttributes(reader, fieldDef);
+        string? description = null;
+        apiDetails?.Fields.TryGetValue(fieldName, out description);
+
         // Check for GUID constant
         Guid? guid = AttributeReader.DecodeGuid(reader, fieldDef);
         if (guid.HasValue)
         {
-            string? desc = null;
-            apiDetails?.Fields.TryGetValue(fieldName, out desc);
             return new ConstantMember
             {
                 Name = fieldName,
                 Value = new GuidConstantValue(guid.Value),
                 Type = new PrimitiveType("Guid"),
-                Description = desc,
-                IsDeprecated = AttributeReader.GetAllAttributeNames(reader, fieldDef.GetCustomAttributes())
-                    .Contains("ObsoleteAttribute"),
+                Description = description,
+                IsDeprecated = fieldAttrs.IsDeprecated,
+                DeprecationMessage = fieldAttrs.DeprecationMessage,
                 NeedsGuid = true
             };
         }
 
-        // Decode primitive constant value from blob
+        // Decode field type signature to detect struct-typed constants
+        var sigDecoder = new SignatureDecoder(reader, _loader, _logger);
+        ResolvedType fieldType = fieldDef.DecodeSignature(sigDecoder, new SignatureGenericContext());
+
+        // Struct-typed constant (handle or struct with [ConstantAttribute])
+        if (fieldType is StructRef or HandleRef)
+        {
+            return ExtractStructConstant(reader, fieldDef, fieldName, fieldType, fieldAttrs, description);
+        }
+
+        // Primitive constant value from blob
         ConstantHandle constHandle = fieldDef.GetDefaultValue();
         if (constHandle.IsNil)
             return null;
@@ -550,17 +564,214 @@ public sealed class TypeExtractor
         string formattedValue = FormatConstantValue(constant.TypeCode, ref blob, fieldName);
         string ahkTypeName = ConstantTypeCodeToAhkType(constant.TypeCode);
 
-        string? description = null;
-        apiDetails?.Fields.TryGetValue(fieldName, out description);
-
         return new ConstantMember
         {
             Name = fieldName,
             Value = new PrimitiveConstantValue(formattedValue, ahkTypeName),
             Type = new PrimitiveType(constant.TypeCode.ToString()),
             Description = description,
-            IsDeprecated = AttributeReader.GetAllAttributeNames(reader, fieldDef.GetCustomAttributes())
-                .Contains("ObsoleteAttribute")
+            IsDeprecated = fieldAttrs.IsDeprecated,
+            DeprecationMessage = fieldAttrs.DeprecationMessage
+        };
+    }
+
+    /// <summary>
+    /// Extract a struct-typed constant (handle constant or struct with [ConstantAttribute]).
+    /// </summary>
+    private ConstantMember? ExtractStructConstant(
+        MetadataReader reader, FieldDefinition fieldDef, string fieldName,
+        ResolvedType fieldType, FieldAttrs fieldAttrs, string? description)
+    {
+        string structFqn = fieldType switch
+        {
+            StructRef s => s.FQN,
+            HandleRef h => h.FQN,
+            _ => throw new InvalidOperationException()
+        };
+        string structName = fieldType switch
+        {
+            StructRef s => s.Name,
+            HandleRef h => h.Name,
+            _ => throw new InvalidOperationException()
+        };
+        bool isHandle = fieldType is HandleRef;
+
+        if (isHandle)
+        {
+            // Handle constants have their primitive value in the constant blob
+            ConstantHandle constHandle = fieldDef.GetDefaultValue();
+            if (constHandle.IsNil)
+            {
+                _logger.LogWarning("Handle constant {Name} has no default value, skipping", fieldName);
+                return null;
+            }
+
+            Constant constant = reader.GetConstant(constHandle);
+            BlobReader blob = reader.GetBlobReader(constant.Value);
+            string handleValue = FormatConstantValue(constant.TypeCode, ref blob, fieldName);
+
+            return new ConstantMember
+            {
+                Name = fieldName,
+                Value = new StructConstantValue(structName, structFqn, IsHandle: true,
+                    HandleValue: handleValue, FieldInits: null),
+                Type = fieldType,
+                Description = description,
+                IsDeprecated = fieldAttrs.IsDeprecated,
+                DeprecationMessage = fieldAttrs.DeprecationMessage,
+                ReferencedTypes = [structFqn]
+            };
+        }
+
+        // Non-handle struct constant — decode [ConstantAttribute]
+        CustomAttribute? constAttr = AttributeReader.FindAttribute(
+            reader, fieldDef.GetCustomAttributes(), "ConstantAttribute");
+
+        if (constAttr is null)
+        {
+            _logger.LogWarning("Struct constant {Name} ({StructFQN}) has no [ConstantAttribute], skipping",
+                fieldName, structFqn);
+            return null;
+        }
+
+        CustomAttributeValue<string> decoded = constAttr.Value.DecodeValue(new CaTypeProvider());
+        string raw = (string)(decoded.FixedArguments[0].Value
+            ?? throw new InvalidOperationException($"Null ConstantAttribute value for '{fieldName}'"));
+
+        Queue<string> values = new(raw.Split(',')
+            .Select(s => s.TrimStart('{').TrimEnd('}').Trim()));
+
+        // Resolve the struct's TypeDefinition to walk its fields
+        (MetadataReader structReader, TypeDefinitionHandle structHandle) =
+            ResolveStructType(reader, fieldDef);
+
+        TypeDefinition structTypeDef = structReader.GetTypeDefinition(structHandle);
+        List<StructFieldInit> fieldInits = BuildStructFieldInits(structReader, structTypeDef, values, "value");
+
+        bool needsGuid = fieldInits.Any(f => f.Kind == StructFieldInitKind.GuidPointer);
+        List<string> referencedTypes = [structFqn];
+
+        return new ConstantMember
+        {
+            Name = fieldName,
+            Value = new StructConstantValue(structName, structFqn, IsHandle: false,
+                HandleValue: null, FieldInits: fieldInits),
+            Type = fieldType,
+            Description = description,
+            IsDeprecated = fieldAttrs.IsDeprecated,
+            DeprecationMessage = fieldAttrs.DeprecationMessage,
+            NeedsGuid = needsGuid,
+            ReferencedTypes = referencedTypes
+        };
+    }
+
+    /// <summary>
+    /// Resolve a struct-typed field's TypeDefinition from its signature.
+    /// Reads the field signature blob: FIELD header, VALUETYPE element type, compressed token.
+    /// </summary>
+    private (MetadataReader Reader, TypeDefinitionHandle Handle) ResolveStructType(
+        MetadataReader reader, FieldDefinition fieldDef)
+    {
+        BlobReader sigReader = reader.GetBlobReader(fieldDef.Signature);
+        sigReader.ReadSignatureHeader(); // FIELD (0x06)
+        sigReader.ReadByte(); // VALUETYPE (0x11) or CLASS (0x12)
+
+        return DecodeTypeDefOrRefHandle(reader, ref sigReader);
+    }
+
+    /// <summary>
+    /// Recursively build StructFieldInit entries by walking the struct's fields
+    /// and consuming values from the [ConstantAttribute] queue.
+    /// </summary>
+    private List<StructFieldInit> BuildStructFieldInits(
+        MetadataReader reader, TypeDefinition typeDef, Queue<string> values, string pathPrefix)
+    {
+        List<StructFieldInit> inits = [];
+        var sigDecoder = new SignatureDecoder(reader, _loader, _logger, typeDef);
+
+        foreach (FieldDefinitionHandle hField in typeDef.GetFields())
+        {
+            FieldDefinition fd = reader.GetFieldDefinition(hField);
+            string memberName = reader.GetString(fd.Name);
+            string fieldPath = $"{pathPrefix}.{memberName}";
+            ResolvedType memberType = fd.DecodeSignature(sigDecoder, new SignatureGenericContext());
+
+            switch (memberType)
+            {
+                case StructRef { FQN: "System.Guid" }:
+                case PointerType { Pointee: StructRef { FQN: "System.Guid" } }:
+                {
+                    // GUID field or GUID pointer — dequeue 11 values for the GUID
+                    Guid guidValue = AttributeReader.DecodeGuidFromQueue(values);
+                    inits.Add(new StructFieldInit(fieldPath, $"{memberName}_guid.ptr",
+                        StructFieldInitKind.GuidPointer, GuidValue: guidValue));
+                    break;
+                }
+
+                case StructRef:
+                {
+                    // Nested struct — recurse into Win32 struct fields
+                    (MetadataReader nestedReader, TypeDefinitionHandle nestedHandle) =
+                        ResolveStructRef(reader, fd);
+                    TypeDefinition nestedTypeDef = nestedReader.GetTypeDefinition(nestedHandle);
+                    inits.AddRange(BuildStructFieldInits(nestedReader, nestedTypeDef, values, fieldPath));
+                    break;
+                }
+
+                case ArrayType arr:
+                {
+                    // Array — dequeue Length times with 1-based indices
+                    for (int i = 0; i < arr.Length; i++)
+                    {
+                        inits.Add(new StructFieldInit(fieldPath, values.Dequeue(),
+                            StructFieldInitKind.ArrayElement, ArrayIndex: i + 1));
+                    }
+                    break;
+                }
+
+                default:
+                {
+                    // Primitive or void pointer — dequeue once
+                    inits.Add(new StructFieldInit(fieldPath, values.Dequeue(),
+                        StructFieldInitKind.Direct));
+                    break;
+                }
+            }
+        }
+
+        return inits;
+    }
+
+    /// <summary>
+    /// Resolve a nested struct field's TypeDefinition from its field signature.
+    /// </summary>
+    private (MetadataReader Reader, TypeDefinitionHandle Handle) ResolveStructRef(
+        MetadataReader reader, FieldDefinition fieldDef)
+    {
+        BlobReader sigReader = reader.GetBlobReader(fieldDef.Signature);
+        sigReader.ReadSignatureHeader(); // FIELD (0x06)
+        sigReader.ReadByte(); // VALUETYPE (0x11)
+
+        return DecodeTypeDefOrRefHandle(reader, ref sigReader);
+    }
+
+    /// <summary>
+    /// Decode a TypeDefOrRefOrSpecEncoded token from a signature blob.
+    /// Returns the resolved (MetadataReader, TypeDefinitionHandle) pair.
+    /// </summary>
+    private (MetadataReader Reader, TypeDefinitionHandle Handle) DecodeTypeDefOrRefHandle(
+        MetadataReader reader, ref BlobReader sigReader)
+    {
+        int coded = sigReader.ReadCompressedInteger();
+        int table = coded & 0x3;
+        int row = coded >> 2;
+
+        return table switch
+        {
+            0 => (reader, MetadataTokens.TypeDefinitionHandle(row)),
+            1 => _loader.ResolveTypeReference(reader, MetadataTokens.TypeReferenceHandle(row)),
+            _ => throw new NotSupportedException(
+                $"Unexpected TypeDefOrRef table {table} in struct constant signature")
         };
     }
 

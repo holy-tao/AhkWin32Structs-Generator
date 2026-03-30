@@ -22,6 +22,9 @@ public sealed class ConstantMember
     /// <summary>Whether this constant is deprecated.</summary>
     public bool IsDeprecated { get; init; }
 
+    /// <summary>Deprecation message from [ObsoleteAttribute], if any.</summary>
+    public string? DeprecationMessage { get; init; }
+
     /// <summary>Whether this constant requires a Guid import.</summary>
     public bool NeedsGuid { get; init; }
 

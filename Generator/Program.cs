@@ -201,7 +201,7 @@ public class Program
         TypeRegistry registry = extractor.ExtractAll();
 
         // Create emitters
-        ITypeEmitter[] emitters = [new EnumEmitter()];
+        ITypeEmitter[] emitters = [new EnumEmitter(), new ApiTypeEmitter()];
 
         // Emit all types
         int emitted = 0, skipped = 0, errors = 0;

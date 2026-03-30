@@ -31,9 +31,65 @@ public static class ConstantEmitter
                 w.StaticField(constant.Name, sv.AsAhk);
                 break;
 
+            case StructConstantValue { IsHandle: false } sv:
+                EmitStructConstantProperty(w, constant.Name, sv);
+                break;
+
             default:
                 throw new NotSupportedException(
                     $"Unsupported constant value type: {constant.Value.GetType().Name} for '{constant.Name}'");
+        }
+    }
+
+    /// <summary>
+    /// Emit a struct constant as a getter property with field initialization.
+    /// </summary>
+    private static void EmitStructConstantProperty(AhkWriter w, string name, StructConstantValue sv)
+    {
+        using (w.Property(name))
+        using (w.GetBlock())
+        {
+            w.Line($"value := {sv.StructName}()");
+
+            if (sv.FieldInits != null)
+            {
+                foreach (StructFieldInit init in sv.FieldInits)
+                {
+                    EmitFieldInit(w, init);
+                }
+            }
+
+            w.Line("return value");
+        }
+    }
+
+    /// <summary>
+    /// Emit a single field initialization line based on its kind.
+    /// </summary>
+    private static void EmitFieldInit(AhkWriter w, StructFieldInit init)
+    {
+        switch (init.Kind)
+        {
+            case StructFieldInitKind.Direct:
+                w.Line($"{init.FieldPath} := {init.Value}");
+                break;
+
+            case StructFieldInitKind.ArrayElement:
+                w.Line($"{init.FieldPath}[{init.ArrayIndex}] := {init.Value}");
+                break;
+
+            case StructFieldInitKind.GuidPointer:
+                // Extract field name from the path for the static variable name
+                string fieldName = init.FieldPath.Contains('.')
+                    ? init.FieldPath[(init.FieldPath.LastIndexOf('.') + 1)..]
+                    : init.FieldPath;
+                w.Line($"static {fieldName}_guid := Guid(\"{{{init.GuidValue:D}}}\")");
+                w.Line($"{init.FieldPath} := {fieldName}_guid.ptr");
+                break;
+
+            default:
+                throw new NotSupportedException(
+                    $"Unsupported struct field init kind: {init.Kind}");
         }
     }
 }
