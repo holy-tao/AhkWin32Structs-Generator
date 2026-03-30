@@ -4,6 +4,8 @@ using System.Reflection;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Text;
+using AhkWin32.Generator.Emit;
+using AhkWin32.Generator.Emit.Emitters;
 using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Types;
@@ -39,6 +41,7 @@ public class Program
 
         var logLevelOption = new Option<LogLevel>("--log-level", () => LogLevel.Information, "Minimum log level");
         var validateIrOption = new Option<bool>("--validate-ir", "Run IR extraction and print diagnostic report (no code generation)");
+        var emitIrOption = new Option<bool>("--emit-ir", "Run new IR emitter pipeline (for comparison against legacy)");
 
         var rootCommand = new RootCommand("AhkWin32Structs Generator — generates AutoHotkey v2 projections of Win32 and WDK APIs")
         {
@@ -47,22 +50,23 @@ public class Program
             namespaceOption,
             assemblyOption,
             logLevelOption,
-            validateIrOption
+            validateIrOption,
+            emitIrOption
         };
 
         int exitCode = 0;
         rootCommand.SetHandler(
-            (metadataDir, outputDir, namespaceFilter, assemblyFilter, logLevel, validateIr) =>
+            (metadataDir, outputDir, namespaceFilter, assemblyFilter, logLevel, validateIr, emitIr) =>
             {
-                exitCode = RunGenerator(metadataDir, outputDir, namespaceFilter ?? [], assemblyFilter ?? [], logLevel, validateIr);
+                exitCode = RunGenerator(metadataDir, outputDir, namespaceFilter ?? [], assemblyFilter ?? [], logLevel, validateIr, emitIr);
             },
-            metadataDirArg, outputDirArg, namespaceOption, assemblyOption, logLevelOption, validateIrOption);
+            metadataDirArg, outputDirArg, namespaceOption, assemblyOption, logLevelOption, validateIrOption, emitIrOption);
 
         rootCommand.Invoke(args);
         return exitCode;
     }
 
-    private static int RunGenerator(DirectoryInfo metadataDir, DirectoryInfo outputDir, string[] namespaceFilter, string[] assemblyFilter, LogLevel logLevel, bool validateIr = false)
+    private static int RunGenerator(DirectoryInfo metadataDir, DirectoryInfo outputDir, string[] namespaceFilter, string[] assemblyFilter, LogLevel logLevel, bool validateIr = false, bool emitIr = false)
     {
         _loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -107,6 +111,14 @@ public class Program
             int irResult = RunIRValidation(MetadataDir, assemblyFilter, _loggerFactory!);
             _loggerFactory!.Dispose();
             return irResult;
+        }
+
+        // --- New IR emitter pipeline (--emit-ir) ---
+        if (emitIr)
+        {
+            int emitResult = RunIREmission(MetadataDir, outputDir.FullName, namespaceFilter, assemblyFilter, _loggerFactory!);
+            _loggerFactory!.Dispose();
+            return emitResult;
         }
 
         // Collect .winmd files
@@ -168,6 +180,85 @@ public class Program
             total, errors, totalStopwatch.Elapsed.TotalSeconds);
 
         _loggerFactory.Dispose();
+
+        return -errors;
+    }
+
+    private static int RunIREmission(string metadataDir, string outputDir, string[] namespaceFilter, string[] assemblyFilter, ILoggerFactory loggerFactory)
+    {
+        Logger.LogInformation("=== IR Emitter Pipeline ===");
+        Stopwatch totalWatch = Stopwatch.StartNew();
+
+        // Load documentation
+        var docs = new DocumentationLoader(loggerFactory.CreateLogger<DocumentationLoader>());
+        docs.Load(Path.Join(metadataDir, "apidocs.msgpack"));
+
+        // Extract all types into TypeRegistry
+        using var loader = new MetadataLoader(metadataDir, loggerFactory.CreateLogger<MetadataLoader>());
+        loader.LoadPrimaryAssemblies(assemblyFilter.Length > 0 ? assemblyFilter : null);
+
+        var extractor = new TypeExtractor(loader, docs, loggerFactory);
+        TypeRegistry registry = extractor.ExtractAll();
+
+        // Create emitters
+        ITypeEmitter[] emitters = [new EnumEmitter()];
+
+        // Emit all types
+        int emitted = 0, skipped = 0, errors = 0;
+        Stopwatch emitWatch = Stopwatch.StartNew();
+
+        foreach (Win32Type type in registry.GetAll())
+        {
+            // Apply namespace filter
+            if (namespaceFilter.Length > 0 &&
+                !namespaceFilter.Any(prefix => type.Namespace.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            ITypeEmitter? emitter = null;
+            foreach (var e in emitters)
+            {
+                if (e.CanEmit(type))
+                {
+                    emitter = e;
+                    break;
+                }
+            }
+
+            if (emitter is null)
+            {
+                skipped++;
+                continue;
+            }
+
+            try
+            {
+                EmitResult result = emitter.Emit(type, outputDir);
+                string dirPath = Path.GetDirectoryName(result.FilePath)!;
+                Directory.CreateDirectory(dirPath);
+                File.WriteAllText(result.FilePath, result.Content);
+                emitted++;
+
+                if (emitted % 1000 == 0)
+                    Logger.LogInformation("  Emitted {Count} files...", emitted);
+            }
+            catch (Exception ex)
+            {
+                errors++;
+                Logger.LogError(ex, "Failed to emit {TypeName}", type.FQN);
+            }
+        }
+
+        emitWatch.Stop();
+        totalWatch.Stop();
+
+        Logger.LogInformation("=== Emission Complete ===");
+        Logger.LogInformation("  Emitted: {Emitted} files", emitted);
+        Logger.LogInformation("  Skipped: {Skipped} types (no emitter)", skipped);
+        Logger.LogInformation("  Errors:  {Errors}", errors);
+        Logger.LogInformation("  Emission time: {Elapsed:F1}s", emitWatch.Elapsed.TotalSeconds);
+        Logger.LogInformation("  Total time:    {Elapsed:F1}s", totalWatch.Elapsed.TotalSeconds);
 
         return -errors;
     }
