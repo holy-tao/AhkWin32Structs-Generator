@@ -201,7 +201,12 @@ public class Program
         TypeRegistry registry = extractor.ExtractAll();
 
         // Emit
-        ITypeEmitter[] emitters = [new EnumEmitter(), new ApiTypeEmitter()];
+        ITypeEmitter[] emitters = [
+            new EnumEmitter(), 
+            new HandleEmitter(), 
+            new StructEmitter(), 
+            new ApiTypeEmitter()
+        ];
         var pipeline = new TypeEmissionPipeline(emitters, loggerFactory.CreateLogger<TypeEmissionPipeline>());
         var (emitted, _, errors) = pipeline.EmitAll(registry, outputDir,
             namespaceFilter.Length > 0 ? namespaceFilter : null);

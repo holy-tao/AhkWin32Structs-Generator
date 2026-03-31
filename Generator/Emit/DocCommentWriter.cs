@@ -73,6 +73,57 @@ public static class DocCommentWriter
     }
 
     /// <summary>
+    /// Write a field-level JSDoc comment.
+    /// Port of AhkStructMember.MaybeAppendDocumentation.
+    /// </summary>
+    public static void WriteFieldDoc(AhkWriter w, FieldMember field)
+    {
+        w.Line("/**");
+
+        if (!string.IsNullOrWhiteSpace(field.Description))
+            w.Line($" * {EscapeDocs(field.Description, new string(' ', w.CurrentIndentLevel * 4))}");
+
+        if (field.IsBitField)
+        {
+            w.Line(" * This bitfield backs the following members:");
+            foreach (var bf in field.Bitfields)
+                w.Line($" * - {bf.Name}");
+        }
+
+        if (field.IsDeprecated)
+        {
+            string deprecatedTag = !string.IsNullOrWhiteSpace(field.DeprecationMessage)
+                ? $" * @deprecated {field.DeprecationMessage}"
+                : " * @deprecated";
+            w.Line(deprecatedTag);
+        }
+
+        string typeName = field.EmbeddedStruct is not null
+            ? field.EmbeddedStruct.Name
+            : field.Type.DisplayName;
+        w.Line($" * @type {{{typeName}}}");
+        w.Line(" */");
+    }
+
+    /// <summary>
+    /// Write a bitfield member JSDoc comment.
+    /// Port of AhkStructMember.AppendBitfieldMember documentation portion.
+    /// </summary>
+    public static void WriteBitfieldDoc(AhkWriter w, FieldMember parent, BitfieldMember bitfield, string? description)
+    {
+        w.Line("/**");
+
+        if (!string.IsNullOrWhiteSpace(description))
+            w.Line($" * {EscapeDocs(description, new string(' ', w.CurrentIndentLevel * 4))}");
+
+        string typeName = parent.EmbeddedStruct is not null
+            ? parent.EmbeddedStruct.Name
+            : parent.Type.DisplayName;
+        w.Line($" * @type {{{typeName}}}");
+        w.Line(" */");
+    }
+
+    /// <summary>
     /// Escape documentation content for JSDoc comments.
     /// Replaces block comment markers and converts newlines to continuation lines.
     /// Port of AhkType.EscapeDocs.

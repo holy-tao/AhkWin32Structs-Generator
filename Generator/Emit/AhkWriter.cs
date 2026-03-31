@@ -55,6 +55,17 @@ public sealed class AhkWriter
     }
 
     /// <summary>
+    /// Open an instance property block: "NAME {".
+    /// Used for struct member properties (non-static).
+    /// </summary>
+    public IndentScope InstanceProperty(string name)
+    {
+        _sb.AppendLine($"{Indent}{name} {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
     /// Open a getter block: "get {".
     /// </summary>
     public IndentScope GetBlock()
