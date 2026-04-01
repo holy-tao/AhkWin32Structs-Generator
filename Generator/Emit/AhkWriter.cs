@@ -55,6 +55,16 @@ public sealed class AhkWriter
     }
 
     /// <summary>
+    /// Open a static method block: "static Name(args) {".
+    /// </summary>
+    public IndentScope StaticMethod(string name, string args)
+    {
+        _sb.AppendLine($"{Indent}static {name}({args}) {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
     /// Open an instance property block: "NAME {".
     /// Used for struct member properties (non-static).
     /// </summary>

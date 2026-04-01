@@ -132,15 +132,7 @@ public sealed class ParameterExtractor
             direction |= ParameterDirection.Optional;
 
         // Decode custom attributes in single pass
-        ParameterAttrs attrs;
-        if (!param.Name.IsNil)
-        {
-            attrs = AttributeReader.DecodeParameterAttributes(reader, param);
-        }
-        else
-        {
-            attrs = new ParameterAttrs(ParameterFlags.None, -1, null, null, null);
-        }
+        ParameterAttrs attrs = AttributeReader.DecodeParameterAttributes(reader, param);
 
         // Resolve FreeFuncRef for RAIIFree and FreeWith
         FreeFuncRef? raiiFree = ResolveFreeFuncRef(reader, attrs.RAIIFreeFuncName);
@@ -208,12 +200,14 @@ public sealed class ParameterExtractor
                 if (!reader.StringComparer.Equals(md.Name, funcName))
                     continue;
 
-                // Validate parameter count (legacy: must have exactly 2 = return + 1 param)
+                // Validate: function must have exactly 1 actual parameter.
+                // GetParameters().Count may be 1 (param only) or 2 (return pseudo-param + param)
+                // depending on whether the return type has attributes in the metadata.
                 int paramCount = md.GetParameters().Count;
-                if (paramCount != 2)
+                if (paramCount < 1 || paramCount > 2)
                 {
                     _logger.LogDebug(
-                        "FreeFuncRef {FuncName} has {ParamCount} parameters, expected 2 — skipping",
+                        "FreeFuncRef {FuncName} has {ParamCount} parameter rows, expected 1 or 2 — skipping",
                         funcName, paramCount);
                     return null;
                 }

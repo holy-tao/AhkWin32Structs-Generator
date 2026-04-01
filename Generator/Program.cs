@@ -205,7 +205,7 @@ public class Program
             new EnumEmitter(), 
             new HandleEmitter(), 
             new StructEmitter(), 
-            new ApiTypeEmitter()
+            new ApiTypeEmitter(registry)
         ];
         var pipeline = new TypeEmissionPipeline(emitters, loggerFactory.CreateLogger<TypeEmissionPipeline>());
         var (emitted, _, errors) = pipeline.EmitAll(registry, outputDir,

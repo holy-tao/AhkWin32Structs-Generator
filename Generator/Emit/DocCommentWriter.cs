@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit;
 
+using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
 using AhkWin32.Generator.Model.Types;
 
@@ -120,6 +121,76 @@ public static class DocCommentWriter
             ? parent.EmbeddedStruct.Name
             : parent.Type.DisplayName;
         w.Line($" * @type {{{typeName}}}");
+        w.Line(" */");
+    }
+
+    /// <summary>
+    /// Write a method-level JSDoc comment.
+    /// Port of AhkMethod.MaybeAppendDocumentation.
+    /// </summary>
+    public static void WriteMethodDoc(AhkWriter w, MethodMember method)
+    {
+        string indent = new(' ', w.CurrentIndentLevel * 4);
+
+        w.Line("/**");
+        w.Line($" * {EscapeDocs(method.Description, indent)}");
+
+        if (!string.IsNullOrWhiteSpace(method.Remarks))
+        {
+            w.Line(" * @remarks");
+            w.Line($" * {EscapeDocs(method.Remarks, indent)}");
+        }
+
+        // @param tags — skip reserved and output parameters
+        for (int i = 1; i < method.Parameters.Count; i++)
+        {
+            ParameterMember param = method.Parameters[i];
+            if (param.IsReserved || param == method.OutputParameter)
+                continue;
+
+            string paramDoc = !string.IsNullOrWhiteSpace(param.Description)
+                ? EscapeDocs(param.Description, indent) ?? ""
+                : "";
+            w.Line($" * @param {{{param.Type.DisplayName}}} {param.Name} {paramDoc}");
+        }
+
+        // @returns tag
+        if (method.HasReturnValue || method.OutputParameter != null)
+        {
+            if (method.OutputParameter is { } outParam)
+            {
+                string? returnTypeName = outParam.IsPtr
+                    ? outParam.Pointee?.DisplayName
+                    : outParam.Type.DisplayName;
+                string returnDoc = !string.IsNullOrWhiteSpace(outParam.Description)
+                    ? EscapeDocs(outParam.Description, indent) ?? ""
+                    : "";
+                w.Line($" * @returns {{{returnTypeName}}} {returnDoc}");
+            }
+            else
+            {
+                w.Line($" * @returns {{{method.Parameters[0].Type.DisplayName}}} {EscapeDocs(method.ReturnValueDoc, indent)}");
+            }
+        }
+        else
+        {
+            w.Line(" * @returns {String} Nothing - always returns an empty string");
+        }
+
+        if (method.HelpLink != null)
+            w.Line($" * @see {method.HelpLink}");
+
+        if (method.CharSet == StringEncoding.Ansi)
+            w.Line(" * @charset ANSI");
+        if (method.CharSet == StringEncoding.Unicode)
+            w.Line(" * @charset Unicode");
+
+        if (!string.IsNullOrWhiteSpace(method.DeprecationMessage))
+            w.Line($" * @deprecated {method.DeprecationMessage}");
+
+        if (!string.IsNullOrWhiteSpace(method.SupportedOSPlatform))
+            w.Line($" * @since {method.SupportedOSPlatform}");
+
         w.Line(" */");
     }
 

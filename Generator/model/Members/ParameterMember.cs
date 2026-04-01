@@ -72,7 +72,7 @@ public sealed class ParameterMember
     public bool IsStruct => Type is StructRef;
     public bool IsHandle => Type is HandleRef;
 
-    public bool IsPtrToPrimitive => Type is PointerType { Pointee: PrimitiveType or PointerType or NativeTypedefType or HResultType };
+    public bool IsPtrToPrimitive => Type is PointerType { Pointee: PrimitiveType or PointerType or NativeTypedefType or HResultType or EnumRef or FunctionPointerType };
     public bool IsPtrToCom => Type is PointerType { Pointee: ComRef };
     public bool IsPtrToStruct => Type is PointerType { Pointee: StructRef };
     public bool IsPtrToHandle => Type is PointerType { Pointee: HandleRef };

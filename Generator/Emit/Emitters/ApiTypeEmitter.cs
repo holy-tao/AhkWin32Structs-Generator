@@ -1,14 +1,21 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Types;
 
 /// <summary>
 /// Emits ApiType as a complete .ahk file.
-/// Currently emits header + constants region only.
 /// Port of legacy AhkApiType.ToAhk().
 /// </summary>
 public sealed class ApiTypeEmitter : ITypeEmitter
 {
+    private readonly TypeRegistry _registry;
+
+    public ApiTypeEmitter(TypeRegistry registry)
+    {
+        _registry = registry;
+    }
+
     public bool CanEmit(Win32Type type) => type is ApiType;
 
     public EmitResult Emit(Win32Type type, string outputRoot)
@@ -22,7 +29,7 @@ public sealed class ApiTypeEmitter : ITypeEmitter
         return new EmitResult(w.ToString(), filePath);
     }
 
-    private static void EmitApiType(AhkWriter w, ApiType apiType)
+    private void EmitApiType(AhkWriter w, ApiType apiType)
     {
         // Directives
         string pathToBase = ImportResolver.GetPathToBase(apiType.Namespace);
@@ -32,7 +39,7 @@ public sealed class ApiTypeEmitter : ITypeEmitter
         if (apiType.NeedsGuid)
             w.Include($"{pathToBase}Guid.ahk");
 
-        // Referenced type imports (from constants and extensions)
+        // Referenced type imports (from constants, methods, and extensions)
         EmitImports(w, apiType);
 
         w.BlankLine();
@@ -50,7 +57,7 @@ public sealed class ApiTypeEmitter : ITypeEmitter
 
             w.BlankLine();
 
-            // Methods region (placeholder — full implementation in Step 3)
+            // Methods region
             EmitMethods(w, apiType);
         }
     }
@@ -77,10 +84,16 @@ public sealed class ApiTypeEmitter : ITypeEmitter
         w.RawLine(";@endregion Constants");
     }
 
-    private static void EmitMethods(AhkWriter w, ApiType apiType)
+    private void EmitMethods(AhkWriter w, ApiType apiType)
     {
-        // TODO: emit region markers only, method bodies deferred to Step 3
         w.RawLine(";@region Methods");
+
+        foreach (var method in apiType.Methods)
+        {
+            MethodEmitter.EmitDllImportMethod(w, method, _registry);
+            w.BlankLine();
+        }
+
         w.RawLine(";@endregion Methods");
     }
 }

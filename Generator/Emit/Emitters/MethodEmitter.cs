@@ -1,0 +1,387 @@
+namespace AhkWin32.Generator.Emit.Emitters;
+
+using AhkWin32.Generator.Model;
+using AhkWin32.Generator.Model.Members;
+using AhkWin32.Generator.Model.Types;
+
+/// <summary>
+/// Emits method bodies (DllCall) for DllImport methods.
+/// Static helper class used by ApiTypeEmitter (and later ComInterfaceEmitter).
+/// Port of legacy AhkMethod.ToAhk().
+/// </summary>
+public static class MethodEmitter
+{
+    /// <summary>
+    /// Emit a complete DllImport method (documentation + signature + body).
+    /// </summary>
+    public static void EmitDllImportMethod(AhkWriter w, MethodMember method, TypeRegistry registry)
+    {
+        DocCommentWriter.WriteMethodDoc(w, method);
+
+        string argList = BuildArgumentList(method);
+        using (w.StaticMethod(method.Name, argList))
+        {
+            // AutoHotkey doesn't support the thiscall calling convention
+            if (method.CallingConvention == CallingConvention.ThisCall)
+            {
+                w.Line("throw MethodError(\"Not supported: AutoHotkey does not support the thiscall calling convention\", , A_ThisFunc)");
+                return;
+            }
+
+            EmitReservedParams(w, method);
+            EmitParameterConversions(w, method);
+            EmitParameterMarshalling(w, method);
+
+            if (method.SetsLastError)
+            {
+                w.Line("A_LastError := 0");
+                w.BlankLine();
+            }
+
+            if (method.IsOrdinal)
+                EmitOrdinalLoading(w, method);
+
+            EmitOutputParamMarshalling(w, method);
+            w.Line(BuildDllCallExpression(method));
+
+            if (method.IsOrdinal)
+            {
+                w.BlankLine();
+                w.Line("Foundation.FreeLibrary(hModule)");
+                w.BlankLine();
+            }
+
+            EmitErrorCheck(w, method);
+            EmitReturnStatement(w, method, registry);
+        }
+    }
+
+    // --- Argument list ---
+
+    /// <summary>
+    /// Build the user-facing method argument list (skips reserved and output params).
+    /// </summary>
+    private static string BuildArgumentList(MethodMember method)
+    {
+        return string.Join(", ", method.Parameters
+            .Skip(1) // Skip param 0 (return value)
+            .Where(p => !p.IsReserved && p != method.OutputParameter)
+            .Select(p => p.Name));
+    }
+
+    // --- Reserved parameters ---
+
+    private static void EmitReservedParams(AhkWriter w, MethodMember method)
+    {
+        var reserved = method.Parameters.Skip(1).Where(p => p.IsReserved).ToList();
+        if (reserved.Count == 0) return;
+
+        w.Line($"static {string.Join(", ", reserved.Select(p => $"{p.Name} := 0"))} ;Reserved parameters must always be NULL");
+        w.BlankLine();
+    }
+
+    // --- Parameter conversions (String→StrPtr, Handle→NumGet) ---
+
+    private static void EmitParameterConversions(AhkWriter w, MethodMember method)
+    {
+        int startLen = w.Length;
+
+        foreach (var param in method.Parameters.Skip(1)
+            .Where(p => !p.IsReserved && p != method.OutputParameter))
+        {
+            if (param.TypeDefName is "PSTR" or "PWSTR")
+            {
+                w.Line($"{param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}");
+            }
+            else if (param.IsHandle)
+            {
+                w.Line($"{param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
+            }
+        }
+
+        if (w.Length > startLen)
+            w.BlankLine();
+    }
+
+    // --- Parameter marshalling (VarRef detection for ptr-to-primitive) ---
+
+    private static void EmitParameterMarshalling(AhkWriter w, MethodMember method)
+    {
+        int startLen = w.Length;
+
+        foreach (var param in method.Parameters.Skip(1)
+            .Where(p => !p.IsReserved && p != method.OutputParameter && p.IsPtrToPrimitive))
+        {
+            string typedDllCallType = ((PointerType)param.Type).TypedDllCallType;
+            w.Line($"{param.Name}Marshal := {param.Name} is VarRef ? \"{typedDllCallType}\" : \"ptr\"");
+        }
+
+        if (w.Length > startLen)
+            w.BlankLine();
+    }
+
+    // --- Ordinal entry point loading ---
+
+    private static void EmitOrdinalLoading(AhkWriter w, MethodMember method)
+    {
+        w.Line("; This method's EntryPoint is an ordinal, so we need to load the dll manually");
+        w.Line($"hModule := LibraryLoader.LoadLibraryW(\"{method.DllName}\")");
+        w.Line($"procAddr := LibraryLoader.GetProcAddress(hModule, {method.EntryPoint[1..]})");
+        w.BlankLine();
+    }
+
+    // --- Output parameter marshalling ---
+
+    private static void EmitOutputParamMarshalling(AhkWriter w, MethodMember method)
+    {
+        if (method.OutputParameter is not { } outParam) return;
+
+        if (outParam.IsSizedBuffer)
+        {
+            // SizedBufferBytesParamIndex is 0-based from metadata; add 1 for Parameters[] (index 0 = return)
+            string sizeParamName = method.Parameters[outParam.SizedBufferBytesParamIndex + 1].Name;
+            w.Line($"{outParam.Name} := Buffer({sizeParamName}, 0)");
+        }
+        else if (outParam.IsPtrToStruct || outParam.IsPtrToHandle)
+        {
+            string pointeeName = GetPointeeName(outParam.Type);
+            w.Line($"{outParam.Name} := {pointeeName}()");
+        }
+    }
+
+    // --- DllCall expression ---
+
+    private static string BuildDllCallExpression(MethodMember method)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        if (method.HasReturnValue)
+            sb.Append("result := ");
+
+        // Entry point
+        string entry = method.IsOrdinal
+            ? "procAddr"
+            : $"\"{method.DllName}\\{method.EntryPoint}\"";
+
+        sb.Append($"DllCall({entry}");
+
+        // Parameters
+        if (method.Parameters.Count > 1)
+        {
+            sb.Append(", ");
+            sb.Append(BuildDllCallArguments(method));
+        }
+
+        // Calling convention + return type
+        if (method.CallingConvention == CallingConvention.CDecl || method.HasReturnValue)
+        {
+            sb.Append(", \"");
+            if (method.CallingConvention == CallingConvention.CDecl)
+                sb.Append("CDecl ");
+
+            if (method.HasReturnValue)
+            {
+                sb.Append(method.ShouldThrowOnHResult
+                    ? "HRESULT"
+                    : method.Parameters[0].Type.DllCallType);
+            }
+
+            sb.Append('"');
+        }
+
+        sb.Append(')');
+        return sb.ToString();
+    }
+
+    private static string BuildDllCallArguments(MethodMember method)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        for (int i = 1; i < method.Parameters.Count; i++)
+        {
+            var param = method.Parameters[i];
+
+            // Type string
+            bool isString = param.TypeDefName is "PWSTR" or "PSTR";
+            string dllCallType = isString ? "ptr" : GetParamDllCallType(param.Type);
+
+            bool useMarshalVar = param.IsPtrToPrimitive
+                && !param.IsReserved
+                && param != method.OutputParameter;
+            string marshalAs = useMarshalVar
+                ? $"{param.Name}Marshal"
+                : $"\"{dllCallType}\"";
+
+            // Value string
+            bool isVarRefOutput = param == method.OutputParameter
+                && (param.IsPtrToPrimitive || param.IsPtrToCom);
+            string passAs = isVarRefOutput
+                ? $"&{param.Name} := 0"
+                : param.Name;
+
+            sb.Append(marshalAs);
+            sb.Append(", ");
+            sb.Append(passAs);
+
+            if (i < method.Parameters.Count - 1)
+                sb.Append(", ");
+        }
+
+        return sb.ToString();
+    }
+
+    // --- Error checking ---
+
+    private static void EmitErrorCheck(AhkWriter w, MethodMember method)
+    {
+        // NTSTATUS: special case — no SetsLastError interaction
+        if (method.Parameters[0].Type is NtStatusType)
+        {
+            w.Line("NTSTATUS.ThrowIfError(result)");
+            return;
+        }
+
+        List<string> conditions = [];
+        List<string> errCodeSources = [];
+
+        var freeWithParams = method.Parameters.Where(p => p.FreeWith != null).ToList();
+
+        if (method.Parameters[0].Type is HResultType && freeWithParams.Count != 0)
+        {
+            conditions.Add("result != 0");
+        }
+
+        if (method.SetsLastError)
+        {
+            if (method.Parameters[0].TypeDefName == "BOOL")
+                conditions.Add("!result");
+
+            conditions.Add("A_LastError");
+            errCodeSources.Add("A_LastError");
+        }
+
+        if (conditions.Count == 0) return;
+
+        w.Line($"if({string.Join(" && ", conditions)}) {{");
+
+        // Free any [FreeWith] output parameters before throwing
+        foreach (var param in freeWithParams)
+        {
+            FreeFuncRef freeWith = param.FreeWith!;
+            w.Line($"    {freeWith.DeclarerName}.{freeWith.Name}({param.Name})");
+        }
+
+        w.Line($"    throw OSError({string.Join(" || ", errCodeSources)})");
+        w.Line("}");
+        w.BlankLine();
+    }
+
+    // --- Return statement ---
+
+    private static void EmitReturnStatement(AhkWriter w, MethodMember method, TypeRegistry registry)
+    {
+        if (!method.HasReturnValue && method.OutputParameter == null)
+            return;
+
+        ParameterMember fnRetVal = method.OutputParameter ?? method.Parameters[0];
+
+        // Handle return (direct HandleRef only — ptr-to-handle output params return raw values)
+        if (fnRetVal.IsHandle)
+        {
+            EmitHandleReturn(w, fnRetVal, registry);
+            return;
+        }
+
+        // COM return (ptr-to-COM output param)
+        if (fnRetVal.IsPtrToCom)
+        {
+            string comName = GetPointeeName(fnRetVal.Type);
+            w.Line($"return {comName}({fnRetVal.Name})");
+            return;
+        }
+
+        // Primitive / other
+        w.Line($"return {fnRetVal.Name}");
+    }
+
+    private static void EmitHandleReturn(AhkWriter w, ParameterMember fnRetVal, TypeRegistry registry)
+    {
+        // Get handle info from the type
+        string handleName, handleFqn;
+        if (fnRetVal.Type is HandleRef hr)
+        {
+            handleName = hr.Name;
+            handleFqn = hr.FQN;
+        }
+        else if (fnRetVal.Type is PointerType { Pointee: HandleRef phr })
+        {
+            handleName = phr.Name;
+            handleFqn = phr.FQN;
+        }
+        else
+        {
+            // Shouldn't reach here — caller checked IsHandle || IsPtrToHandle
+            w.Line($"return {fnRetVal.Name}");
+            return;
+        }
+
+        // Look up handle's value field name from the registry
+        string fieldName = GetHandleFieldName(registry, handleFqn);
+
+        // Check IgnoreIfReturn values (e.g., NULL handles → Invalid())
+        if (fnRetVal.HasIgnoreIfReturn && fnRetVal.IgnoreIfReturnValues is { Count: > 0 } ignoreValues)
+        {
+            string orCondition = string.Join(" || ", ignoreValues.Select(v => $"{fnRetVal.Name} == {v}"));
+            w.Line($"if({orCondition})");
+            w.Line($"    return {fnRetVal.Name}.Invalid()");
+            w.BlankLine();
+        }
+
+        // Construct handle wrapper
+        string scriptOwned = fnRetVal.ScriptOwned ? "True" : "False";
+        w.Line($"resultHandle := {handleName}({{{fieldName}: {fnRetVal.Name}}}, {scriptOwned})");
+
+        // RAIIFree destructor
+        if (fnRetVal.RAIIFree is { } raiiFree)
+        {
+            w.Line($"resultHandle.DefineProp(\"Free\", {{ Call: (self) => {raiiFree.DeclarerName}.{raiiFree.Name}(self.{fieldName}) }})");
+        }
+
+        w.Line("return resultHandle");
+    }
+
+    // --- Helpers ---
+
+    /// <summary>
+    /// Get the DllCall type for a parameter, using typed pointer forms (e.g., "int*").
+    /// Matches legacy GetDllCallType(useNakedPointer: false) behavior.
+    /// </summary>
+    private static string GetParamDllCallType(ResolvedType type) => type switch
+    {
+        PointerType p => p.TypedDllCallType,
+        NativeTypedefType n => GetParamDllCallType(n.Underlying),
+        _ => type.DllCallType
+    };
+
+    /// <summary>
+    /// Get the display name of a pointer's pointee (for struct/handle/COM output params).
+    /// </summary>
+    private static string GetPointeeName(ResolvedType type) => type switch
+    {
+        PointerType { Pointee: StructRef s } => s.Name,
+        PointerType { Pointee: HandleRef h } => h.Name,
+        PointerType { Pointee: ComRef c } => c.Name,
+        PointerType { Pointee: { } p } => p.DisplayName,
+        _ => type.DisplayName
+    };
+
+    /// <summary>
+    /// Look up a handle type's first field name from the registry.
+    /// </summary>
+    private static string GetHandleFieldName(TypeRegistry registry, string handleFqn)
+    {
+        if (registry.Resolve(handleFqn, Architecture.All) is HandleType ht && ht.Members.Count > 0)
+            return ht.Members[0].Name;
+        return "Value"; // fallback
+    }
+}

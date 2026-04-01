@@ -76,9 +76,11 @@ public sealed record PointerType(ResolvedType? Pointee) : ResolvedType
     {
         PointerType                                                          => "ptr*",
         ComRef                                                               => "ptr*",
+        FunctionPointerType                                                  => "ptr*",
         PrimitiveType p when p.Name.Equals("Void", StringComparison.OrdinalIgnoreCase) => "ptr",
         PrimitiveType p                                                      => p.DllCallType + "*",
         NativeTypedefType n                                                  => n.DllCallType + "*",
+        EnumRef e                                                            => e.UnderlyingType.DllCallType + "*",
         HResultType                                                          => "int*",
         _                                                                    => "ptr"
     };
