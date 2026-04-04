@@ -13,4 +13,7 @@ public sealed class ComPropertyMember
 
     /// <summary>Setter method, if any.</summary>
     public ComMethodMember? Setter { get; init; }
+
+    /// <summary>Property description from API docs.</summary>
+    public string? Description { get; init; }
 }

@@ -373,11 +373,15 @@ public sealed class ComInterfaceExtractor
             ComMethodMember? setter = methods.FirstOrDefault(
                 m => m.IsSpecialName && m.DeduplicatedName == "put_" + normalizedName);
 
+            string? description = null;
+            apiDetails?.Fields.TryGetValue(normalizedName, out description);
+
             properties.Add(new ComPropertyMember
             {
                 Name = normalizedName,
                 Getter = getter,
-                Setter = setter
+                Setter = setter,
+                Description = description
             });
         }
 
@@ -404,6 +408,20 @@ public sealed class ComInterfaceExtractor
         foreach (ComMethodMember method in methods)
         {
             refs.AddRange(method.ReferencedTypes);
+
+            // COM output parameter types (computed separately from base method extraction)
+            if (method.OutputParameter is { } outParam)
+            {
+                string? outFqn = outParam.Type switch
+                {
+                    PointerType { Pointee: StructRef s } => s.FQN,
+                    PointerType { Pointee: ComRef c } => c.FQN,
+                    PointerType { Pointee: HandleRef h } => h.FQN,
+                    _ => null
+                };
+                if (outFqn != null)
+                    refs.Add(outFqn);
+            }
         }
 
         return refs.Distinct().ToList();

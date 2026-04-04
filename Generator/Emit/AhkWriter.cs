@@ -76,6 +76,17 @@ public sealed class AhkWriter
     }
 
     /// <summary>
+    /// Open an instance method block: "Name(args) {".
+    /// Used for COM interface methods (non-static).
+    /// </summary>
+    public IndentScope InstanceMethod(string name, string args)
+    {
+        _sb.AppendLine($"{Indent}{name}({args}) {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
     /// Open a getter block: "get {".
     /// </summary>
     public IndentScope GetBlock()

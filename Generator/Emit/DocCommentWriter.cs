@@ -125,6 +125,42 @@ public static class DocCommentWriter
     }
 
     /// <summary>
+    /// Write a COM property JSDoc comment.
+    /// Port of AhkComProperty.MaybeAppendDocumentation.
+    /// </summary>
+    public static void WritePropertyDoc(AhkWriter w, ComPropertyMember prop)
+    {
+        w.Line("/**");
+
+        if (!string.IsNullOrWhiteSpace(prop.Description))
+        {
+            w.Line($" * {EscapeDocs(prop.Description, new string(' ', w.CurrentIndentLevel * 4))}");
+        }
+
+        // Type is getter's output param type if getter exists, otherwise setter's first non-reserved param type
+        string? typeName = null;
+        if (prop.Getter?.OutputParameter is { } getterOut)
+        {
+            typeName = getterOut.IsPtr ? getterOut.Pointee?.DisplayName : getterOut.Type.DisplayName;
+        }
+        else if (prop.Setter is { } setter)
+        {
+            var firstParam = setter.Parameters.Skip(1).FirstOrDefault(p => !p.IsReserved);
+            if (firstParam is not null)
+            {
+                typeName = firstParam.IsPtr ? firstParam.Pointee?.DisplayName : firstParam.Type.DisplayName;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(typeName))
+        {
+            w.Line($" * @type {{{typeName}}} ");
+        }
+
+        w.Line(" */");
+    }
+
+    /// <summary>
     /// Write a method-level JSDoc comment.
     /// Port of AhkMethod.MaybeAppendDocumentation.
     /// </summary>

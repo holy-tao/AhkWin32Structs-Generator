@@ -89,7 +89,11 @@ public static class MethodEmitter
         foreach (var param in method.Parameters.Skip(1)
             .Where(p => !p.IsReserved && p != method.OutputParameter))
         {
-            if (param.TypeDefName is "PSTR" or "PWSTR")
+            if (param.TypeDefName is "BSTR")
+            {
+                w.Line($"{param.Name} := {param.Name} is String ? BSTR.Alloc({param.Name}).Value : {param.Name}");
+            }
+            else if (param.TypeDefName is "PSTR" or "PWSTR")
             {
                 w.Line($"{param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}");
             }
@@ -383,5 +387,75 @@ public static class MethodEmitter
         if (registry.Resolve(handleFqn, Architecture.All) is HandleType ht && ht.Members.Count > 0)
             return ht.Members[0].Name;
         return "Value"; // fallback
+    }
+
+    /// <summary>
+    /// Emit a complete COM method (documentation + signature + body).
+    /// Port of legacy AhkComMethod.ToAhk().
+    /// </summary>
+    public static void EmitComMethod(AhkWriter w, ComMethodMember method, TypeRegistry registry)
+    {
+        DocCommentWriter.WriteMethodDoc(w, method);
+
+        string argList = BuildArgumentList(method);
+        using (w.InstanceMethod(method.DeduplicatedName, argList))
+        {
+            EmitReservedParams(w, method);
+            EmitParameterConversions(w, method);
+            EmitParameterMarshalling(w, method);
+
+            if (method.SetsLastError)
+            {
+                w.Line("A_LastError := 0");
+                w.BlankLine();
+            }
+
+            EmitOutputParamMarshalling(w, method);
+            w.Line(BuildComCallExpression(method));
+
+            EmitErrorCheck(w, method);
+            EmitReturnStatement(w, method, registry);
+        }
+    }
+
+    /// <summary>
+    /// Build a ComCall expression: [result := ] ComCall(VTableIndex, this[, args][, "conv retType"])
+    /// Port of legacy AhkComMethod.BuildDllCallCall.
+    /// </summary>
+    private static string BuildComCallExpression(ComMethodMember method)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        if (method.HasReturnValue)
+            sb.Append("result := ");
+
+        sb.Append($"ComCall({method.VTableIndex}, this");
+
+        // Parameters
+        if (method.Parameters.Count > 1)
+        {
+            sb.Append(", ");
+            sb.Append(BuildDllCallArguments(method));
+        }
+
+        // Calling convention + return type
+        if (method.CallingConvention == CallingConvention.CDecl || method.HasReturnValue)
+        {
+            sb.Append(", \"");
+            if (method.CallingConvention == CallingConvention.CDecl)
+                sb.Append("CDecl ");
+
+            if (method.HasReturnValue)
+            {
+                sb.Append(method.ShouldThrowOnHResult
+                    ? "HRESULT"
+                    : method.Parameters[0].Type.DllCallType);
+            }
+
+            sb.Append('"');
+        }
+
+        sb.Append(')');
+        return sb.ToString();
     }
 }

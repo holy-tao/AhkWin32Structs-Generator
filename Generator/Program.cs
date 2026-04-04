@@ -202,10 +202,11 @@ public class Program
 
         // Emit
         ITypeEmitter[] emitters = [
-            new EnumEmitter(), 
-            new HandleEmitter(), 
-            new StructEmitter(), 
-            new ApiTypeEmitter(registry)
+            new EnumEmitter(),
+            new HandleEmitter(),
+            new StructEmitter(),
+            new ApiTypeEmitter(registry),
+            new ComInterfaceEmitter(registry)
         ];
         var pipeline = new TypeEmissionPipeline(emitters, loggerFactory.CreateLogger<TypeEmissionPipeline>());
         var (emitted, _, errors) = pipeline.EmitAll(registry, outputDir,
