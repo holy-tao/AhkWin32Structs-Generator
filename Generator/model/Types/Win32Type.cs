@@ -30,7 +30,7 @@ public abstract class Win32Type
     public MemberFlags Flags { get; init; }
 
     /// <summary>Extension code blocks to append to this type's output.</summary>
-    public IReadOnlyList<ExtensionCode>? Extensions { get; init; }
+    public List<ExtensionCode> Extensions { get; init; } = [];
 
     /// <summary>
     /// FQNs of types referenced by this type (for #Include generation).

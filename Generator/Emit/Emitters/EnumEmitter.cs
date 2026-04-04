@@ -63,7 +63,7 @@ public sealed class EnumEmitter : ITypeEmitter
 
     private static void EmitExtensions(AhkWriter w, EnumType enumType)
     {
-        if (enumType.Extensions is null) return;
+        if (enumType.Extensions.Count == 0) return;
 
         foreach (var ext in enumType.Extensions)
         {

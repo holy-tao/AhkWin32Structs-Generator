@@ -10,7 +10,9 @@ using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Types;
 using Microsoft.Extensions.Logging;
+using AhkWin32.Generator.Transform;
 using IRArchitecture = AhkWin32.Generator.Model.Architecture;
+using IRExtensionReader = AhkWin32.Generator.Transform.ExtensionReader;
 
 public class Program
 {
@@ -193,12 +195,21 @@ public class Program
         var docs = new DocumentationLoader(loggerFactory.CreateLogger<DocumentationLoader>());
         docs.Load(Path.Join(metadataDir, "apidocs.msgpack"));
 
+        // Load reserved names config
+        var reservedNames = ReservedNameConfig.Load(Path.Join(metadataDir, "ahk-reserved-names.yml"));
+
         // Extract all types into TypeRegistry
         using var loader = new MetadataLoader(metadataDir, loggerFactory.CreateLogger<MetadataLoader>());
         loader.LoadPrimaryAssemblies(assemblyFilter.Length > 0 ? assemblyFilter : null);
 
-        var extractor = new TypeExtractor(loader, docs, loggerFactory);
+        var extractor = new TypeExtractor(loader, docs, loggerFactory, reservedNames);
         TypeRegistry registry = extractor.ExtractAll();
+
+        // Transforms
+        var extensionApplier = new ExtensionApplier(
+            new IRExtensionReader(loggerFactory.CreateLogger<IRExtensionReader>()),
+            loggerFactory.CreateLogger<ExtensionApplier>());
+        extensionApplier.Apply(registry, Path.Join(metadataDir, "extensions"));
 
         // Emit
         ITypeEmitter[] emitters = [
@@ -226,11 +237,14 @@ public class Program
         var docs = new DocumentationLoader(loggerFactory.CreateLogger<DocumentationLoader>());
         docs.Load(Path.Join(metadataDir, "apidocs.msgpack"));
 
+        // Load reserved names config
+        var reservedNames = ReservedNameConfig.Load(Path.Join(metadataDir, "ahk-reserved-names.yml"));
+
         // Create MetadataLoader and extract
         using var loader = new MetadataLoader(metadataDir, loggerFactory.CreateLogger<MetadataLoader>());
         loader.LoadPrimaryAssemblies(assemblyFilter.Length > 0 ? assemblyFilter : null);
 
-        var extractor = new TypeExtractor(loader, docs, loggerFactory);
+        var extractor = new TypeExtractor(loader, docs, loggerFactory, reservedNames);
         TypeRegistry registry = extractor.ExtractAll();
 
         // --- Diagnostic report ---

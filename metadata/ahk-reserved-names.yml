@@ -1,0 +1,64 @@
+# AHK reserved names: language keywords and builtin type names.
+# Used for two kinds of deconfliction:
+#   - Type names matching these get prefixed with "Win32" (e.g., "string" -> "Win32string")
+#   - Parameter names matching these get prefixed with "_" (e.g., "in" -> "_in")
+# Note: At runtime, all extracted Win32 type names are also added to the
+# parameter reserved set to prevent parameter/type shadowing.
+
+# Reserved words: https://www.autohotkey.com/docs/alpha/Variables.htm#Operators
+- in
+- as
+- is
+- contains
+- not
+- and
+- or
+- this
+- return
+- throw
+- loop
+- do
+- while
+- unset
+# Built-In class names: https://www.autohotkey.com/docs/v2/ObjList.htm
+- Any
+- Object
+- Array
+- Buffer
+- ClipboardAll
+- Class
+- Error
+- MemoryError
+- OSError
+- TargetError
+- TimeoutError
+- TypeError
+- UnsetError
+- MemberError
+- PropertyError
+- MethodError
+- UnsetItemError
+- ValueError
+- IndexError
+- ZeroDivisionError
+- File
+- Func
+- BoundFunc
+- Closure
+- Enumerator
+- Gui
+- InputHook
+- Map
+- Menu
+- MenuBar
+- RegExMatchInfo
+- Primitive
+- Number
+- Float
+- Integer
+- String
+- VarRef
+- ComValue
+- ComObjArray
+- ComObject
+- ComValueRef

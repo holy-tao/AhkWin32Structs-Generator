@@ -19,27 +19,24 @@ using Microsoft.Windows.SDK.Win32Docs;
 /// </summary>
 public sealed class TypeExtractor
 {
-    /// <summary>
-    /// Reserved names in AutoHotkey that must be deconflicted.
-    /// </summary>
-    private static readonly string[] s_reservedNames = ["string", "number", "float", "integer"];
-
     private readonly MetadataLoader _loader;
     private readonly DocumentationLoader _docs;
     private readonly ILogger<TypeExtractor> _logger;
+    private readonly IReadOnlySet<string> _reservedNames;
     private readonly FieldExtractor _fieldExtractor;
     private readonly MethodExtractor _methodExtractor;
     private readonly ComInterfaceExtractor _comExtractor;
 
     public TypeExtractor(MetadataLoader loader, DocumentationLoader docs,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory, IReadOnlySet<string> reservedNames)
     {
         _loader = loader;
         _docs = docs;
         _logger = loggerFactory.CreateLogger<TypeExtractor>();
+        _reservedNames = reservedNames;
         _fieldExtractor = new FieldExtractor(loader, _logger, ExtractStructRecursive);
 
-        var paramExtractor = new ParameterExtractor(loader, loggerFactory.CreateLogger<ParameterExtractor>());
+        var paramExtractor = new ParameterExtractor(loader, loggerFactory.CreateLogger<ParameterExtractor>(), reservedNames);
         _methodExtractor = new MethodExtractor(docs, paramExtractor,
             loggerFactory.CreateLogger<MethodExtractor>());
         _comExtractor = new ComInterfaceExtractor(loader, docs, _methodExtractor,
@@ -885,13 +882,13 @@ public sealed class TypeExtractor
     /// Deconflict a type name against AHK reserved words.
     /// Strip _e__Struct suffix, prefix with Win32 if reserved.
     /// </summary>
-    private static string DeconflictName(string name)
+    private string DeconflictName(string name)
     {
         string candidate = name.EndsWith("_e__Struct")
             ? name[..^"_e__Struct".Length]
             : name;
 
-        if (s_reservedNames.Contains(candidate, StringComparer.OrdinalIgnoreCase))
+        if (_reservedNames.Contains(candidate))
             return $"Win32{candidate}";
 
         return candidate;

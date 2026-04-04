@@ -277,7 +277,7 @@ public sealed class StructEmitter : ITypeEmitter
 
     internal static void EmitExtensions(AhkWriter w, Win32Type type)
     {
-        if (type.Extensions is null) return;
+        if (type.Extensions.Count == 0) return;
 
         foreach (var ext in type.Extensions)
         {

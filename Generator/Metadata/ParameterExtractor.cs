@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Metadata;
 
+using System.Collections.Frozen;
 using System.Reflection;
 using System.Reflection.Metadata;
 using AhkWin32.Generator.Model;
@@ -20,34 +21,22 @@ public sealed class ParameterExtractor
     /// Reserved parameter names in AutoHotkey. Case-insensitive lookup.
     /// Includes both language keywords and type names from loaded assemblies.
     /// </summary>
-    private readonly HashSet<string> _reservedNames;
+    private readonly FrozenSet<string> _reservedNames;
 
-    private static readonly string[] s_builtinReservedNames =
-    [
-        "in", "as", "is", "contains", "not", "and", "or", "this", "return",
-        "throw", "loop", "do", "while", "float", "number", "integer", "object",
-        "class", "buffer", "string", "file", "enumerator"
-    ];
-
-    public ParameterExtractor(MetadataLoader loader, ILogger<ParameterExtractor> logger)
+    public ParameterExtractor(MetadataLoader loader, ILogger<ParameterExtractor> logger,
+        IReadOnlySet<string> builtinReservedNames)
     {
         _loader = loader;
         _logger = logger;
-        _reservedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (string name in s_builtinReservedNames)
-            _reservedNames.Add(name);
 
         // Pre-populate type names from all primary assemblies
-        foreach (var (_, _, reader) in _loader.GetPrimaryAssemblies())
-        {
-            foreach (TypeDefinitionHandle hTd in reader.TypeDefinitions)
-            {
-                TypeDefinition td = reader.GetTypeDefinition(hTd);
-                string tdName = reader.GetString(td.Name);
-                _reservedNames.Add(tdName);
-            }
-        }
+        _reservedNames = _loader.GetPrimaryAssemblies()
+            .SelectMany(tup => tup.Reader.TypeDefinitions
+                .AsParallel()
+                .Select(td => tup.Reader.GetString(tup.Reader.GetTypeDefinition(td).Name))
+            )
+            .Concat(builtinReservedNames)
+            .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
         _logger.LogDebug("ParameterExtractor initialized with {Count} reserved names", _reservedNames.Count);
     }
