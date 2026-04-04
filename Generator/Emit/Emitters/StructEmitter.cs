@@ -281,7 +281,16 @@ public sealed class StructEmitter : ITypeEmitter
 
         foreach (var ext in type.Extensions)
         {
-            string code = ext.Code.Replace("$Class", type.Name);
+            // Replace tokens
+            string code = ext.Code.Replace("$Class", type.Name)
+                .Replace("$Namespace", type.Namespace)
+                .Replace("$Arch", type.Arch.ToString());
+            if (type is ComInterfaceType iface)
+            {
+                code = code.Replace("$CLSID", iface.CLSID?.ToString());
+                code = code.Replace("$IID", iface.IID?.ToString());
+            }
+
             string indentStr = w.CurrentIndent;
             string indented = indentStr + code.Replace("\n", "\n" + indentStr);
             w.RawLine(indented);
