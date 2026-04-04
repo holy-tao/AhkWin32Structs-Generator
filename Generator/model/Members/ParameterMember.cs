@@ -20,7 +20,7 @@ public sealed class ParameterMember
     public ParameterDirection Direction { get; init; }
 
     /// <summary>Custom parameter attributes (Reserved, Constant, SizedBuffer, etc.).</summary>
-    public ParameterFlags Attributes { get; init; }
+    public ParameterFlags Attributes { get; set; }
 
     /// <summary>
     /// For [IgnoreIfReturn] parameters: the values that indicate the return should be ignored.

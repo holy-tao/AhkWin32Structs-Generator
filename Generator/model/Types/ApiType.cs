@@ -11,7 +11,7 @@ public sealed class ApiType : Win32Type
     public required IReadOnlyList<ConstantMember> Constants { get; init; }
 
     /// <summary>Methods (DllImport functions) defined in this API type.</summary>
-    public required IReadOnlyList<MethodMember> Methods { get; init; }
+    public required List<MethodMember> Methods { get; init; }
 
     /// <summary>
     /// The display name for code generation. For Apis types this is the last segment

@@ -206,6 +206,11 @@ public class Program
         TypeRegistry registry = extractor.ExtractAll();
 
         // Transforms
+        var overrideApplier = new OverrideApplier(
+            new OverrideReader(loggerFactory.CreateLogger<OverrideReader>()),
+            loggerFactory.CreateLogger<OverrideApplier>());
+        overrideApplier.Apply(registry, Path.Join(metadataDir, "overrides"));
+
         var extensionApplier = new ExtensionApplier(
             new IRExtensionReader(loggerFactory.CreateLogger<IRExtensionReader>()),
             loggerFactory.CreateLogger<ExtensionApplier>());

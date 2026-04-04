@@ -26,7 +26,7 @@ public sealed class FieldMember
     public required ResolvedType Type { get; init; }
 
     /// <summary>Member flags (deprecated, reserved, alignment, union, anonymous, bitfield).</summary>
-    public MemberFlags Flags { get; init; }
+    public MemberFlags Flags { get; set; }
 
     /// <summary>Documentation description for this field.</summary>
     public string? Description { get; init; }

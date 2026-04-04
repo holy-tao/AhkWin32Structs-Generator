@@ -1,0 +1,9 @@
+# BCryptCloseAlgorithmProvider has a dwFlags parameter but
+# no actual flags. Marking it as reserved excludes it from
+# the final emitted code and always passes 0 to the DllCall
+- type: Windows.Win32.Security.Cryptography.Apis
+  methods:
+    BCryptCloseAlgorithmProvider:
+      parameters:
+        dwFlags:
+          add-attributes: [Reserved]

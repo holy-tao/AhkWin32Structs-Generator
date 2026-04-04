@@ -28,5 +28,5 @@ public class StructType : Win32Type
     /// When set, the emitter generates a __New method that initializes this field to Size.
     /// E.g., "cbSize" for WNDCLASSEXW.
     /// </summary>
-    public string? StructSizeFieldName { get; init; }
+    public string? StructSizeFieldName { get; set; }
 }

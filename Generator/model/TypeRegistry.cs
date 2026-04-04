@@ -99,6 +99,24 @@ public class TypeRegistry
         return filtered;
     }
 
+    /// <summary>
+    /// Remove a type and all its architecture variants from the registry.
+    /// Returns the number of variants removed.
+    /// </summary>
+    public int Remove(string fqn)
+    {
+        if (!_byFqn.TryRemove(fqn, out var variants))
+            return 0;
+
+        int removed = 0;
+        foreach (var type in variants)
+        {
+            if (_types.TryRemove(type.Identity, out _))
+                removed++;
+        }
+        return removed;
+    }
+
     /// <summary>Check if a type with the given FQN exists.</summary>
     public bool Contains(string fqn) => _byFqn.ContainsKey(fqn);
 
