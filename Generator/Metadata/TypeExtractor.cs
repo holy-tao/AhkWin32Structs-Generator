@@ -134,7 +134,7 @@ public sealed class TypeExtractor
                 if (attrs.SupportedArchitecture.HasValue)
                 {
                     Architecture arch = attrs.SupportedArchitecture.Value;
-                    if (!arch.HasFlag(Architecture.X64) && !arch.HasFlag(Architecture.Arm64))
+                    if (!arch.HasFlag(Architecture.X64))
                     {
                         Interlocked.Increment(ref archSkipCount);
                         _logger.LogDebug("Skipping type {FQN}: unsupported architecture {Arch}",
