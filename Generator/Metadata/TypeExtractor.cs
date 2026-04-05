@@ -902,13 +902,23 @@ public sealed class TypeExtractor
     private static List<string> CollectStructReferencedTypes(IReadOnlyList<FieldMember> fields)
     {
         List<string> refs = [];
+        CollectFieldReferences(fields, refs);
+        return [.. refs.Distinct()];
+    }
 
+    /// <summary>
+    /// Recursively collect type references from fields, including embedded struct fields.
+    /// </summary>
+    private static void CollectFieldReferences(IReadOnlyList<FieldMember> fields, List<string> refs)
+    {
         foreach (FieldMember field in fields)
         {
             CollectTypeReferences(field.Type, refs);
-        }
 
-        return refs.Distinct().ToList();
+            // Recurse into embedded/anonymous structs to collect their references too
+            if (field.EmbeddedStruct != null)
+                CollectFieldReferences(field.EmbeddedStruct.Members, refs);
+        }
     }
 
     /// <summary>
