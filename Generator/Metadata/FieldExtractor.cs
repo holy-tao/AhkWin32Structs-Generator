@@ -75,7 +75,7 @@ public sealed class FieldExtractor
             StructType? embeddedStruct = null;
             bool isNested = false;
             (resolvedType, embeddedStruct, isNested) = ResolveEmbeddedStruct(
-                reader, resolvedType, fieldName, isAnsi);
+                reader, typeDef, resolvedType, fieldName, isAnsi);
 
             // Compute field size
             int fieldSize = ComputeFieldSize(resolvedType, embeddedStruct, isAnsi);
@@ -151,16 +151,16 @@ public sealed class FieldExtractor
     /// Port of AhkStructMember constructor logic for Struct and Array fields.
     /// </summary>
     private (ResolvedType Type, StructType? Embedded, bool IsNested) ResolveEmbeddedStruct(
-        MetadataReader reader, ResolvedType resolvedType, string fieldName, bool isAnsi)
+        MetadataReader reader, TypeDefinition parentTypeDef, ResolvedType resolvedType, string fieldName, bool isAnsi)
     {
         if (resolvedType is StructRef structRef)
         {
-            return ResolveStructRefField(reader, structRef, fieldName, isAnsi);
+            return ResolveStructRefField(reader, parentTypeDef, structRef, fieldName, isAnsi);
         }
 
         if (resolvedType is ArrayType arrayType && arrayType.ElementType is StructRef arrayStructRef)
         {
-            var (_, embedded, isNested) = ResolveStructRefField(reader, arrayStructRef, fieldName, isAnsi);
+            var (_, embedded, isNested) = ResolveStructRefField(reader, parentTypeDef, arrayStructRef, fieldName, isAnsi);
             if (embedded != null)
             {
                 // Keep the ArrayType but with the embedded struct for size info
@@ -177,11 +177,13 @@ public sealed class FieldExtractor
     /// Resolve a StructRef field — either build the embedded struct or convert to pointer.
     /// </summary>
     private (ResolvedType Type, StructType? Embedded, bool IsNested) ResolveStructRefField(
-        MetadataReader reader, StructRef structRef, string fieldName, bool isAnsi)
+        MetadataReader reader, TypeDefinition parentTypeDef, StructRef structRef, string fieldName, bool isAnsi)
     {
         // We need to find the actual TypeDefinition to check if it's nested and get its namespace
         // The StructRef.FQN gives us the namespace.name but we need the TypeDefinition for nested check
-        TypeDefinition? fieldTypeDef = FindTypeDefByFqn(reader, structRef.FQN);
+        // Pass parentTypeDef so nested types (e.g. _Anonymous_e__Struct) are resolved within
+        // the correct parent, not just the first match in the global namespace.
+        TypeDefinition? fieldTypeDef = FindTypeDefByFqn(reader, structRef.FQN, parentTypeDef);
 
         if (fieldTypeDef == null)
         {
@@ -219,7 +221,7 @@ public sealed class FieldExtractor
     /// <summary>
     /// Try to find a TypeDefinition by FQN within the current reader.
     /// </summary>
-    private static TypeDefinition? FindTypeDefByFqn(MetadataReader reader, string fqn)
+    private static TypeDefinition? FindTypeDefByFqn(MetadataReader reader, string fqn, TypeDefinition? parent = null)
     {
         int lastDot = fqn.LastIndexOf('.');
         if (lastDot < 0) return null;
@@ -227,21 +229,22 @@ public sealed class FieldExtractor
         string ns = fqn[..lastDot];
         string name = fqn[(lastDot + 1)..];
 
-        foreach (TypeDefinitionHandle tdHandle in reader.TypeDefinitions)
+        // Check parent context for nested types first if parent is passed
+        foreach (TypeDefinitionHandle tdHandle in parent?.GetNestedTypes() ?? [])
         {
             TypeDefinition td = reader.GetTypeDefinition(tdHandle);
-            if (reader.StringComparer.Equals(td.Name, name) &&
-                reader.StringComparer.Equals(td.Namespace, ns))
+            if (reader.StringComparer.Equals(td.Name, name))
             {
                 return td;
             }
         }
 
-        // Also check nested types — they may not have a namespace
+        // Check all type definitions in the reader
         foreach (TypeDefinitionHandle tdHandle in reader.TypeDefinitions)
         {
             TypeDefinition td = reader.GetTypeDefinition(tdHandle);
-            if (td.IsNested && reader.StringComparer.Equals(td.Name, name))
+            if (reader.StringComparer.Equals(td.Name, name) &&
+                reader.StringComparer.Equals(td.Namespace, ns))
             {
                 return td;
             }
