@@ -32,12 +32,15 @@ public static class DocCommentWriter
             w.Line($" * @see {type.HelpLink}");
 
         w.Line($" * @namespace {type.Namespace}");
-        w.Line($" * @version {type.MetadataVersion}");
+        // w.Line($" * @version {type.MetadataVersion}");
 
         if (type.IsAnsi)
             w.Line(" * @charset ANSI");
         if (type.IsUnicode)
             w.Line(" * @charset Unicode");
+
+        if (type.Arch is not Architecture.All or Architecture.None)
+            w.Line($" * @architecture {type.Arch}");
 
         if (type.IsDeprecated)
         {
