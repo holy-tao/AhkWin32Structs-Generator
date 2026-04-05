@@ -220,7 +220,7 @@ public class Program
         ITypeEmitter[] emitters = [
             new EnumEmitter(),
             new HandleEmitter(),
-            new StructEmitter(),
+            new StructEmitter(registry),
             new ApiTypeEmitter(registry),
             new ComInterfaceEmitter(registry)
         ];

@@ -320,7 +320,8 @@ public sealed class TypeExtractor
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
             SupportedOSPlatform = attrs.SupportedOSPlatform,
-            ReferencedTypes = referencedTypes
+            ReferencedTypes = referencedTypes,
+            IsNested = typeDef.IsNested
         };
 
         _logger.LogDebug("Extracted StructType {FQN} ({FieldCount} fields, {Size} bytes)",
@@ -383,7 +384,8 @@ public sealed class TypeExtractor
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
             SupportedOSPlatform = attrs.SupportedOSPlatform,
-            ReferencedTypes = referencedTypes
+            ReferencedTypes = referencedTypes,
+            IsNested = typeDef.IsNested
         };
 
         _logger.LogDebug("Extracted HandleType {FQN} (invalidValues=[{Values}], freeFunc={FuncName})",
@@ -974,7 +976,8 @@ public sealed class TypeExtractor
             PackingSize = layout.PackingSize,
             LayoutKind = layoutKind,
             Members = layout.Fields,
-            StructSizeFieldName = attrs.StructSizeFieldName
+            StructSizeFieldName = attrs.StructSizeFieldName,
+            IsNested = true
         };
     }
 

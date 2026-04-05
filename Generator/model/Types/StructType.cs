@@ -23,6 +23,9 @@ public class StructType : Win32Type
     /// <summary>Whether this struct is a union (all members at offset 0).</summary>
     public bool IsUnion => Flags.HasFlag(MemberFlags.Union);
 
+    /// <summary> Whether this struct is nested or not </summary>
+    public required bool IsNested { get; init; }
+
     /// <summary>
     /// Name of the struct size field if [StructSizeFieldAttribute] is present.
     /// When set, the emitter generates a __New method that initializes this field to Size.

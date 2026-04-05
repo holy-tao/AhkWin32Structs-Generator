@@ -11,6 +11,13 @@ using AhkWin32.Generator.Model.Types;
 /// </summary>
 public sealed class StructEmitter : ITypeEmitter
 {
+    private readonly TypeRegistry _registry;
+
+    public StructEmitter(TypeRegistry registry)
+    {
+        _registry = registry;
+    }
+
     public bool CanEmit(Win32Type type) => type is StructType and not HandleType;
 
     public EmitResult Emit(Win32Type type, string outputRoot)
@@ -24,7 +31,7 @@ public sealed class StructEmitter : ITypeEmitter
         return new EmitResult(w.ToString(), filePath);
     }
 
-    private static void EmitStruct(AhkWriter w, StructType structType)
+    private void EmitStruct(AhkWriter w, StructType structType)
     {
         string pathToBase = ImportResolver.GetPathToBase(structType.Namespace);
         w.Require("AutoHotkey v2.0.0 64-bit");
@@ -267,9 +274,13 @@ public sealed class StructEmitter : ITypeEmitter
         }
     }
 
-    internal static void EmitImports(AhkWriter w, Win32Type type)
+    internal void EmitImports(AhkWriter w, Win32Type type)
     {
-        foreach (string import in type.ReferencedTypes.Distinct())
+        // Restrict to types available in the registry to filter out nested types
+        IEnumerable<string> imports = type.ReferencedTypes.Distinct()
+            .Where(_registry.Contains);
+
+        foreach (string import in imports)
         {
             w.Include(ImportResolver.GetIncludePath(type.Namespace, import));
         }

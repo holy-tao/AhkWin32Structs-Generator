@@ -30,7 +30,7 @@ public sealed class HandleEmitter : ITypeEmitter
         w.Require("AutoHotkey v2.0.0 64-bit");
         w.Include($"{pathToBase}Win32Struct.ahk");
 
-        StructEmitter.EmitImports(w, handleType);
+        EmitImports(w, handleType);
 
         w.Include($"{pathToBase}Win32Handle.ahk");
 
@@ -67,6 +67,14 @@ public sealed class HandleEmitter : ITypeEmitter
                 w.Line($"    this.{firstMemberName} := {firstInvalidValue}");
                 w.Line("}");
             }
+        }
+    }
+
+    private static void EmitImports(AhkWriter w, Win32Type type)
+    {
+        foreach (string import in type.ReferencedTypes.Distinct())
+        {
+            w.Include(ImportResolver.GetIncludePath(type.Namespace, import));
         }
     }
 }
