@@ -29,7 +29,7 @@ public static class MethodEmitter
             }
 
             EmitReservedParams(w, method);
-            EmitParameterConversions(w, method);
+            EmitParameterConversions(w, method, false);
             EmitParameterMarshalling(w, method);
 
             if (method.SetsLastError)
@@ -82,15 +82,17 @@ public static class MethodEmitter
 
     // --- Parameter conversions (String→StrPtr, Handle→NumGet) ---
 
-    private static void EmitParameterConversions(AhkWriter w, MethodMember method)
+    private static void EmitParameterConversions(AhkWriter w, MethodMember method, bool isComMethod)
     {
         int startLen = w.Length;
 
         foreach (var param in method.Parameters.Skip(1)
             .Where(p => !p.IsReserved && p != method.OutputParameter))
         {
-            if (param.TypeDefName is "BSTR")
+            if (isComMethod && param.TypeDefName is "BSTR")
             {
+                // Only COM methods get automatic String -> BSTR conversion - DllImport methods want to operate on the
+                // handle itself, so we treat it as a regular handle to be dereferenced.
                 w.Line($"{param.Name} := {param.Name} is String ? BSTR.Alloc({param.Name}).Value : {param.Name}");
             }
             else if (param.TypeDefName is "PSTR" or "PWSTR")
@@ -401,7 +403,7 @@ public static class MethodEmitter
         using (w.InstanceMethod(method.DeduplicatedName, argList))
         {
             EmitReservedParams(w, method);
-            EmitParameterConversions(w, method);
+            EmitParameterConversions(w, method, true);
             EmitParameterMarshalling(w, method);
 
             if (method.SetsLastError)
