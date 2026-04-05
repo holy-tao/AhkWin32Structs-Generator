@@ -15,10 +15,12 @@ using YamlDotNet.Serialization;
 public sealed class OverrideReader
 {
     private readonly ILogger<OverrideReader> _logger;
+    private readonly int _maxParallelism;
 
-    public OverrideReader(ILogger<OverrideReader> logger)
+    public OverrideReader(ILogger<OverrideReader> logger, int maxParallelism = 0)
     {
         _logger = logger;
+        _maxParallelism = maxParallelism > 0 ? maxParallelism : Environment.ProcessorCount;
     }
 
     /// <summary>
@@ -42,7 +44,7 @@ public sealed class OverrideReader
             .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".yml" or ".yaml")
             .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)];
 
-        Parallel.ForEach(files, path =>
+        Parallel.ForEach(files, new ParallelOptions { MaxDegreeOfParallelism = _maxParallelism }, path =>
         {
             List<OverrideEntryDto> entries;
             try

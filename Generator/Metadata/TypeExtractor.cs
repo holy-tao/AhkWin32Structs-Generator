@@ -26,17 +26,19 @@ public sealed class TypeExtractor
     private readonly FieldExtractor _fieldExtractor;
     private readonly MethodExtractor _methodExtractor;
     private readonly ComInterfaceExtractor _comExtractor;
+    private readonly int _maxParallelism;
 
     public TypeExtractor(MetadataLoader loader, DocumentationLoader docs,
-        ILoggerFactory loggerFactory, IReadOnlySet<string> reservedNames)
+        ILoggerFactory loggerFactory, IReadOnlySet<string> reservedNames, int maxParallelism = 0)
     {
         _loader = loader;
         _docs = docs;
         _logger = loggerFactory.CreateLogger<TypeExtractor>();
         _reservedNames = reservedNames;
+        _maxParallelism = maxParallelism > 0 ? maxParallelism : Environment.ProcessorCount;
         _fieldExtractor = new FieldExtractor(loader, _logger, ExtractStructRecursive);
 
-        var paramExtractor = new ParameterExtractor(loader, loggerFactory.CreateLogger<ParameterExtractor>(), reservedNames);
+        var paramExtractor = new ParameterExtractor(loader, loggerFactory.CreateLogger<ParameterExtractor>(), reservedNames, _maxParallelism);
         _methodExtractor = new MethodExtractor(docs, paramExtractor,
             loggerFactory.CreateLogger<MethodExtractor>());
         _comExtractor = new ComInterfaceExtractor(loader, docs, _methodExtractor,
@@ -103,7 +105,7 @@ public sealed class TypeExtractor
         int archSkipCount = 0, nestedSkipCount = 0, delegateSkipCount = 0, otherSkipCount = 0;
         int errorCount = 0;
 
-        reader.TypeDefinitions.AsParallel().ForAll(hTypeDef =>
+        reader.TypeDefinitions.AsParallel().WithDegreeOfParallelism(_maxParallelism).ForAll(hTypeDef =>
         {
             TypeDefinition typeDef = reader.GetTypeDefinition(hTypeDef);
             string typeName = reader.GetString(typeDef.Name);

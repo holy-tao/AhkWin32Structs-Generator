@@ -15,10 +15,12 @@ using YamlDotNet.Serialization;
 public sealed class ExtensionReader
 {
     private readonly ILogger<ExtensionReader> _logger;
+    private readonly int _maxParallelism;
 
-    public ExtensionReader(ILogger<ExtensionReader> logger)
+    public ExtensionReader(ILogger<ExtensionReader> logger, int maxParallelism = 0)
     {
         _logger = logger;
+        _maxParallelism = maxParallelism > 0 ? maxParallelism : Environment.ProcessorCount;
     }
 
     /// <summary>
@@ -40,7 +42,7 @@ public sealed class ExtensionReader
             .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".yml" or ".yaml")
             .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)];
 
-        Parallel.ForEach(files, path =>
+        Parallel.ForEach(files, new ParallelOptions { MaxDegreeOfParallelism = _maxParallelism }, path =>
         {
             ExtensionDto dto;
             try

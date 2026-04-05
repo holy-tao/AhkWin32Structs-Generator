@@ -24,15 +24,18 @@ public sealed class ParameterExtractor
     private readonly FrozenSet<string> _reservedNames;
 
     public ParameterExtractor(MetadataLoader loader, ILogger<ParameterExtractor> logger,
-        IReadOnlySet<string> builtinReservedNames)
+        IReadOnlySet<string> builtinReservedNames, int maxParallelism = 0)
     {
         _loader = loader;
         _logger = logger;
+
+        int dop = maxParallelism > 0 ? maxParallelism : Environment.ProcessorCount;
 
         // Pre-populate type names from all primary assemblies
         _reservedNames = _loader.GetPrimaryAssemblies()
             .SelectMany(tup => tup.Reader.TypeDefinitions
                 .AsParallel()
+                .WithDegreeOfParallelism(dop)
                 .Select(td => tup.Reader.GetString(tup.Reader.GetTypeDefinition(td).Name))
             )
             .Concat(builtinReservedNames)

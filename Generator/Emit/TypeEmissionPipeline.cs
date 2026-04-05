@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit;
 
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using AhkWin32.Generator.Emit.Emitters;
 using AhkWin32.Generator.Model;
@@ -14,11 +15,16 @@ public sealed class TypeEmissionPipeline
 {
     private readonly ILogger<TypeEmissionPipeline> _logger;
     private readonly ITypeEmitter[] _emitters;
+    private readonly ParallelOptions _parallelOptions;
 
-    public TypeEmissionPipeline(IEnumerable<ITypeEmitter> emitters, ILogger<TypeEmissionPipeline> logger)
+    public TypeEmissionPipeline(IEnumerable<ITypeEmitter> emitters, ILogger<TypeEmissionPipeline> logger, int maxParallelism = 0)
     {
         _emitters = [.. emitters];
         _logger = logger;
+        _parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = maxParallelism > 0 ? maxParallelism : Environment.ProcessorCount
+        };
     }
 
     /// <summary>
@@ -30,7 +36,7 @@ public sealed class TypeEmissionPipeline
     {
         _logger.LogInformation("Beginning type emission...");
 
-        int emitted = 0, skipped = 0, errors = 0;
+        int skipped = 0, errors = 0;
         Stopwatch watch = Stopwatch.StartNew();
 
         Win32Type[] filteredTypes = [.. registry.GetAll().Where(type => ShouldEmit(type, namespaceFilter))];
@@ -41,6 +47,9 @@ public sealed class TypeEmissionPipeline
             string dirPath = Path.Join(outputDir, Path.Join(ns.Split('.')));
             Directory.CreateDirectory(dirPath);
         }
+
+        // Phase 1: Emit to memory (CPU-bound)
+        ConcurrentBag<EmitResult> results = [];
 
         Parallel.ForEach(filteredTypes, (type) =>
         {
@@ -54,13 +63,7 @@ public sealed class TypeEmissionPipeline
             try
             {
                 _logger.LogTrace("Emitting {Namespace}.{Name}", type.Namespace, type.Name);
-
-                EmitResult result = emitter.Emit(type, outputDir);
-                File.WriteAllText(result.FilePath, result.Content);
-
-                int count = Interlocked.Increment(ref emitted);
-                if (count % 1000 == 0)
-                    _logger.LogInformation("  Emitted {Count} files...", count);
+                results.Add(emitter.Emit(type, outputDir));
             }
             catch (Exception ex)
             {
@@ -70,24 +73,41 @@ public sealed class TypeEmissionPipeline
         });
 
         watch.Stop();
-        _logger.LogInformation("Emission complete: {Emitted} emitted, {Skipped} skipped, {Errors} errors in {Elapsed:F1}s",
-            emitted, skipped, errors, watch.Elapsed.TotalSeconds);
+        _logger.LogInformation("Emitted {Count} types to memory in {Elapsed:F1}s, writing files...", 
+            results.Count, watch.Elapsed.TotalSeconds);
 
-        return (emitted, skipped, errors);
+        // Phase 2: Write files (I/O-bound, async to avoid blocking thread pool threads)
+        watch.Restart();
+        int written = 0;
+
+        Parallel.ForEachAsync(results, _parallelOptions, async (result, cancellationToken) =>
+        {
+            await File.WriteAllTextAsync(result.FilePath, result.Content, cancellationToken);
+
+            int count = Interlocked.Increment(ref written);
+            if (count % 5000 == 0)
+                _logger.LogInformation("  Wrote {Count} files...", count);
+        }).GetAwaiter().GetResult();
+
+        watch.Stop();
+        _logger.LogInformation("Emission complete: {Emitted} emitted, {Skipped} skipped, {Errors} errors in {Elapsed:F1}s",
+            results.Count, skipped, errors, watch.Elapsed.TotalSeconds);
+
+        return (results.Count, skipped, errors);
     }
 
     /// <summary>
-    /// Checks to see if type passes the namespace filter 
+    /// Checks to see if type passes the namespace filter
     /// </summary>
     private static bool ShouldEmit(Win32Type type, string[]? namespaceFilter)
     {
         if (namespaceFilter != null && namespaceFilter.Length > 0)
         {
-            return namespaceFilter.Any(prefix => 
+            return namespaceFilter.Any(prefix =>
                 type.Namespace.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
         }
 
-        return true;            
+        return true;
     }
 
     private ITypeEmitter? FindEmitter(Win32Type type)

@@ -44,6 +44,9 @@ public class Program
         var logLevelOption = new Option<LogLevel>("--log-level", () => LogLevel.Information, "Minimum log level");
         var validateIrOption = new Option<bool>("--validate-ir", "Run IR extraction and print diagnostic report (no code generation)");
         var emitIrOption = new Option<bool>("--emit-ir", "Run new IR emitter pipeline (for comparison against legacy)");
+        var maxParallelismOption = new Option<int>("--max-parallelism",
+            () => Environment.ProcessorCount,
+            $"Maximum degree of parallelism for extraction and emission (default: CPU count)");
 
         var rootCommand = new RootCommand("AhkWin32Structs Generator — generates AutoHotkey v2 projections of Win32 and WDK APIs")
         {
@@ -53,22 +56,23 @@ public class Program
             assemblyOption,
             logLevelOption,
             validateIrOption,
-            emitIrOption
+            emitIrOption,
+            maxParallelismOption
         };
 
         int exitCode = 0;
         rootCommand.SetHandler(
-            (metadataDir, outputDir, namespaceFilter, assemblyFilter, logLevel, validateIr, emitIr) =>
+            (metadataDir, outputDir, namespaceFilter, assemblyFilter, logLevel, validateIr, emitIr, maxParallelism) =>
             {
-                exitCode = RunGenerator(metadataDir, outputDir, namespaceFilter ?? [], assemblyFilter ?? [], logLevel, validateIr, emitIr);
+                exitCode = RunGenerator(metadataDir, outputDir, namespaceFilter ?? [], assemblyFilter ?? [], logLevel, validateIr, emitIr, maxParallelism);
             },
-            metadataDirArg, outputDirArg, namespaceOption, assemblyOption, logLevelOption, validateIrOption, emitIrOption);
+            metadataDirArg, outputDirArg, namespaceOption, assemblyOption, logLevelOption, validateIrOption, emitIrOption, maxParallelismOption);
 
         rootCommand.Invoke(args);
         return exitCode;
     }
 
-    private static int RunGenerator(DirectoryInfo metadataDir, DirectoryInfo outputDir, string[] namespaceFilter, string[] assemblyFilter, LogLevel logLevel, bool validateIr = false, bool emitIr = false)
+    private static int RunGenerator(DirectoryInfo metadataDir, DirectoryInfo outputDir, string[] namespaceFilter, string[] assemblyFilter, LogLevel logLevel, bool validateIr = false, bool emitIr = false, int maxParallelism = 0)
     {
         _loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -87,6 +91,16 @@ public class Program
         Logger.LogInformation("Starting AhkWin32Structs Generator...");
         Logger.LogInformation("Metadata Directory: {MetadataDir}", MetadataDir);
         Logger.LogInformation("Output Directory: {OutputDir}", ahkOutputDir);
+
+        // -1 is no hard max, which we want to allow
+        // See https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.paralleloptions.maxdegreeofparallelism?view=net-10.0
+        if (maxParallelism == 0 || maxParallelism < -1)
+        {
+            Logger.LogWarning("Invalid --max-parallelism ({ARG}), using CPU count ({CPUS})",
+                maxParallelism, Environment.ProcessorCount);
+            maxParallelism = Environment.ProcessorCount;
+        }
+        Logger.LogInformation("Max parallelism: {MaxParallelism}", maxParallelism);
 
         if (namespaceFilter.Length > 0)
             Logger.LogInformation("Namespace filter: {Namespaces}", string.Join(", ", namespaceFilter));
@@ -118,7 +132,7 @@ public class Program
         // --- New IR emitter pipeline (--emit-ir) ---
         if (emitIr)
         {
-            int emitResult = RunIREmission(MetadataDir, outputDir.FullName, namespaceFilter, assemblyFilter, _loggerFactory!);
+            int emitResult = RunIREmission(MetadataDir, outputDir.FullName, namespaceFilter, assemblyFilter, _loggerFactory!, maxParallelism);
             _loggerFactory!.Dispose();
             return emitResult;
         }
@@ -186,7 +200,7 @@ public class Program
         return -errors;
     }
 
-    private static int RunIREmission(string metadataDir, string outputDir, string[] namespaceFilter, string[] assemblyFilter, ILoggerFactory loggerFactory)
+    private static int RunIREmission(string metadataDir, string outputDir, string[] namespaceFilter, string[] assemblyFilter, ILoggerFactory loggerFactory, int maxParallelism)
     {
         Logger.LogInformation("=== IR Emitter Pipeline ===");
         Stopwatch totalWatch = Stopwatch.StartNew();
@@ -202,17 +216,17 @@ public class Program
         using var loader = new MetadataLoader(metadataDir, loggerFactory.CreateLogger<MetadataLoader>());
         loader.LoadPrimaryAssemblies(assemblyFilter.Length > 0 ? assemblyFilter : null);
 
-        var extractor = new TypeExtractor(loader, docs, loggerFactory, reservedNames);
+        var extractor = new TypeExtractor(loader, docs, loggerFactory, reservedNames, maxParallelism);
         TypeRegistry registry = extractor.ExtractAll();
 
         // Transforms
         var overrideApplier = new OverrideApplier(
-            new OverrideReader(loggerFactory.CreateLogger<OverrideReader>()),
+            new OverrideReader(loggerFactory.CreateLogger<OverrideReader>(), maxParallelism),
             loggerFactory.CreateLogger<OverrideApplier>());
         overrideApplier.Apply(registry, Path.Join(metadataDir, "overrides"));
 
         var extensionApplier = new ExtensionApplier(
-            new IRExtensionReader(loggerFactory.CreateLogger<IRExtensionReader>()),
+            new IRExtensionReader(loggerFactory.CreateLogger<IRExtensionReader>(), maxParallelism),
             loggerFactory.CreateLogger<ExtensionApplier>());
         extensionApplier.Apply(registry, Path.Join(metadataDir, "extensions"));
 
@@ -224,7 +238,7 @@ public class Program
             new ApiTypeEmitter(registry),
             new ComInterfaceEmitter(registry)
         ];
-        var pipeline = new TypeEmissionPipeline(emitters, loggerFactory.CreateLogger<TypeEmissionPipeline>());
+        var pipeline = new TypeEmissionPipeline(emitters, loggerFactory.CreateLogger<TypeEmissionPipeline>(), maxParallelism);
         var (emitted, _, errors) = pipeline.EmitAll(registry, outputDir,
             namespaceFilter.Length > 0 ? namespaceFilter : null);
 

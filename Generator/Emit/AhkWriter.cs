@@ -9,7 +9,7 @@ using System.Text;
 /// </summary>
 public sealed class AhkWriter
 {
-    private readonly StringBuilder _sb = new();
+    private readonly StringBuilder _sb = new(4096);
     private int _indentLevel;
     private const int IndentSize = 4;
 
