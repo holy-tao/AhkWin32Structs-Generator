@@ -1,207 +1,176 @@
-﻿using System.Reflection.Metadata;
-using System.Reflection.PortableExecutable;
-using System.Text;
+namespace AhkWin32.Generator;
+
+using System.CommandLine;
 using System.Diagnostics;
 using System.Reflection;
+using System.Text;
+using AhkWin32.Generator.Emit;
+using AhkWin32.Generator.Emit.Emitters;
+using AhkWin32.Generator.Infrastructure;
+using AhkWin32.Generator.Metadata;
+using AhkWin32.Generator.Model;
+using AhkWin32.Generator.Transform;
+using Microsoft.Extensions.Logging;
 
 public class Program
 {
-    public static Dictionary<string, List<AhkExtension>> Extensions = [];
-
-    public static string MetadataDir = "";
-
     public static int Main(string[] args)
     {
-        if (args.Length != 2)
+        var metadataDirArg = new Argument<DirectoryInfo>("metadata-dir", "Path to directory containing .winmd files and metadata");
+        var outputDirArg = new Argument<DirectoryInfo>("output-dir", "Path to output directory for generated .ahk files");
+
+        var namespaceOption = new Option<string[]>("--namespace", "Filter: only generate types in these namespaces (prefix match)")
         {
-            Console.Error.WriteLine("Usage: AhkWin32Structs.exe <metadata-directory> <output-root>");
-            return -1;
-        }
+            AllowMultipleArgumentsPerToken = true
+        };
+        namespaceOption.AddAlias("-n");
 
-        MetadataDir = args[0];
-        string ahkOutputDir = args[1];
-
-        Console.WriteLine("Starting AhkWin32Structs Generator...");
-        Console.WriteLine($"\tMetadata Directory: {MetadataDir}");
-        Console.WriteLine($"\tOutput Directory: {ahkOutputDir}");
-
-        Console.WriteLine("Reading metadata...");
-
-        Stopwatch stopwatch = new();
-        stopwatch.Start();
-
-        DocumentationUtils.Load(Path.Join(MetadataDir, "apidocs.msgpack"));
-        Extensions = ExtensionReader.ReadExtensionFiles(Path.Join(MetadataDir, "extensions"));
-
-        IEnumerable<FileStream> winmdFiles = CollectWinmdFiles(MetadataDir);
-
-        StringBuilder versionInfo = new();
-        versionInfo.AppendLine("[Assemblies]");
-
-        Console.WriteLine("Generating bindings...");
-
-        int total = 0, errors = 0;
-        foreach(FileStream fileStream in winmdFiles)
+        var assemblyOption = new Option<string[]>("--assembly", "Filter: only process these .winmd assemblies")
         {
-            PEReader peReader = new(fileStream);
-            MetadataReader reader = peReader.GetMetadataReader();
-            
-            // Pull version info
-            AssemblyName assemblyName = reader.GetAssemblyDefinition().GetAssemblyName();
-            versionInfo.AppendLine($"{assemblyName.Name?.TrimEnd(".winmd")} = {assemblyName.Version}");
-            Console.Write($"\t{assemblyName.Name?.TrimEnd(".winmd")} v{assemblyName.Version}... ");
+            AllowMultipleArgumentsPerToken = true
+        };
+        assemblyOption.AddAlias("-a");
 
-            (int fileTotal, int fileErrors) = GenerateBindings(reader, ahkOutputDir);
+        var logLevelOption = new Option<LogLevel>("--log-level", () => LogLevel.Information, "Minimum log level");
+        var logFileOption = new Option<FileInfo?>("--log-file", "Write log output to a file");
+        var maxParallelismOption = new Option<int>("--max-parallelism",
+            () => Environment.ProcessorCount,
+            $"Maximum degree of parallelism for extraction and emission (default: CPU count)");
 
-            Console.WriteLine($"done. {fileTotal} files generated with {fileErrors} errors.");
-            total += fileTotal;
-            errors += fileErrors;
+        var rootCommand = new RootCommand("AhkWin32Structs Generator — generates AutoHotkey v2 projections of Win32 and WDK APIs")
+        {
+            metadataDirArg,
+            outputDirArg,
+            namespaceOption,
+            assemblyOption,
+            logLevelOption,
+            logFileOption,
+            maxParallelismOption
+        };
 
-            peReader.Dispose();
-            fileStream.Dispose();
-        }
-    
-        // Finalize version.ini with package info
-        Console.WriteLine("Finalizing version.ini file...");
-        versionInfo.AppendLine();
-        versionInfo.AppendLine("[Packages]");
+        int exitCode = 0;
+        rootCommand.SetHandler(
+            (metadataDir, outputDir, namespaceFilter, assemblyFilter, logLevel, logFile, maxParallelism) =>
+            {
+                exitCode = RunGenerator(metadataDir, outputDir, namespaceFilter ?? [], assemblyFilter ?? [], logLevel, logFile, maxParallelism);
+            },
+            metadataDirArg, outputDirArg, namespaceOption, assemblyOption, logLevelOption, logFileOption, maxParallelismOption);
 
-        Directory.EnumerateFiles(MetadataDir, "*.version")
-            .Select(fullPath => new string[] {
-                Path.GetFileNameWithoutExtension(fullPath),
-                File.ReadAllText(fullPath).Trim()
-            })
-            .ToList()
-            .ForEach(info => {
-                versionInfo.AppendLine($"{info[0]} = {info[1]}");
-                Console.WriteLine($"\t{info[0]}: {info[1]}");
+        rootCommand.Invoke(args);
+        return exitCode;
+    }
+
+    private static int RunGenerator(DirectoryInfo metadataDir, DirectoryInfo outputDir, string[] namespaceFilter, string[] assemblyFilter, LogLevel logLevel, FileInfo? logFile, int maxParallelism = 0)
+    {
+        using var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.SetMinimumLevel(logLevel);
+            builder.AddSimpleConsole(opts =>
+            {
+                opts.SingleLine = true;
+                opts.TimestampFormat = "HH:mm:ss ";
             });
+            if (logFile != null)
+                builder.AddProvider(new FileLoggerProvider(logFile.FullName, logLevel));
+        });
+        var logger = loggerFactory.CreateLogger("Generator");
 
-        File.WriteAllText(Path.Join(ahkOutputDir, "version.ini"), versionInfo.ToString());
-        
-        Console.WriteLine($"Done! Emitted {total} files with {errors} errors in {stopwatch.Elapsed.TotalSeconds} seconds");
+        string metadataPath = metadataDir.FullName;
+        string outputPath = outputDir.FullName;
+
+        logger.LogInformation("Starting AhkWin32Structs Generator...");
+        logger.LogInformation("Metadata Directory: {MetadataDir}", metadataPath);
+        logger.LogInformation("Output Directory: {OutputDir}", outputPath);
+
+        // -1 is no hard max, which we want to allow
+        // See https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.paralleloptions.maxdegreeofparallelism?view=net-10.0
+        if (maxParallelism == 0 || maxParallelism < -1)
+        {
+            logger.LogWarning("Invalid --max-parallelism ({ARG}), using CPU count ({CPUS})",
+                maxParallelism, Environment.ProcessorCount);
+            maxParallelism = Environment.ProcessorCount;
+        }
+        logger.LogInformation("Max parallelism: {MaxParallelism}", maxParallelism);
+
+        if (namespaceFilter.Length > 0)
+            logger.LogInformation("Namespace filter: {Namespaces}", string.Join(", ", namespaceFilter));
+        if (assemblyFilter.Length > 0)
+            logger.LogInformation("Assembly filter: {Assemblies}", string.Join(", ", assemblyFilter));
+
+        Stopwatch totalWatch = Stopwatch.StartNew();
+
+        // Load documentation
+        var docs = new DocumentationLoader(loggerFactory.CreateLogger<DocumentationLoader>());
+        docs.Load(Path.Join(metadataPath, "apidocs.msgpack"));
+
+        // Load reserved names config
+        var reservedNames = ReservedNameConfig.Load(Path.Join(metadataPath, "ahk-reserved-names.yml"));
+
+        // Extract all types into TypeRegistry
+        using var loader = new MetadataLoader(metadataPath, loggerFactory.CreateLogger<MetadataLoader>());
+        loader.LoadPrimaryAssemblies(assemblyFilter.Length > 0 ? assemblyFilter : null);
+
+        var extractor = new TypeExtractor(loader, docs, loggerFactory, reservedNames, maxParallelism);
+        TypeRegistry registry = extractor.ExtractAll();
+
+        // Transforms
+        var overrideApplier = new OverrideApplier(
+            new OverrideReader(loggerFactory.CreateLogger<OverrideReader>(), maxParallelism),
+            loggerFactory.CreateLogger<OverrideApplier>());
+        overrideApplier.Apply(registry, Path.Join(metadataPath, "overrides"));
+
+        var extensionApplier = new ExtensionApplier(
+            new ExtensionReader(loggerFactory.CreateLogger<ExtensionReader>(), maxParallelism),
+            loggerFactory.CreateLogger<ExtensionApplier>());
+        extensionApplier.Apply(registry, Path.Join(metadataPath, "extensions"));
+
+        // Emit
+        ITypeEmitter[] emitters = [
+            new EnumEmitter(),
+            new HandleEmitter(),
+            new StructEmitter(registry),
+            new ApiTypeEmitter(registry),
+            new ComInterfaceEmitter(registry)
+        ];
+        var pipeline = new TypeEmissionPipeline(emitters, loggerFactory.CreateLogger<TypeEmissionPipeline>(), maxParallelism);
+        var (emitted, _, errors) = pipeline.EmitAll(registry, outputPath,
+            namespaceFilter.Length > 0 ? namespaceFilter : null);
+
+        // Write version.ini
+        WriteVersionInfo(loader, metadataPath, outputPath, logger);
+
+        totalWatch.Stop();
+        logger.LogInformation("Done! Total time: {Elapsed:F1}s", totalWatch.Elapsed.TotalSeconds);
+
         return -errors;
     }
 
-    private static (int total, int errors) GenerateBindings(MetadataReader mr, string outputDir)
+    private static void WriteVersionInfo(MetadataLoader loader, string metadataDir, string outputDir, ILogger logger)
     {
-        int total = 0, errors = 0;
+        logger.LogInformation("Writing version.ini...");
 
-        foreach(TypeDefinitionHandle hTypeDef in mr.TypeDefinitions)
+        var versionInfo = new StringBuilder();
+        versionInfo.AppendLine("[Assemblies]");
+
+        foreach (var (name, _, reader) in loader.GetPrimaryAssemblies())
         {
-            TypeDefinition typeDef = mr.GetTypeDefinition(hTypeDef);
-
-            string typeNamespace = mr.GetString(typeDef.Namespace);
-            string typeName = mr.GetString(typeDef.Name);
-
-            if (ShouldSkipType(mr, hTypeDef))
-                continue;
-
-            try
-            {
-                IAhkEmitter? emitter = ParseType(mr, typeDef);
-                if (emitter == null)
-                {
-                    Debug.WriteLine($"Non-explicit skip for {mr.GetString(typeDef.Namespace)}.{typeName}");
-                    continue;
-                }
-
-                string filepath = emitter.GetDesiredFilepath(outputDir);
-                string dirPath = Path.GetDirectoryName(filepath) ?? throw new NullReferenceException($"Null directory path: {filepath}");
-
-                Directory.CreateDirectory(dirPath);
-                File.WriteAllText(filepath, emitter.ToAhk());
-                total++;
-            }
-            catch (Exception ex)
-            {
-                errors++;
-                Console.Error.WriteLine($"{ex.GetType().Name} parsing {typeNamespace}.{typeName}: {ex.Message}");
-                Console.Error.WriteLine(ex.Message);
-                Console.Error.WriteLine(ex.StackTrace);
-                Console.Error.WriteLine();
-            }
-
-            if (total % 1000 == 0)
-            {
-                Debug.WriteLine($"Emitted: {total}");
-            }
+            string displayName = name.EndsWith(".winmd", StringComparison.OrdinalIgnoreCase)
+                ? name[..^".winmd".Length] : name;
+            AssemblyName asmName = reader.GetAssemblyDefinition().GetAssemblyName();
+            versionInfo.AppendLine($"{displayName} = {asmName.Version}");
         }
 
-        return (total, errors);
-    }
+        versionInfo.AppendLine();
+        versionInfo.AppendLine("[Packages]");
 
-    private static IEnumerable<FileStream> CollectWinmdFiles(string directoryPath)
-    {
-        Console.WriteLine($"Scanning '{directoryPath}' for .winmd files...");
-
-        return Directory.EnumerateFiles(directoryPath)
-            .Where(path => Path.GetExtension(path).ToLowerInvariant() is ".winmd")
-            .Select(path => { Console.WriteLine($"\t{path}"); return path; })
-            .Select(File.OpenRead)
-            .ToList();
-    }
-
-    private static IAhkEmitter? ParseType(MetadataReader mr, TypeDefinition typeDef)
-    {
-        if ((typeDef.Attributes & TypeAttributes.Interface) != 0)
+        foreach (string path in Directory.EnumerateFiles(metadataDir, "*.version"))
         {
-            // COM Interface
-            return new AhkComInterface(mr, typeDef);
+            string packageName = Path.GetFileNameWithoutExtension(path);
+            string version = File.ReadAllText(path).Trim();
+            versionInfo.AppendLine($"{packageName} = {version}");
+            logger.LogInformation("Package {Name}: {Version}", packageName, version);
         }
 
-        TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-        string typeName = mr.GetString(typeDef.Name);
-        string baseTypeName = mr.GetString(baseTypeRef.Name);
-
-        if (baseTypeName == "Object" && typeName == "Apis")
-        {
-            // This is the generic type that global functions and constants wind up in
-            return new AhkApiType(mr, typeDef);
-        }
-
-        return baseTypeName switch
-        {
-            "Enum" => new AhkEnum(mr, typeDef),
-            "Struct" or "ValueType" => AhkStruct.Get(mr, typeDef),
-            _ => null
-        };
-    }
-
-    private static bool ShouldSkipType(MetadataReader mr, TypeDefinitionHandle typeDefHandle)
-    {
-        TypeDefinition typeDef = mr.GetTypeDefinition(typeDefHandle);
-
-        if (typeDef.BaseType.IsNil)
-        {
-            return mr.StringComparer.Equals(typeDef.Name, "<Module>");
-        }
-
-        if (typeDef.BaseType.Kind is not HandleKind.TypeReference)
-            return false;
-
-        TypeReference baseTypeRef = mr.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
-        string baseTypeName = mr.GetString(baseTypeRef.Name);
-
-        // MultiCastDelegate means function pointer
-        if (baseTypeName is "MulticastDelegate" or "Attribute" or "<Module>")
-            return true;
-
-        // Handled in their parents
-        if (typeDef.IsNested)
-            return true;
-
-        return false;
-    }
-
-    private static string ToHex(BlobReader reader)
-    {
-        var sb = new StringBuilder();
-        while (reader.RemainingBytes > 0)
-        {
-            sb.Append(reader.ReadByte().ToString("X2"));
-            sb.Append(' ');
-        }
-        return sb.ToString();
+        File.WriteAllText(Path.Join(outputDir, "version.ini"), versionInfo.ToString());
     }
 }

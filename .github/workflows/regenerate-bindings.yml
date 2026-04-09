@@ -22,7 +22,7 @@ jobs:
 
   generate-bindings:
     needs: update-packages
-    if: ${{ needs.update-packages.outputs.did-update == 'true' }} || github.event.inputs.force == 'true'
+    if: needs.update-packages.outputs.did-update == 'true' || github.event.inputs.force == 'true'
     runs-on: windows-latest
 
     steps:
@@ -51,7 +51,16 @@ jobs:
         shell: pwsh
         run: |
           $generatorExe = Join-Path "generator" "Generator/bin/release/net9.0/AhkWin32Structs.exe"
-          & $generatorExe $(Join-Path $env:GITHUB_WORKSPACE "generator" "metadata") $(Join-Path $env:GITHUB_WORKSPACE "bindings")
+          $logLevel = if ($env:RUNNER_DEBUG -eq '1') { 'Debug' } else { 'Information' }
+          & $generatorExe $(Join-Path $env:GITHUB_WORKSPACE "generator" "metadata") $(Join-Path $env:GITHUB_WORKSPACE "bindings") --log-file generator.log --log-level $logLevel
+
+      - name: Upload Generator Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generator-log
+          path: generator.log
+          retention-days: 14
 
       - name: Open Pull Request
         uses: peter-evans/create-pull-request@v6

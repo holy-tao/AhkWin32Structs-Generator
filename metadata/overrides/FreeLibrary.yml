@@ -1,0 +1,6 @@
+# Clone FreeLibrary from Foundation.Apis into LibraryLoader.Apis so that
+# LoadLibrary and FreeLibrary are both available in the same namespace.
+- type: Windows.Win32.System.LibraryLoader.Apis
+  add-methods:
+    - from: Windows.Win32.Foundation.Apis
+      name: FreeLibrary
