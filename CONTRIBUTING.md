@@ -4,8 +4,10 @@ Contributions are welcome, though I'll admit that I haven't kept this repository
 ## Table of Contents
 - [Table of Contents](#table-of-contents)
 - [Running the Generator](#running-the-generator)
+  - [Pipeline Overview](#pipeline-overview)
+  - [Generator Flags](#generator-flags)
   - [Validating Generated AHK code](#validating-generated-ahk-code)
-- [Manually Configuration](#manually-configuration)
+- [Manual Configuration](#manual-configuration)
   - [Extensions](#extensions)
   - [Overrides](#overrides)
   - [Reserved Names](#reserved-names)
@@ -40,6 +42,41 @@ metadata/
 
 The generator will generate bindings for all .winmd files in the metadata directory. The .version files are only used for generating `version.ini`; this is because the assembly versions of the metadata files are usually nonsense (v0.0.0.0 / v255.255.255.255). The extensions subdirectory can contain any number of [extension definitions](#extensions) as .yml or .yaml files (all others are ignored); similarly, the overrides file can contain zero or more [override definitions](#overrides) as .yml or .yaml files. The [reserved names file](#reserved-names) is used to prevent duplicate declaration errors and parameter shadowing of AHK builtins, which can cause unexpected and hard to debug behavior.
 
+### Pipeline Overview
+
+The generator is a three-phase pipeline:
+
+1. **Extract**: `.winmd` -> TypeRegistry (a pure intermediate representation)
+2. **Transform**: TypeRegistry -> modified TypeRegistry
+   - This is where extensions and overrides are applied (filtering is done at emission)
+3. **Emit**: Write `.ahk` files from the TypeRegistry
+
+#### Extract
+Reads `.winmd` files and API documentation, decoding every type definition, field, method, parameter, and attribute into a pure-data intermediate representation (IR). The result is a `TypeRegistry` — a dictionary of `Win32Type` objects keyed by fully qualified name and target architecture. At this point, the IR has zero references to the underlying `MetadataReader`; all names, sizes, offsets, and documentation are resolved into plain data.
+
+#### Transform
+Applies modifications to the IR before code generation. Transforms run in order:
+
+1. **Overrides** — YAML-driven one-off corrections (skip types, mark parameters as reserved, set struct-size fields, clone methods between API types). See [Overrides](#overrides).
+2. **Extensions** — YAML-driven code injection (add helper methods, properties, or custom constructors to generated types). See [Extensions](#extensions).
+
+Both are configured via files in the metadata directory and are applied by mutating the `TypeRegistry` in place. This is the integration point for any manual configuration. Note that reserved name deconfliction happens during *extraction*.
+
+#### Emit
+Walks the `TypeRegistry` and generates `.ahk` files. Each type kind has a dedicated emitter (`EnumEmitter`, `StructEmitter`, `HandleEmitter`, `ApiTypeEmitter`, `ComInterfaceEmitter`). Emission is split into two sub-phases for performance: first, all types are emitted to in-memory strings in parallel; then, files are written to disk with parallel I/O. A `version.ini` file is also written with assembly and package version information, in case consumers want it.
+
+### Generator Flags
+
+The generator has some optional flags that can control its behavior.
+
+| Flag | Description |
+| ---- | ----------- |
+| `--namespace` / `-n` | Filter by namespace prefix (prefix match). Can be specified multiple times. Example: `-n Windows.Win32.Foundation`. Useful when debugging to avoid running a full emit. |
+| `--assembly` / `-a` | Filter by assembly name (exact match on the `.winmd` filename without extension). Can be specified multiple times. |
+| `--log-level` | Minimum log level. One of `Trace`, `Debug`, `Information` (default), `Warning`, `Error`, `Critical`. |
+| `--log-file` | Write log output to a file in addition to the console. |
+| `--max-parallelism` | Maximum degree of parallelism for extraction and emission. Defaults to the CPU core count. Set to `-1` for no limit. |
+
 ### Validating Generated AHK code
 
 Validating outputs is difficult due to the sheer scale of this project. 
@@ -62,7 +99,7 @@ The script works by running AutoHotkey64.exe with the [`/Validate`](https://www.
 
 There are a also few vscode launch configurations that you can use to validate files in a specific directory, which can speed things up considerably when spot checking generator changes.
 
-## Manually Configuration
+## Manual Configuration
 
 Some of the generator's behavior can be modified with manual build.
 
@@ -156,7 +193,7 @@ Each file is a YAML list of type-scoped entries. The `type` key is always requir
 
 | Key | Scope | Description |
 | --- | ----- | ----------- |
-| `skip` | type | `true` to remove the type from generation entirely. |
+| `skip` | type | `true` to remove the type from generation entirely. Use with caution; references to it will be broken. |
 | `struct-size-field` | type (struct) | Name of the field the emitter should auto-initialize to `sizeof` in `__New()` (equivalent to `[StructSizeFieldAttribute]`). A warning is logged if the type is not a struct. |
 | `fields.<name>.add-attributes` | field | List of `MemberFlags` to add (e.g., `Reserved`, `Deprecated`). |
 | `methods.<name>.skip` | method | `true` to remove a single method from an `Apis` type. |
