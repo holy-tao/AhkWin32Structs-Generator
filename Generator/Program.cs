@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text;
 using AhkWin32.Generator.Emit;
 using AhkWin32.Generator.Emit.Emitters;
+using AhkWin32.Generator.Infrastructure;
 using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Transform;
@@ -31,6 +32,7 @@ public class Program
         assemblyOption.AddAlias("-a");
 
         var logLevelOption = new Option<LogLevel>("--log-level", () => LogLevel.Information, "Minimum log level");
+        var logFileOption = new Option<FileInfo?>("--log-file", "Write log output to a file");
         var maxParallelismOption = new Option<int>("--max-parallelism",
             () => Environment.ProcessorCount,
             $"Maximum degree of parallelism for extraction and emission (default: CPU count)");
@@ -42,22 +44,23 @@ public class Program
             namespaceOption,
             assemblyOption,
             logLevelOption,
+            logFileOption,
             maxParallelismOption
         };
 
         int exitCode = 0;
         rootCommand.SetHandler(
-            (metadataDir, outputDir, namespaceFilter, assemblyFilter, logLevel, maxParallelism) =>
+            (metadataDir, outputDir, namespaceFilter, assemblyFilter, logLevel, logFile, maxParallelism) =>
             {
-                exitCode = RunGenerator(metadataDir, outputDir, namespaceFilter ?? [], assemblyFilter ?? [], logLevel, maxParallelism);
+                exitCode = RunGenerator(metadataDir, outputDir, namespaceFilter ?? [], assemblyFilter ?? [], logLevel, logFile, maxParallelism);
             },
-            metadataDirArg, outputDirArg, namespaceOption, assemblyOption, logLevelOption, maxParallelismOption);
+            metadataDirArg, outputDirArg, namespaceOption, assemblyOption, logLevelOption, logFileOption, maxParallelismOption);
 
         rootCommand.Invoke(args);
         return exitCode;
     }
 
-    private static int RunGenerator(DirectoryInfo metadataDir, DirectoryInfo outputDir, string[] namespaceFilter, string[] assemblyFilter, LogLevel logLevel, int maxParallelism = 0)
+    private static int RunGenerator(DirectoryInfo metadataDir, DirectoryInfo outputDir, string[] namespaceFilter, string[] assemblyFilter, LogLevel logLevel, FileInfo? logFile, int maxParallelism = 0)
     {
         using var loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -67,6 +70,8 @@ public class Program
                 opts.SingleLine = true;
                 opts.TimestampFormat = "HH:mm:ss ";
             });
+            if (logFile != null)
+                builder.AddProvider(new FileLoggerProvider(logFile.FullName, logLevel));
         });
         var logger = loggerFactory.CreateLogger("Generator");
 
