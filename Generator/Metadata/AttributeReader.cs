@@ -6,6 +6,11 @@ using AhkWin32.Generator.Model.Members;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
+/// A decoded custom attribute entry: namespace, name, and decoded value.
+/// </summary>
+public readonly record struct CAInfo(string Namespace, string Name, CustomAttributeValue<string> Attr);
+
+/// <summary>
 /// Decoded attributes for a TypeDefinition. Computed once and reused.
 /// </summary>
 public sealed record TypeAttrs(
