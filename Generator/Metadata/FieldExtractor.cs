@@ -94,7 +94,9 @@ public sealed class FieldExtractor
                 ? fieldDef.GetOffset()
                 : offset;
 
-            offset += fieldSize;
+            // For unions, all fields overlap at offset 0 — don't advance
+            if (!isUnion)
+                offset += fieldSize;
 
             // Compute field-level flags
             MemberFlags fieldFlags = ComputeFieldFlags(fieldAttrs, fieldName, resolvedType, embeddedStruct);
@@ -135,8 +137,8 @@ public sealed class FieldExtractor
         // Cap packing size to max alignment seen
         packingSize = Math.Min(packingSize, maxAlignment);
 
-        // Tail padding
-        int tailPadding = (maxAlignment - (offset % maxAlignment)) % maxAlignment;
+        // Tail padding (based on totalSize, not running offset)
+        int tailPadding = (maxAlignment - (totalSize % maxAlignment)) % maxAlignment;
         totalSize += tailPadding;
 
         _logger.LogDebug(
