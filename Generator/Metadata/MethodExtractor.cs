@@ -53,6 +53,13 @@ public sealed class MethodExtractor
         MetadataReader reader, MethodDefinition methodDef,
         string methodName, string declaringNamespace)
     {
+        // Detect variadic methods (__arglist) via signature calling convention
+        SignatureHeader sigHeader = reader.GetBlobReader(methodDef.Signature).ReadSignatureHeader();
+        bool isVariadic = sigHeader.CallingConvention == SignatureCallingConvention.VarArgs;
+
+        if (isVariadic)
+            _logger.LogDebug("Detected variadic method {Namespace}.{Method}", declaringNamespace, methodName);
+
         // Extract DLL import info
         MethodImport import = methodDef.GetImport();
         string dllName = import.Module.IsNil ? "" : reader.GetString(reader.GetModuleReference(import.Module).Name);
@@ -114,6 +121,7 @@ public sealed class MethodExtractor
             PreserveSig = methodAttrs.PreserveSig,
             CanReturnErrorsAsSuccess = methodAttrs.CanReturnErrorsAsSuccess,
             CanReturnMultipleSuccessValues = methodAttrs.CanReturnMultipleSuccessValues,
+            IsVariadic = isVariadic,
             Parameters = parameters,
             OutputParameter = outputParameter,
             ShouldThrowOnHResult = shouldThrow,

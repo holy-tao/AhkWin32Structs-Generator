@@ -43,6 +43,9 @@ public class MethodMember
     /// <summary>Whether [CanReturnMultipleSuccessValues] is present.</summary>
     public bool CanReturnMultipleSuccessValues { get; init; }
 
+    /// <summary>Whether the method accepts variadic arguments (__arglist).</summary>
+    public bool IsVariadic { get; init; }
+
     /// <summary>
     /// All parameters, including the return value at index 0.
     /// Parameters[0] is always the return type (may be Void).
