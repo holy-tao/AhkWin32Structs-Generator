@@ -10,6 +10,11 @@ using AhkWin32.Generator.Model.Types;
 public static class DocCommentWriter
 {
     /// <summary>
+    /// Doc string for the variadic argument for variadic args
+    /// </summary>
+    private const string VAR_ARGS_DOC = "Additional arguments as alternating DllCall type/value pairs (e.g., \"int\", 42, \"str\", \"hello\")";
+
+    /// <summary>
     /// Write a type-level JSDoc comment.
     /// Port of AhkType.MaybeAddTypeDocumentation.
     /// </summary>
@@ -192,6 +197,9 @@ public static class DocCommentWriter
                 : "";
             w.Line($" * @param {{{param.Type.DisplayName}}} {param.Name} {paramDoc}");
         }
+
+        if (method.IsVariadic)
+            w.Line($" * @param {{Any}} args* {VAR_ARGS_DOC}");
 
         // @returns tag
         if (method.HasReturnValue || method.OutputParameter != null)

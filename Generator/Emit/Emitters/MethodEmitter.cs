@@ -42,6 +42,10 @@ public static class MethodEmitter
                 EmitOrdinalLoading(w, method);
 
             EmitOutputParamMarshalling(w, method);
+
+            if (method.IsVariadic)
+                EmitVariadicMarshalling(w, method);
+
             w.Line(BuildDllCallExpression(method));
 
             if (method.IsOrdinal)
@@ -60,13 +64,20 @@ public static class MethodEmitter
 
     /// <summary>
     /// Build the user-facing method argument list (skips reserved and output params).
+    /// Appends <c>args*</c> for variadic methods.
     /// </summary>
     private static string BuildArgumentList(MethodMember method)
     {
-        return string.Join(", ", method.Parameters
+        var names = method.Parameters
             .Skip(1) // Skip param 0 (return value)
             .Where(p => !p.IsReserved && p != method.OutputParameter)
-            .Select(p => p.Name));
+            .Select(p => p.Name)
+            .ToList();
+
+        if (method.IsVariadic)
+            names.Add("args*");
+
+        return string.Join(", ", names);
     }
 
     // --- Reserved parameters ---
@@ -155,7 +166,45 @@ public static class MethodEmitter
         }
     }
 
+    // --- Variadic marshalling ---
+
+    /// <summary>
+    /// Emit the varArgs array construction for variadic methods.
+    /// Spreads caller's type/value pairs into an array and appends the calling convention string.
+    /// </summary>
+    private static void EmitVariadicMarshalling(AhkWriter w, MethodMember method)
+    {
+        string convString = BuildCallingConventionString(method);
+
+        w.Line("varArgs := [args*]");
+        if (!string.IsNullOrWhiteSpace(convString))
+            w.Line($"varArgs.Push(\"{convString}\")");
+
+        w.BlankLine();
+    }
+
     // --- DllCall expression ---
+
+    /// <summary>
+    /// Build the DllCall calling convention + return type string.
+    /// Returns e.g. "CDecl", "CDecl int", "int", "HRESULT", or "" (empty).
+    /// </summary>
+    private static string BuildCallingConventionString(MethodMember method)
+    {
+        var sb = new System.Text.StringBuilder();
+
+        if (method.CallingConvention == CallingConvention.CDecl)
+            sb.Append("CDecl ");
+
+        if (method.HasReturnValue)
+        {
+            sb.Append(method.ShouldThrowOnHResult
+                ? "HRESULT"
+                : method.Parameters[0].Type.DllCallType);
+        }
+
+        return sb.ToString().Trim();
+    }
 
     private static string BuildDllCallExpression(MethodMember method)
     {
@@ -178,21 +227,19 @@ public static class MethodEmitter
             sb.Append(BuildDllCallArguments(method));
         }
 
-        // Calling convention + return type
-        if (method.CallingConvention == CallingConvention.CDecl || method.HasReturnValue)
+        // Variadic: append varArgs* (convention string is already in the array)
+        if (method.IsVariadic)
         {
-            sb.Append(", \"");
-            if (method.CallingConvention == CallingConvention.CDecl)
-                sb.Append("CDecl ");
-
-            if (method.HasReturnValue)
+            sb.Append(method.Parameters.Count > 1 ? ", varArgs*" : "varArgs*");
+        }
+        else
+        {
+            // Calling convention + return type (inline)
+            string convString = BuildCallingConventionString(method);
+            if (!string.IsNullOrWhiteSpace(convString))
             {
-                sb.Append(method.ShouldThrowOnHResult
-                    ? "HRESULT"
-                    : method.Parameters[0].Type.DllCallType);
+                sb.Append($", \"{convString}\"");
             }
-
-            sb.Append('"');
         }
 
         sb.Append(')');
@@ -441,20 +488,10 @@ public static class MethodEmitter
         }
 
         // Calling convention + return type
-        if (method.CallingConvention == CallingConvention.CDecl || method.HasReturnValue)
+        string convString = BuildCallingConventionString(method);
+        if (!string.IsNullOrWhiteSpace(convString))
         {
-            sb.Append(", \"");
-            if (method.CallingConvention == CallingConvention.CDecl)
-                sb.Append("CDecl ");
-
-            if (method.HasReturnValue)
-            {
-                sb.Append(method.ShouldThrowOnHResult
-                    ? "HRESULT"
-                    : method.Parameters[0].Type.DllCallType);
-            }
-
-            sb.Append('"');
+            sb.Append($", \"{convString}\"");
         }
 
         sb.Append(')');
