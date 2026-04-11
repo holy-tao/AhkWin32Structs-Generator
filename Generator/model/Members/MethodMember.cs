@@ -47,6 +47,29 @@ public class MethodMember
     public bool IsVariadic { get; init; }
 
     /// <summary>
+    /// The deconflicted name for the variadic parameter (e.g., "args" or "_args" if "args" conflicts).
+    /// Empty string if not variadic.
+    /// </summary>
+    public string VariadicParamName
+    {
+        get
+        {
+            if (!IsVariadic)
+                throw new InvalidOperationException($"Cannot get variadic param name for non-variadic method {Namespace}.{Name}");
+
+            var paramNames = new HashSet<string>(
+                Parameters.Skip(1).Select(p => p.Name),
+                StringComparer.OrdinalIgnoreCase);
+            
+            string name = "args";
+            while (paramNames.Contains(name))
+                name = "_" + name;
+
+            return name;
+        }
+    }
+
+    /// <summary>
     /// All parameters, including the return value at index 0.
     /// Parameters[0] is always the return type (may be Void).
     /// Parameters[1..] are the actual function parameters.

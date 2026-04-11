@@ -75,7 +75,7 @@ public static class MethodEmitter
             .ToList();
 
         if (method.IsVariadic)
-            names.Add("args*");
+            names.Add($"{method.VariadicParamName}*");
 
         return string.Join(", ", names);
     }
@@ -175,8 +175,9 @@ public static class MethodEmitter
     private static void EmitVariadicMarshalling(AhkWriter w, MethodMember method)
     {
         string convString = BuildCallingConventionString(method);
+        string varArgName = method.VariadicParamName;
 
-        w.Line("varArgs := [args*]");
+        w.Line($"varArgs := [{varArgName}*]");
         if (!string.IsNullOrWhiteSpace(convString))
             w.Line($"varArgs.Push(\"{convString}\")");
 

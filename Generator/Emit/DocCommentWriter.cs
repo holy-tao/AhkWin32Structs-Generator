@@ -199,7 +199,7 @@ public static class DocCommentWriter
         }
 
         if (method.IsVariadic)
-            w.Line($" * @param {{Any}} args* {VAR_ARGS_DOC}");
+            w.Line($" * @param {{Any}} {method.VariadicParamName}* {VAR_ARGS_DOC}");
 
         // @returns tag
         if (method.HasReturnValue || method.OutputParameter != null)
