@@ -48,11 +48,33 @@ public class TypeRegistry
         return null;
     }
 
+    public T? Resolve<T>(string fqn, Architecture target) where T : Win32Type
+    {
+        if (_byFqn.TryGetValue(fqn, out var variants))
+        {
+            // Prefer exact architecture match
+            T? exact = variants.OfType<T>().FirstOrDefault(v => v != null && v.Arch.HasFlag(target), null);
+            if (exact is T t)
+                return t;
+
+            // Fall back to universal
+            return variants.OfType<T>().FirstOrDefault(v => v is {Arch: Architecture.All}, null);
+        }
+        return null;
+    }
+
     /// <summary>Get a type by exact identity (FQN + arch).</summary>
     public Win32Type? Get(TypeIdentity identity)
     {
         _types.TryGetValue(identity, out var type);
         return type;
+    }
+
+    /// <summary>Get a type by exact identity (FQN + arch).</summary>
+    public T? Get<T>(TypeIdentity identity) where T : Win32Type
+    {
+        _types.TryGetValue(identity, out var type);
+        return type is T t ? t : null;
     }
 
     /// <summary>Get all architecture variants for a given FQN.</summary>
@@ -61,16 +83,40 @@ public class TypeRegistry
         return _byFqn.TryGetValue(fqn, out var list) ? list : [];
     }
 
+    /// <summary>Get all architecture variants of a specific kind for a given FQN.</summary>
+    public IReadOnlyList<T> GetAllVariants<T>(string fqn) where T : Win32Type
+    {
+        return _byFqn.TryGetValue(fqn, out var list)
+            ? [.. list.OfType<T>()]
+            : [];
+    }
+
     /// <summary>Get all types in a given namespace.</summary>
     public IEnumerable<Win32Type> GetByNamespace(string ns)
     {
         return _types.Values.Where(t => t.Namespace == ns);
     }
 
+    /// <summary>Get all types of a specific kind in a given namespace.</summary>
+    public IEnumerable<T> GetByNamespace<T>(string ns) where T : Win32Type
+    {
+        return _types.Values
+            .Where(t => t.Namespace == ns)
+            .OfType<T>();
+    } 
+
     /// <summary>Get all types from a given source assembly.</summary>
     public IEnumerable<Win32Type> GetByAssembly(string assembly)
     {
         return _types.Values.Where(t => t.AssemblyName == assembly);
+    }
+
+    /// <summary>Get all types of a specific kind from a given source assembly.</summary>
+    public IEnumerable<T> GetByAsembly<T>(string assembly) where T : Win32Type
+    {
+        return _types.Values
+            .Where(t => t.AssemblyName == assembly)
+            .OfType<T>();
     }
 
     /// <summary>Get all types of a specific kind.</summary>
@@ -120,6 +166,14 @@ public class TypeRegistry
     /// <summary>Check if a type with the given FQN exists.</summary>
     public bool Contains(string fqn) => _byFqn.ContainsKey(fqn);
 
+    /// <summary>Check if a type of a specific kind with the given FQN exists.</summary>
+    public bool Contains<T>(string fqn) where T : Win32Type => 
+        _byFqn.TryGetValue(fqn, out var list) && list.OfType<T>().Any();
+
     /// <summary>Check if a type with the given identity exists.</summary>
     public bool Contains(TypeIdentity identity) => _types.ContainsKey(identity);
+
+    /// <summary>Check if a type of a specific kind with the given identity exists.</summary>
+    public bool Contains<T>(TypeIdentity identity) where T : Win32Type
+        => _types.TryGetValue(identity, out var type) && type is T;
 }
