@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
 using AhkWin32.Generator.Model.Types;
@@ -8,21 +9,18 @@ using AhkWin32.Generator.Model.Types;
 /// Emits ComInterfaceType as a complete .ahk file.
 /// Port of legacy AhkComInterface.ToAhk().
 /// </summary>
-public sealed class ComInterfaceEmitter : ITypeEmitter
+public sealed class ComInterfaceEmitter(TypeRegistry registry, AhkVersion version) : ITypeEmitter
 {
-    private readonly TypeRegistry _registry;
+    private readonly TypeRegistry _registry = registry;
 
-    public ComInterfaceEmitter(TypeRegistry registry)
-    {
-        _registry = registry;
-    }
+    private readonly AhkVersion _version = version;
 
     public bool CanEmit(Win32Type type) => type is ComInterfaceType;
 
     public EmitResult Emit(Win32Type type, string outputRoot)
     {
         var comType = (ComInterfaceType)type;
-        var w = new AhkWriter();
+        var w = new AhkWriter(_version);
 
         EmitComInterface(w, comType);
 
@@ -32,14 +30,7 @@ public sealed class ComInterfaceEmitter : ITypeEmitter
 
     private void EmitComInterface(AhkWriter w, ComInterfaceType comType)
     {
-        // --- Headers ---
-        string pathToBase = ImportResolver.GetPathToBase(comType.Namespace);
-        w.Require("AutoHotkey v2.0.0 64-bit");
-        w.Include($"{pathToBase}Win32ComInterface.ahk");
-        w.Include($"{pathToBase}Guid.ahk");
-
-        // Referenced type imports (filter self-references)
-        EmitImports(w, comType);
+        EmitHeaders(w, comType);
 
         w.BlankLine();
 
@@ -72,12 +63,42 @@ public sealed class ComInterfaceEmitter : ITypeEmitter
         }
     }
 
-    private static void EmitImports(AhkWriter w, ComInterfaceType comType)
+    private void EmitHeaders(AhkWriter w, ComInterfaceType comType)
     {
-        foreach (string import in comType.ReferencedTypes.Distinct()
-            .Where(fqn => fqn != comType.FQN))
+        string pathToBase = ImportResolver.GetPathToBase(comType.Namespace);
+        if (_version is AhkVersion.v21)
         {
-            w.Include(ImportResolver.GetIncludePath(comType.Namespace, import));
+            w.Require("AutoHotkey v2.1-alpha+ 64-bit");
+            w.Import($"{pathToBase}Win32ComInterface.ahk", ["Win32ComInterface"]);
+            w.Import($"{pathToBase}Guid.ahk", ["Guid"]);
+        }
+        else
+        {
+            w.Require("AutoHotkey v2.0.0 64-bit");
+            w.Include($"{pathToBase}Win32ComInterface.ahk");
+            w.Include($"{pathToBase}Guid.ahk");
+        }
+        
+        EmitImports(w, comType);
+    }
+
+    private void EmitImports(AhkWriter w, ComInterfaceType comType)
+    {
+        IEnumerable<string> imports = comType.ReferencedTypes
+            .Distinct()
+            .Where(fqn => fqn != comType.FQN);
+        foreach (string fqn in imports)
+        {
+            string path = ImportResolver.GetIncludePath(comType.Namespace, fqn);
+            if (_version is AhkVersion.v21)
+            {
+                string name = ImportResolver.GetImportName(fqn);
+                w.Import(path, [name]);
+            }
+            else
+            {
+                w.Include(path);
+            }
         }
     }
 

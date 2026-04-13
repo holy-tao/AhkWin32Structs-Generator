@@ -154,7 +154,7 @@ public class Program
                 AhkVersion.v21 => new ApiTypeEmitter21(registry),
                 _ => throw new NotImplementedException($"Unknown AHK version \"{ahkVersion}\"")
             },
-            new ComInterfaceEmitter(registry)
+            new ComInterfaceEmitter(registry, ahkVersion)
         ];
         var pipeline = new TypeEmissionPipeline(emitters, loggerFactory.CreateLogger<TypeEmissionPipeline>(), maxParallelism);
         var (emitted, _, errors) = pipeline.EmitAll(registry, outputPath,
