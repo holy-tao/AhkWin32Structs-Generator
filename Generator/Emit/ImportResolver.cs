@@ -33,6 +33,12 @@ public static class ImportResolver
         return $"{relativePath}{importName}.ahk";
     }
 
+    public static string GetImportName(string importFqn)
+    {
+        int lastDot = importFqn.LastIndexOf('.');
+        return importFqn[(lastDot + 1)..];
+    }
+
     /// <summary>
     /// Calculate the relative directory path between two namespace directories.
     /// Port of AhkType.RelativePathBetweenNamespaces.
