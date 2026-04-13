@@ -31,6 +31,10 @@ public class Program
         };
         assemblyOption.AddAlias("-a");
 
+        var versionOption = new Option<string>("--ahk-version", () => "2.0", "AutoHotkey version to emit for (2.0 or 2.1)")
+            .FromAmong("2.0", "2.1");
+        versionOption.AddAlias("-v");
+
         var logLevelOption = new Option<LogLevel>("--log-level", () => LogLevel.Information, "Minimum log level");
         var logFileOption = new Option<FileInfo?>("--log-file", "Write log output to a file");
         var maxParallelismOption = new Option<int>("--max-parallelism",
@@ -41,6 +45,7 @@ public class Program
         {
             metadataDirArg,
             outputDirArg,
+            versionOption,
             namespaceOption,
             assemblyOption,
             logLevelOption,
@@ -50,17 +55,31 @@ public class Program
 
         int exitCode = 0;
         rootCommand.SetHandler(
-            (metadataDir, outputDir, namespaceFilter, assemblyFilter, logLevel, logFile, maxParallelism) =>
+            (metadataDir, outputDir, ahkVersion, namespaceFilter, assemblyFilter, logLevel, logFile, maxParallelism) =>
             {
-                exitCode = RunGenerator(metadataDir, outputDir, namespaceFilter ?? [], assemblyFilter ?? [], logLevel, logFile, maxParallelism);
+                AhkVersion resolvedVersion = ahkVersion switch
+                {
+                    "2.0" => AhkVersion.v20,
+                    "2.1" => AhkVersion.v21,
+                    _ => throw new NotImplementedException($"Unknown AHK version \"{ahkVersion}\"")
+                };
+                exitCode = RunGenerator(metadataDir, outputDir, resolvedVersion, namespaceFilter ?? [], assemblyFilter ?? [], logLevel, logFile, maxParallelism);
             },
-            metadataDirArg, outputDirArg, namespaceOption, assemblyOption, logLevelOption, logFileOption, maxParallelismOption);
+            metadataDirArg, outputDirArg, versionOption, namespaceOption, assemblyOption, logLevelOption, logFileOption, maxParallelismOption);
 
         rootCommand.Invoke(args);
         return exitCode;
     }
 
-    private static int RunGenerator(DirectoryInfo metadataDir, DirectoryInfo outputDir, string[] namespaceFilter, string[] assemblyFilter, LogLevel logLevel, FileInfo? logFile, int maxParallelism = 0)
+    private static int RunGenerator(
+        DirectoryInfo metadataDir,
+        DirectoryInfo outputDir,
+        AhkVersion ahkVersion,
+        string[] namespaceFilter,
+        string[] assemblyFilter,
+        LogLevel logLevel,
+        FileInfo? logFile,
+        int maxParallelism = 0)
     {
         using var loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -81,6 +100,7 @@ public class Program
         logger.LogInformation("Starting AhkWin32Structs Generator...");
         logger.LogInformation("Metadata Directory: {MetadataDir}", metadataPath);
         logger.LogInformation("Output Directory: {OutputDir}", outputPath);
+        logger.LogInformation("Emitting for AutoHotkey v{version}", ahkVersion.ToFriendlyString());
 
         // -1 is no hard max, which we want to allow
         // See https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.paralleloptions.maxdegreeofparallelism?view=net-10.0
@@ -129,7 +149,11 @@ public class Program
             new EnumEmitter(),
             new HandleEmitter(),
             new StructEmitter(registry),
-            new ApiTypeEmitter(registry),
+            ahkVersion switch {
+                AhkVersion.v20 => new ApiTypeEmitter(registry),
+                AhkVersion.v21 => new ApiTypeEmitter21(registry),
+                _ => throw new NotImplementedException($"Unknown AHK version \"{ahkVersion}\"")
+            },
             new ComInterfaceEmitter(registry)
         ];
         var pipeline = new TypeEmissionPipeline(emitters, loggerFactory.CreateLogger<TypeEmissionPipeline>(), maxParallelism);
