@@ -254,12 +254,8 @@ public sealed class OverrideApplier
                 var cloned = CloneMethod(sourceMethod, targetApi.Namespace);
                 targetApi.Methods.Add(cloned);
 
-                // Add referenced types from the cloned method
-                foreach (string refType in cloned.ReferencedTypes)
-                {
-                    if (!targetApi.ReferencedTypes.Contains(refType))
-                        targetApi.ReferencedTypes.Add(refType);
-                }
+                // Add imports from the cloned method
+                targetApi.Imports.MergeFrom(cloned.Imports);
 
                 _logger.LogDebug("Cloned method {Method} from {Source} to {Target}",
                     addRef.MethodName, addRef.SourceFQN, ov.FQN);
@@ -293,7 +289,7 @@ public sealed class OverrideApplier
             ReturnValueDoc = source.ReturnValueDoc,
             SupportedOSPlatform = source.SupportedOSPlatform,
             ShouldThrowOnHResult = source.ShouldThrowOnHResult,
-            ReferencedTypes = source.ReferencedTypes
+            Imports = source.Imports
         };
     }
 }

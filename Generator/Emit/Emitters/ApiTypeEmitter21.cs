@@ -56,11 +56,16 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
 
     private static void EmitImports(AhkWriter w, ApiType apiType)
     {
-        foreach (string import in apiType.ReferencedTypes.Distinct())
+        foreach (string fqn in apiType.Imports.GetTypes())
         {
-            string path = ImportResolver.GetIncludePath(apiType.Namespace, import);
-            string name = ImportResolver.GetImportName(import);
-            w.Import(path, [name]);
+            string path = ImportResolver.GetIncludePath(apiType.Namespace, fqn);
+            w.Import(path, [ImportResolver.GetImportName(fqn)]);
+        }
+
+        foreach (string apisFqn in apiType.Imports.GetFunctionNamespaces())
+        {
+            string path = ImportResolver.GetIncludePath(apiType.Namespace, apisFqn);
+            w.Import(path, apiType.Imports.GetFunctionsForNamespace(apisFqn));
         }
     }
 

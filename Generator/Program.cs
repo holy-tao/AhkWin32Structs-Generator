@@ -147,8 +147,8 @@ public class Program
         // Emit
         ITypeEmitter[] emitters = [
             new EnumEmitter(),
-            new HandleEmitter(),
-            new StructEmitter(registry),
+            ahkVersion is AhkVersion.v21 ? new HandleEmitter21() : new HandleEmitter(),
+            ahkVersion is AhkVersion.v21 ? new StructEmitter21(registry) : new StructEmitter(registry),
             ahkVersion switch {
                 AhkVersion.v20 => new ApiTypeEmitter(registry),
                 AhkVersion.v21 => new ApiTypeEmitter21(registry),

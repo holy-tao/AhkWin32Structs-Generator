@@ -1,7 +1,6 @@
 namespace AhkWin32.Generator.Emit;
 
 using AhkWin32.Generator.Metadata;
-
 using System.Text;
 
 /// <summary>
@@ -34,12 +33,27 @@ public sealed class AhkWriter(AhkVersion version = AhkVersion.v20)
         _sb.Append($"#Import \"{path}\"");
         if (names.Any())
         {
-            _sb.Append($" {{{string.Join(", ", names)}}}");
+            _sb.Append($" {{ {string.Join(", ", names)} }}");
         }
         _sb.AppendLine();
     }
 
     public void Import(string path) => Import(path, []);
+
+    /// <summary>
+    /// Write an #Import directive using a path-qualified name and an alias
+    /// </summary>
+    public void ImportAs(string path, string alias, IEnumerable<string> names)
+    {
+        _sb.Append($"#Import \"{path}\", as {alias}");
+        if (names.Any())
+        {
+            _sb.Append($" {{ {string.Join(", ", names)} }}");
+        }
+        _sb.AppendLine();
+    }
+
+    public void ImportAs(string path, string alias) => ImportAs(path, alias, []);
 
     /// <summary>
     /// Write an #Import export directive using a path-qualified name - https://www.autohotkey.com/docs/alpha/lib/_Import.htm.

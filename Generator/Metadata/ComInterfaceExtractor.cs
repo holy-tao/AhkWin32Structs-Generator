@@ -83,8 +83,8 @@ public sealed class ComInterfaceExtractor
         TypeIdentity identity = new(fqn, attrs.SupportedArchitecture ?? Architecture.All);
         string displayName = typeName;
 
-        // Collect referenced types
-        List<string> referencedTypes = CollectReferencedTypes(methods, baseFQN);
+        // Collect imports
+        ImportCollection imports = CollectImports(methods, baseFQN);
 
         ComInterfaceType result = new()
         {
@@ -106,7 +106,7 @@ public sealed class ComInterfaceExtractor
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
             SupportedOSPlatform = attrs.SupportedOSPlatform,
-            ReferencedTypes = referencedTypes
+            Imports = imports
         };
 
         _logger.LogDebug(
@@ -316,7 +316,7 @@ public sealed class ComInterfaceExtractor
             DeprecationMessage = baseMember.DeprecationMessage,
             ReturnValueDoc = baseMember.ReturnValueDoc,
             SupportedOSPlatform = baseMember.SupportedOSPlatform,
-            ReferencedTypes = baseMember.ReferencedTypes,
+            Imports = baseMember.Imports,
             // ComMethodMember-specific properties
             VTableIndex = vTableIndex,
             HasStringParam = hasStringParam,
@@ -389,25 +389,25 @@ public sealed class ComInterfaceExtractor
     }
 
     /// <summary>
-    /// Collect referenced types for a COM interface.
+    /// Collect imports for a COM interface.
     /// </summary>
-    private static List<string> CollectReferencedTypes(
+    private static ImportCollection CollectImports(
         List<ComMethodMember> methods, string? baseInterfaceFQN)
     {
-        List<string> refs = [];
+        var imports = new ImportCollection();
 
         // Base interface
         if (baseInterfaceFQN != null)
-            refs.Add(baseInterfaceFQN);
+            imports.AddType(baseInterfaceFQN);
 
         // BSTR import
         if (methods.Any(m => m.HasStringParam))
-            refs.Add("Windows.Win32.Foundation.BSTR");
+            imports.AddType("Windows.Win32.Foundation.BSTR");
 
-        // Per-method referenced types
+        // Per-method imports
         foreach (ComMethodMember method in methods)
         {
-            refs.AddRange(method.ReferencedTypes);
+            imports.MergeFrom(method.Imports);
 
             // COM output parameter types (computed separately from base method extraction)
             if (method.OutputParameter is { } outParam)
@@ -420,10 +420,10 @@ public sealed class ComInterfaceExtractor
                     _ => null
                 };
                 if (outFqn != null)
-                    refs.Add(outFqn);
+                    imports.AddType(outFqn);
             }
         }
 
-        return refs.Distinct().ToList();
+        return imports;
     }
 }

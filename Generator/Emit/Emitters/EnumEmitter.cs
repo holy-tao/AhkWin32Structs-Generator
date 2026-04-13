@@ -54,8 +54,8 @@ public sealed class EnumEmitter : ITypeEmitter
 
     private static void EmitImports(AhkWriter w, EnumType enumType)
     {
-        // Enum referenced types come only from extensions
-        foreach (string import in enumType.ReferencedTypes.Distinct())
+        // Enum imports come only from extensions
+        foreach (string import in enumType.Imports.GetIncludeTargets())
         {
             w.Include(ImportResolver.GetIncludePath(enumType.Namespace, import));
         }

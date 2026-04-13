@@ -298,8 +298,10 @@ public sealed class TypeExtractor
         StructLayout layout = _fieldExtractor.ExtractFields(
             reader, typeDef, layoutKind, packingSize, isUnion, isAnsi, fqn, apiFields);
 
-        // Build referenced types list
-        List<string> referencedTypes = CollectStructReferencedTypes(layout.Fields);
+        // Build imports
+        ImportCollection imports = new();
+        foreach (string refFqn in CollectStructReferencedTypes(layout.Fields))
+            imports.AddType(refFqn);
 
         // Name deconfliction
         string displayName = DeconflictName(typeName);
@@ -322,7 +324,7 @@ public sealed class TypeExtractor
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
             SupportedOSPlatform = attrs.SupportedOSPlatform,
-            ReferencedTypes = referencedTypes,
+            Imports = imports,
             IsNested = typeDef.IsNested
         };
 
@@ -360,10 +362,12 @@ public sealed class TypeExtractor
         IReadOnlyList<long> invalidValues = AttributeReader.DecodeInvalidHandleValues(attrs.All);
         FreeFuncRef? freeFunc = AttributeReader.DecodeRAIIFreeFunc(attrs.All, typeNamespace);
 
-        // Build referenced types
-        List<string> referencedTypes = CollectStructReferencedTypes(layout.Fields);
+        // Build imports
+        ImportCollection imports = new();
+        foreach (string refFqn in CollectStructReferencedTypes(layout.Fields))
+            imports.AddType(refFqn);
         if (freeFunc != null)
-            referencedTypes.Add(freeFunc.ApisFQN);
+            imports.AddFunction(freeFunc.ApisFQN, freeFunc.Name);
 
         string displayName = DeconflictName(typeName);
 
@@ -386,7 +390,7 @@ public sealed class TypeExtractor
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
             SupportedOSPlatform = attrs.SupportedOSPlatform,
-            ReferencedTypes = referencedTypes,
+            Imports = imports,
             IsNested = typeDef.IsNested
         };
 
@@ -485,10 +489,10 @@ public sealed class TypeExtractor
             .Select(methodDef => _methodExtractor.ExtractMethod(reader, methodDef, typeNamespace))
             .OfType<MethodMember>()];
             
-        // Collect referenced types from both constants and methods
-        List<string> referencedTypes =[
-            .. constants.SelectMany(c => c.ReferencedTypes), 
-            .. methods.SelectMany(m => m.ReferencedTypes)];
+        // Collect imports from both constants and methods
+        ImportCollection imports = new();
+        imports.MergeFrom(constants.Select(c => c.Imports));
+        imports.MergeFrom(methods.Select(m => m.Imports));
 
         string displayName = DeconflictName(typeName);
 
@@ -507,7 +511,7 @@ public sealed class TypeExtractor
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
             SupportedOSPlatform = attrs.SupportedOSPlatform,
-            ReferencedTypes = referencedTypes.Distinct().ToList()
+            Imports = imports
         };
 
         _logger.LogDebug("Extracted ApiType {FQN} ({ConstantCount} constants, {MethodCount} methods)",
@@ -620,7 +624,7 @@ public sealed class TypeExtractor
                 Description = description,
                 IsDeprecated = fieldAttrs.IsDeprecated,
                 DeprecationMessage = fieldAttrs.DeprecationMessage,
-                ReferencedTypes = [structFqn]
+                Imports = MakeTypeImports(structFqn)
             };
         }
 
@@ -650,7 +654,6 @@ public sealed class TypeExtractor
         List<StructFieldInit> fieldInits = BuildStructFieldInits(structReader, structTypeDef, values, "value");
 
         bool needsGuid = fieldInits.Any(f => f.Kind == StructFieldInitKind.GuidPointer);
-        List<string> referencedTypes = [structFqn];
 
         return new ConstantMember
         {
@@ -662,7 +665,7 @@ public sealed class TypeExtractor
             IsDeprecated = fieldAttrs.IsDeprecated,
             DeprecationMessage = fieldAttrs.DeprecationMessage,
             NeedsGuid = needsGuid,
-            ReferencedTypes = referencedTypes
+            Imports = MakeTypeImports(structFqn)
         };
     }
 
@@ -896,6 +899,16 @@ public sealed class TypeExtractor
             return $"Win32{candidate}";
 
         return candidate;
+    }
+
+    /// <summary>
+    /// Construct a single-type ImportCollection.
+    /// </summary>
+    private static ImportCollection MakeTypeImports(string fqn)
+    {
+        var c = new ImportCollection();
+        c.AddType(fqn);
+        return c;
     }
 
     /// <summary>

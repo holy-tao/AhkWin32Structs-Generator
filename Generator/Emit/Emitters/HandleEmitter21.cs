@@ -3,11 +3,11 @@ namespace AhkWin32.Generator.Emit.Emitters;
 using AhkWin32.Generator.Model.Types;
 
 /// <summary>
-/// Emits HandleType as a complete .ahk file.
+/// Emits v2.1 HandleType as a complete .ahk file.
 /// Port of legacy AhkHandle.ToAhk().
 /// Delegates body emission to StructEmitter shared methods.
 /// </summary>
-public sealed class HandleEmitter : ITypeEmitter
+public sealed class HandleEmitter21 : ITypeEmitter
 {
     public bool CanEmit(Win32Type type) => type is HandleType;
 
@@ -27,12 +27,12 @@ public sealed class HandleEmitter : ITypeEmitter
         string pathToBase = ImportResolver.GetPathToBase(handleType.Namespace);
 
         // Headers — Win32Handle.ahk comes after imports (matching legacy ordering)
-        w.Require("AutoHotkey v2.0.0 64-bit");
-        w.Include($"{pathToBase}Win32Struct.ahk");
+        w.Require("AutoHotkey v2.1-alpha.24+ 64-bit");
+        w.Import($"{pathToBase}Win32Struct.ahk", ["Win32Struct"]);
 
         EmitImports(w, handleType);
 
-        w.Include($"{pathToBase}Win32Handle.ahk");
+        w.Import($"{pathToBase}Win32Handle.ahk", ["Win32Handle"]);
 
         w.BlankLine();
 
@@ -63,7 +63,7 @@ public sealed class HandleEmitter : ITypeEmitter
                 long firstInvalidValue = handleType.InvalidValues.FirstOrDefault(0);
 
                 w.Line($"Free(){{");
-                w.Line($"    {handleType.FreeFunc.DeclarerName}.{handleType.FreeFunc.Name}(this.{firstMemberName})");
+                w.Line($"    {handleType.FreeFunc.Name}(this.{firstMemberName})");
                 w.Line($"    this.{firstMemberName} := {firstInvalidValue}");
                 w.Line("}");
             }
@@ -72,9 +72,16 @@ public sealed class HandleEmitter : ITypeEmitter
 
     private static void EmitImports(AhkWriter w, Win32Type type)
     {
-        foreach (string import in type.Imports.GetIncludeTargets())
+        foreach (string fqn in type.Imports.GetTypes())
         {
-            w.Include(ImportResolver.GetIncludePath(type.Namespace, import));
+            string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
+            w.Import(path, [ImportResolver.GetImportName(fqn)]);
+        }
+
+        foreach (string apisFqn in type.Imports.GetFunctionNamespaces())
+        {
+            string path = ImportResolver.GetIncludePath(type.Namespace, apisFqn);
+            w.Import(path, type.Imports.GetFunctionsForNamespace(apisFqn));
         }
     }
 }

@@ -116,7 +116,7 @@ public class MethodMember
     public bool ShouldThrowOnHResult { get; init; }
 
     /// <summary>
-    /// FQNs of types referenced by this method (for #Include generation).
+    /// Types and functions referenced by this method (for #Include / #Import generation).
     /// </summary>
-    public IReadOnlyList<string> ReferencedTypes { get; init; } = [];
+    public ImportCollection Imports { get; init; } = new();
 }

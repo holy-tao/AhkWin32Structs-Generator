@@ -9,14 +9,9 @@ using AhkWin32.Generator.Model.Types;
 /// Port of legacy AhkStruct.ToAhk() and AhkStructMember.ToAhk().
 /// Body emission methods are internal static so HandleEmitter can reuse them.
 /// </summary>
-public sealed class StructEmitter : ITypeEmitter
+public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 {
-    private readonly TypeRegistry _registry;
-
-    public StructEmitter(TypeRegistry registry)
-    {
-        _registry = registry;
-    }
+    private readonly TypeRegistry _registry = registry;
 
     public bool CanEmit(Win32Type type) => type is StructType and not HandleType;
 
@@ -34,8 +29,8 @@ public sealed class StructEmitter : ITypeEmitter
     private void EmitStruct(AhkWriter w, StructType structType)
     {
         string pathToBase = ImportResolver.GetPathToBase(structType.Namespace);
-        w.Require("AutoHotkey v2.0.0 64-bit");
-        w.Include($"{pathToBase}Win32Struct.ahk");
+        w.Require("AutoHotkey v2.1-alpha.24+ 64-bit");
+        w.Import($"{pathToBase}Win32Struct.ahk", ["Win32Struct"]);
 
         EmitImports(w, structType);
 
@@ -276,13 +271,17 @@ public sealed class StructEmitter : ITypeEmitter
 
     internal void EmitImports(AhkWriter w, Win32Type type)
     {
-        // Restrict to targets available in the registry to filter out nested types
-        IEnumerable<string> imports = type.Imports.GetIncludeTargets()
-            .Where(_registry.Contains);
-
-        foreach (string import in imports)
+        // Restrict to types available in the registry to filter out nested types
+        foreach (string fqn in type.Imports.GetTypes().Where(_registry.Contains))
         {
-            w.Include(ImportResolver.GetIncludePath(type.Namespace, import));
+            string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
+            w.Import(path, [ImportResolver.GetImportName(fqn)]);
+        }
+
+        foreach (string apisFqn in type.Imports.GetFunctionNamespaces())
+        {
+            string path = ImportResolver.GetIncludePath(type.Namespace, apisFqn);
+            w.Import(path, type.Imports.GetFunctionsForNamespace(apisFqn));
         }
     }
 

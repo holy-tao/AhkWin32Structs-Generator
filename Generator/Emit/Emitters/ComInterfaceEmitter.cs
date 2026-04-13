@@ -56,7 +56,7 @@ public sealed class ComInterfaceEmitter(TypeRegistry registry, AhkVersion versio
             foreach (var method in comType.Methods)
             {
                 w.BlankLine();
-                MethodEmitter.EmitComMethod(w, method, _registry);
+                MethodEmitter.EmitComMethod(w, method, _registry, _version);
             }
 
             StructEmitter.EmitExtensions(w, comType);
@@ -84,20 +84,25 @@ public sealed class ComInterfaceEmitter(TypeRegistry registry, AhkVersion versio
 
     private void EmitImports(AhkWriter w, ComInterfaceType comType)
     {
-        IEnumerable<string> imports = comType.ReferencedTypes
-            .Distinct()
-            .Where(fqn => fqn != comType.FQN);
-        foreach (string fqn in imports)
+        if (_version is AhkVersion.v21)
         {
-            string path = ImportResolver.GetIncludePath(comType.Namespace, fqn);
-            if (_version is AhkVersion.v21)
+            foreach (string fqn in comType.Imports.GetTypes().Where(f => f != comType.FQN))
             {
-                string name = ImportResolver.GetImportName(fqn);
-                w.Import(path, [name]);
+                string path = ImportResolver.GetIncludePath(comType.Namespace, fqn);
+                w.Import(path, [ImportResolver.GetImportName(fqn)]);
             }
-            else
+
+            foreach (string apisFqn in comType.Imports.GetFunctionNamespaces())
             {
-                w.Include(path);
+                string path = ImportResolver.GetIncludePath(comType.Namespace, apisFqn);
+                w.Import(path, comType.Imports.GetFunctionsForNamespace(apisFqn));
+            }
+        }
+        else
+        {
+            foreach (string fqn in comType.Imports.GetIncludeTargets().Where(f => f != comType.FQN))
+            {
+                w.Include(ImportResolver.GetIncludePath(comType.Namespace, fqn));
             }
         }
     }

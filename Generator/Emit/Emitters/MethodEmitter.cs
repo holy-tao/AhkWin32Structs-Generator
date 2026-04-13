@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
 using AhkWin32.Generator.Model.Types;
@@ -20,13 +21,14 @@ public static class MethodEmitter
         string argList = BuildArgumentList(method);
         using (w.StaticMethod(method.Name, argList))
         {
-            EmitDllImportMethodBody(w, method, registry);
-        }   
+            EmitDllImportMethodBody(w, method, registry, unqualifyApis: false);
+        }
     }
 
     /// <summary>
     /// Emit a complete DllImport function (documentation + signature + body). Used in v2.1. Identical to
-    /// methods except not static and exported by default.
+    /// methods except not static and exported by default. Calls into other Apis files are unqualified
+    /// (free functions) since v2.1 Apis modules export functions, not class methods.
     /// </summary>
     public static void EmitDllImportFunction(AhkWriter w, MethodMember method, TypeRegistry registry)
     {
@@ -35,11 +37,11 @@ public static class MethodEmitter
         string argList = BuildArgumentList(method);
         using (w.Function(method.Name, argList))
         {
-            EmitDllImportMethodBody(w, method, registry);
+            EmitDllImportMethodBody(w, method, registry, unqualifyApis: true);
         }
     }
 
-    private static void EmitDllImportMethodBody(AhkWriter w, MethodMember method, TypeRegistry registry)
+    private static void EmitDllImportMethodBody(AhkWriter w, MethodMember method, TypeRegistry registry, bool unqualifyApis)
     {
         // AutoHotkey doesn't support the thiscall calling convention
         if (method.CallingConvention == CallingConvention.ThisCall)
@@ -59,7 +61,7 @@ public static class MethodEmitter
         }
 
         if (method.IsOrdinal)
-            EmitOrdinalLoading(w, method);
+            EmitOrdinalLoading(w, method, unqualifyApis);
 
         EmitOutputParamMarshalling(w, method);
 
@@ -71,11 +73,11 @@ public static class MethodEmitter
         if (method.IsOrdinal)
         {
             w.BlankLine();
-            w.Line("Foundation.FreeLibrary(hModule)");
+            w.Line(unqualifyApis ? "FreeLibrary(hModule)" : "Foundation.FreeLibrary(hModule)");
             w.BlankLine();
         }
 
-        EmitErrorCheck(w, method);
+        EmitErrorCheck(w, method, unqualifyApis);
         EmitReturnStatement(w, method, registry);
     }
 
@@ -158,11 +160,14 @@ public static class MethodEmitter
 
     // --- Ordinal entry point loading ---
 
-    private static void EmitOrdinalLoading(AhkWriter w, MethodMember method)
+    private static void EmitOrdinalLoading(AhkWriter w, MethodMember method, bool unqualifyApis)
     {
+        string loadLib = unqualifyApis ? "LoadLibraryW" : "LibraryLoader.LoadLibraryW";
+        string getProc = unqualifyApis ? "GetProcAddress" : "LibraryLoader.GetProcAddress";
+
         w.Line("; This method's EntryPoint is an ordinal, so we need to load the dll manually");
-        w.Line($"hModule := LibraryLoader.LoadLibraryW(\"{method.DllName}\")");
-        w.Line($"procAddr := LibraryLoader.GetProcAddress(hModule, {method.EntryPoint[1..]})");
+        w.Line($"hModule := {loadLib}(\"{method.DllName}\")");
+        w.Line($"procAddr := {getProc}(hModule, {method.EntryPoint[1..]})");
         w.BlankLine();
     }
 
@@ -305,7 +310,7 @@ public static class MethodEmitter
 
     // --- Error checking ---
 
-    private static void EmitErrorCheck(AhkWriter w, MethodMember method)
+    private static void EmitErrorCheck(AhkWriter w, MethodMember method, bool unqualifyApis = false)
     {
         // NTSTATUS: special case — no SetsLastError interaction
         if (method.Parameters[0].Type is NtStatusType)
@@ -341,7 +346,8 @@ public static class MethodEmitter
         foreach (var param in freeWithParams)
         {
             FreeFuncRef freeWith = param.FreeWith!;
-            w.Line($"    {freeWith.DeclarerName}.{freeWith.Name}({param.Name})");
+            string callee = unqualifyApis ? freeWith.Name : $"{freeWith.DeclarerName}.{freeWith.Name}";
+            w.Line($"    {callee}({param.Name})");
         }
 
         w.Line($"    throw OSError({string.Join(" || ", errCodeSources)})");
@@ -462,9 +468,10 @@ public static class MethodEmitter
     /// Emit a complete COM method (documentation + signature + body).
     /// Port of legacy AhkComMethod.ToAhk().
     /// </summary>
-    public static void EmitComMethod(AhkWriter w, ComMethodMember method, TypeRegistry registry)
+    public static void EmitComMethod(AhkWriter w, ComMethodMember method, TypeRegistry registry, AhkVersion version = AhkVersion.v20)
     {
         DocCommentWriter.WriteMethodDoc(w, method);
+        bool unqualifyApis = version is AhkVersion.v21;
 
         string argList = BuildArgumentList(method);
         using (w.InstanceMethod(method.DeduplicatedName, argList))
@@ -482,7 +489,7 @@ public static class MethodEmitter
             EmitOutputParamMarshalling(w, method);
             w.Line(BuildComCallExpression(method));
 
-            EmitErrorCheck(w, method);
+            EmitErrorCheck(w, method, unqualifyApis);
             EmitReturnStatement(w, method, registry);
         }
     }

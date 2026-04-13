@@ -105,8 +105,8 @@ public sealed class MethodExtractor
             parameters, methodAttrs.PreserveSigValue,
             methodAttrs.CanReturnErrorsAsSuccess, methodAttrs.CanReturnMultipleSuccessValues);
 
-        // Collect referenced types
-        List<string> referencedTypes = CollectReferencedTypes(
+        // Collect referenced types/functions
+        ImportCollection imports = CollectImports(
             parameters, entryPoint, outputParameter);
 
         MethodMember result = new()
@@ -131,7 +131,7 @@ public sealed class MethodExtractor
             DeprecationMessage = methodAttrs.DeprecationMessage,
             ReturnValueDoc = apiDetails?.ReturnValue,
             SupportedOSPlatform = methodAttrs.SupportedOSPlatform,
-            ReferencedTypes = referencedTypes
+            Imports = imports
         };
 
         _logger.LogTrace("Extracted method {Namespace}.{Method} ({ParamCount} params, dll={Dll})",
@@ -248,32 +248,33 @@ public sealed class MethodExtractor
     }
 
     /// <summary>
-    /// Collect FQNs of types referenced by a method for #Include generation.
+    /// Collect types and functions referenced by a method, for #Include / #Import generation.
     /// Port of AhkMethod.GetReferencedTypes.
     /// </summary>
-    private static List<string> CollectReferencedTypes(
+    private static ImportCollection CollectImports(
         List<ParameterMember> parameters, string entryPoint,
         ParameterMember? outputParameter)
     {
-        List<string> refs = [];
+        var imports = new ImportCollection();
 
-        // Ordinal entry points need LibraryLoader + Foundation
+        // Ordinal entry points need LibraryLoader.LoadLibraryW/GetProcAddress + Foundation.FreeLibrary
         if (entryPoint.StartsWith('#'))
         {
-            refs.Add("Windows.Win32.Foundation.Apis");
-            refs.Add("Windows.Win32.System.LibraryLoader.Apis");
+            imports.AddFunction("Windows.Win32.Foundation.Apis", "FreeLibrary");
+            imports.AddFunction("Windows.Win32.System.LibraryLoader.Apis", "LoadLibraryW");
+            imports.AddFunction("Windows.Win32.System.LibraryLoader.Apis", "GetProcAddress");
         }
 
         // Import handle if we return a handle
         if (parameters.Count > 0 && parameters[0].Type is HandleRef hr)
         {
-            refs.Add(hr.FQN);
+            imports.AddType(hr.FQN);
         }
 
         // Import NTSTATUS if we return NTStatus
         if (parameters.Count > 0 && parameters[0].Type is NtStatusType)
         {
-            refs.Add("Windows.Win32.Foundation.NTSTATUS");
+            imports.AddType("Windows.Win32.Foundation.NTSTATUS");
         }
 
         // Import output parameter pointee type
@@ -281,20 +282,21 @@ public sealed class MethodExtractor
         {
             ResolvedType? pointee = outputParameter.Pointee;
             if (pointee is StructRef sr)
-                refs.Add(sr.FQN);
+                imports.AddType(sr.FQN);
             else if (pointee is ComRef cr)
-                refs.Add(cr.FQN);
+                imports.AddType(cr.FQN);
             else if (pointee is HandleRef ohr)
-                refs.Add(ohr.FQN);
+                imports.AddType(ohr.FQN);
         }
 
-        // Import [FreeWith] parameter Apis types
+        // Import [FreeWith] parameter functions
         foreach (ParameterMember param in parameters.Where(p => p.FreeWith != null))
         {
-            refs.Add(param.FreeWith!.ApisFQN);
+            FreeFuncRef fw = param.FreeWith!;
+            imports.AddFunction(fw.ApisFQN, fw.Name);
         }
 
-        return refs.Distinct().ToList();
+        return imports;
     }
 
     /// <param name="PreserveSig">Whether [PreserveSig] attribute is present.</param>
