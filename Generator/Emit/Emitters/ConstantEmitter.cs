@@ -42,21 +42,70 @@ public static class ConstantEmitter
     }
 
     /// <summary>
+    /// Emit a single constant (doc comment + value) into the writer in an AHK v2.1-compatible way
+    /// </summary>
+    public static void EmitConstant21(AhkWriter w, ConstantMember constant)
+    {
+        DocCommentWriter.WriteConstantDoc(w, constant);
+
+        switch (constant.Value)
+        {
+            case PrimitiveConstantValue pv:
+                w.Variable(constant.Name, pv.FormattedValue);
+                break;
+
+            case GuidConstantValue gv:
+                w.Variable(constant.Name, gv.AsAhk);
+                break;
+
+            case StructConstantValue { IsHandle: true } sv:
+                w.Variable(constant.Name, sv.AsAhk);
+                break;
+
+            case StructConstantValue { IsHandle: false } sv:
+                EmitStructConstantFunction(w, constant.Name, sv);
+                break;
+
+            default:
+                throw new NotSupportedException(
+                    $"Unsupported constant value type: {constant.Value.GetType().Name} for '{constant.Name}'");
+        }
+    }
+
+    /// <summary>
     /// Emit a struct constant as a getter property with field initialization.
     /// </summary>
     private static void EmitStructConstantProperty(AhkWriter w, string name, StructConstantValue sv)
     {
         using (w.Property(name))
+        {
+            EmitStructConstantInitializers(w, sv);
+        }
+    }
+
+    /// <summary>
+    /// Emit a struct constant as a function that returns the struct. For v2.1
+    /// </summary>
+    private static void EmitStructConstantFunction(AhkWriter w, string name, StructConstantValue sv)
+    {
+        using (w.Function(name))
+        {
+            EmitStructConstantInitializers(w, sv);
+        }
+    }
+
+    /// <summary>
+    /// Emit struct fill code for a given struct constant
+    /// </summary>
+    private static void EmitStructConstantInitializers(AhkWriter w, StructConstantValue sv)
+    {
         using (w.GetBlock())
         {
             w.Line($"value := {sv.StructName}()");
 
-            if (sv.FieldInits != null)
+            foreach (StructFieldInit init in sv.FieldInits ?? [])
             {
-                foreach (StructFieldInit init in sv.FieldInits)
-                {
-                    EmitFieldInit(w, init);
-                }
+                EmitFieldInit(w, init);
             }
 
             w.Line("return value");
