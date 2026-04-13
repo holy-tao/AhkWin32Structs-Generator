@@ -6,8 +6,7 @@ using AhkWin32.Generator.Model.Types;
 
 /// <summary>
 /// Emits method bodies (DllCall) for DllImport methods.
-/// Static helper class used by ApiTypeEmitter (and later ComInterfaceEmitter).
-/// Port of legacy AhkMethod.ToAhk().
+/// Static helper class used by ApiTypeEmitter and ComInterfaceEmitter.
 /// </summary>
 public static class MethodEmitter
 {
@@ -21,43 +20,63 @@ public static class MethodEmitter
         string argList = BuildArgumentList(method);
         using (w.StaticMethod(method.Name, argList))
         {
-            // AutoHotkey doesn't support the thiscall calling convention
-            if (method.CallingConvention == CallingConvention.ThisCall)
-            {
-                w.Line("throw MethodError(\"Not supported: AutoHotkey does not support the thiscall calling convention\", , A_ThisFunc)");
-                return;
-            }
+            EmitDllImportMethodBody(w, method, registry);
+        }   
+    }
 
-            EmitReservedParams(w, method);
-            EmitParameterConversions(w, method, false);
-            EmitParameterMarshalling(w, method);
+    /// <summary>
+    /// Emit a complete DllImport function (documentation + signature + body). Used in v2.1. Identical to
+    /// methods except not static and exported by default.
+    /// </summary>
+    public static void EmitDllImportFunction(AhkWriter w, MethodMember method, TypeRegistry registry)
+    {
+        DocCommentWriter.WriteMethodDoc(w, method);
 
-            if (method.SetsLastError)
-            {
-                w.Line("A_LastError := 0");
-                w.BlankLine();
-            }
-
-            if (method.IsOrdinal)
-                EmitOrdinalLoading(w, method);
-
-            EmitOutputParamMarshalling(w, method);
-
-            if (method.IsVariadic)
-                EmitVariadicMarshalling(w, method);
-
-            w.Line(BuildDllCallExpression(method));
-
-            if (method.IsOrdinal)
-            {
-                w.BlankLine();
-                w.Line("Foundation.FreeLibrary(hModule)");
-                w.BlankLine();
-            }
-
-            EmitErrorCheck(w, method);
-            EmitReturnStatement(w, method, registry);
+        string argList = BuildArgumentList(method);
+        using (w.Function(method.Name, argList))
+        {
+            EmitDllImportMethodBody(w, method, registry);
         }
+    }
+
+    private static void EmitDllImportMethodBody(AhkWriter w, MethodMember method, TypeRegistry registry)
+    {
+        // AutoHotkey doesn't support the thiscall calling convention
+        if (method.CallingConvention == CallingConvention.ThisCall)
+        {
+            w.Line("throw MethodError(\"Not supported: AutoHotkey does not support the thiscall calling convention\", , A_ThisFunc)");
+            return;
+        }
+
+        EmitReservedParams(w, method);
+        EmitParameterConversions(w, method, false);
+        EmitParameterMarshalling(w, method);
+
+        if (method.SetsLastError)
+        {
+            w.Line("A_LastError := 0");
+            w.BlankLine();
+        }
+
+        if (method.IsOrdinal)
+            EmitOrdinalLoading(w, method);
+
+        EmitOutputParamMarshalling(w, method);
+
+        if (method.IsVariadic)
+            EmitVariadicMarshalling(w, method);
+
+        w.Line(BuildDllCallExpression(method));
+
+        if (method.IsOrdinal)
+        {
+            w.BlankLine();
+            w.Line("Foundation.FreeLibrary(hModule)");
+            w.BlankLine();
+        }
+
+        EmitErrorCheck(w, method);
+        EmitReturnStatement(w, method, registry);
     }
 
     // --- Argument list ---
