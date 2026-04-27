@@ -72,7 +72,7 @@ public sealed class HandleEmitter21 : ITypeEmitter
 
     private static void EmitImports(AhkWriter w, Win32Type type)
     {
-        foreach (string fqn in type.Imports.GetTypes())
+        foreach (string fqn in type.Imports.GetTypes().Where(fqn => fqn != type.FQN))
         {
             string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
             w.Import(path, [ImportResolver.GetImportName(fqn)]);

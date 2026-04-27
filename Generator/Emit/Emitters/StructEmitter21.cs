@@ -272,7 +272,8 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
     internal void EmitImports(AhkWriter w, Win32Type type)
     {
         // Restrict to types available in the registry to filter out nested types
-        foreach (string fqn in type.Imports.GetTypes().Where(_registry.Contains))
+        foreach (string fqn in type.Imports.GetTypes()
+            .Where(fqn => _registry.Contains(fqn) && fqn != type.FQN))
         {
             string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
             w.Import(path, [ImportResolver.GetImportName(fqn)]);
