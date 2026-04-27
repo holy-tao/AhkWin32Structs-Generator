@@ -280,8 +280,7 @@ public sealed class ComInterfaceExtractor
         // Check for string (BSTR) parameters
         bool hasStringParam = baseMember.Parameters
             .Skip(1) // skip return type
-            .Any(p => p.Type is NativeTypedefType { Name: "BSTR" }
-                    || p.Type is PointerType { Pointee: NativeTypedefType { Name: "BSTR" } });
+            .Any(p => p.TypeDefName is "BSTR");
 
         // Check for special name (get_/put_ for property backing)
         bool isSpecialName = methodDef.Attributes.HasFlag(MethodAttributes.SpecialName);
@@ -398,16 +397,16 @@ public sealed class ComInterfaceExtractor
 
         // Base interface
         if (baseInterfaceFQN != null)
-            imports.AddType(baseInterfaceFQN);
-
-        // BSTR import
-        if (methods.Any(m => m.HasStringParam))
-            imports.AddType("Windows.Win32.Foundation.BSTR");
+            imports.AddType(baseInterfaceFQN);            
 
         // Per-method imports
         foreach (ComMethodMember method in methods)
         {
             imports.MergeFrom(method.Imports);
+
+            // BSTR import
+            if (method.HasStringParam)
+                imports.AddType("Windows.Win32.Foundation.BSTR");
 
             // COM output parameter types (computed separately from base method extraction)
             if (method.OutputParameter is { } outParam)
