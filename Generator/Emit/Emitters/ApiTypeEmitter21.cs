@@ -5,14 +5,15 @@ using AhkWin32.Generator.Model.Types;
 using AhkWin32.Generator.Metadata;
 
 /// <summary>
-/// Emits a v2.1 ApiType as a complete .ahk file.
-/// TODO: consider moving constants to their own file since we cannot lazy-load them as fat arrow functions anymore
+/// Emits a v2.1 ApiType's free functions as a complete .ahk file.
+/// Constants are emitted separately by <see cref="ApiConstantsEmitter21"/> so users
+/// can opt in to loading them (v2.1 module-scope globals are not lazy).
 /// </summary>
 public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
 {
     private readonly TypeRegistry _registry = registry;
 
-    public bool CanEmit(Win32Type type) => type is ApiType;
+    public bool CanEmit(Win32Type type) => type is ApiType { Methods.Count: > 0 };
 
     public EmitResult Emit(Win32Type type, string outputRoot)
     {
@@ -32,10 +33,8 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
         w.Require("AutoHotkey >= v2.1-alpha.24+ 64-bit");
         w.Import($"{pathToBase}Win32Handle.ahk", ["Win32Handle"]);
 
-        if (apiType.NeedsGuid)
-            w.Import($"{pathToBase}Guid.ahk", ["Guid"]);
-
-        // Referenced type imports (from constants, methods, and extensions)
+        // Referenced type imports needed by methods (and any extension imports not consumed
+        // exclusively by constants).
         EmitImports(w, apiType);
 
         w.BlankLine();
@@ -45,19 +44,19 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
 
          w.BlankLine();
 
-        // Constants region
-        EmitConstants(w, apiType);
-
-        w.BlankLine();
-
         // Functions region
         EmitFunctions(w, apiType);
     }
 
     private static void EmitImports(AhkWriter w, ApiType apiType)
     {
+        // Strip imports that are only referenced by constants (those go in Constants.ahk).
+        var constantOnlyTypes = new HashSet<string>(GetConstantOnlyTypeImports(apiType));
+
         foreach (string fqn in apiType.Imports.GetTypes())
         {
+            if (constantOnlyTypes.Contains(fqn))
+                continue;
             string path = ImportResolver.GetIncludePath(apiType.Namespace, fqn);
             w.Import(path, [ImportResolver.GetImportName(fqn)]);
         }
@@ -69,18 +68,19 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
         }
     }
 
-    private static void EmitConstants(AhkWriter w, ApiType apiType)
+    /// <summary>
+    /// Type FQNs referenced by at least one constant but no method. These belong only in
+    /// Constants.ahk and should not appear in the functions file's import list.
+    /// </summary>
+    private static IEnumerable<string> GetConstantOnlyTypeImports(ApiType apiType)
     {
-        // Region markers are at column 0 (matching legacy format)
-        w.RawLine(";@region Constants");
+        var methodTypes = new HashSet<string>(
+            apiType.Methods.SelectMany(m => m.Imports.GetTypes()));
 
-        foreach (var constant in apiType.Constants)
-        {
-            w.BlankLine();
-            ConstantEmitter.EmitConstant21(w, constant);
-        }
-
-        w.RawLine(";@endregion Constants");
+        return apiType.Constants
+            .SelectMany(c => c.Imports.GetTypes())
+            .Where(t => !methodTypes.Contains(t))
+            .Distinct();
     }
 
     private void EmitFunctions(AhkWriter w, ApiType apiType)

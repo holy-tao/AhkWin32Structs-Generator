@@ -53,22 +53,25 @@ public sealed class TypeEmissionPipeline
 
         Parallel.ForEach(filteredTypes, (type) =>
         {
-            ITypeEmitter? emitter = FindEmitter(type);
-            if (emitter is null)
+            ITypeEmitter[] matching = [.. _emitters.Where(e => e.CanEmit(type))];
+            if (matching.Length == 0)
             {
                 Interlocked.Increment(ref skipped);
                 return;
             }
 
-            try
+            foreach (var emitter in matching)
             {
-                _logger.LogTrace("Emitting {Namespace}.{Name}", type.Namespace, type.Name);
-                results.Add(emitter.Emit(type, outputDir));
-            }
-            catch (Exception ex)
-            {
-                Interlocked.Increment(ref errors);
-                _logger.LogError(ex, "Failed to emit {TypeName}", type.FQN);
+                try
+                {
+                    _logger.LogTrace("Emitting {Namespace}.{Name} via {Emitter}", type.Namespace, type.Name, emitter.GetType().Name);
+                    results.Add(emitter.Emit(type, outputDir));
+                }
+                catch (Exception ex)
+                {
+                    Interlocked.Increment(ref errors);
+                    _logger.LogError(ex, "Failed to emit {TypeName} via {Emitter}", type.FQN, emitter.GetType().Name);
+                }
             }
         });
 
@@ -110,13 +113,4 @@ public sealed class TypeEmissionPipeline
         return true;
     }
 
-    private ITypeEmitter? FindEmitter(Win32Type type)
-    {
-        foreach (var e in _emitters)
-        {
-            if (e.CanEmit(type))
-                return e;
-        }
-        return null;
-    }
 }
