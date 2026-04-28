@@ -1,3 +1,5 @@
+using System.Reflection.Metadata;
+
 namespace AhkWin32.Generator.Model;
 
 /// <summary>
@@ -12,6 +14,11 @@ public abstract record ResolvedType
 
     /// <summary>AHK DllCall type string (e.g., "int", "ptr", "int*").</summary>
     public abstract string DllCallType { get; }
+
+    /// <summary>
+    /// AHK v2.1 type specifier - see https://www.autohotkey.com/docs/alpha/Structs.htm#type-specs
+    /// </summary>
+    public abstract string TypeSpecifier { get; }
 
     /// <summary>Size in bytes (64-bit). 0 if not statically known (StructRef, ArrayType).</summary>
     public abstract int Width { get; }
@@ -44,6 +51,24 @@ public sealed record PrimitiveType(string Name) : ResolvedType
         "byte" or "sbyte" or "char"                           => "char",
         "uintptr" or "intptr" or "void" or "ptr" or "typehandle" => "ptr",
         _                                                     => "ptr" // pointer-sized NativeTypedef
+    };
+
+    public override string TypeSpecifier => Name.ToLowerInvariant() switch
+    {
+        "single"                                              => "Float32",
+        "boolean" or "int32"                                  => "Int32",
+        "double"                                              => "Float64",
+        "int64"                                               => "Int64",
+        "uint32"                                              => "UInt32",
+        "uint64"                                              => "Int64",   // Ahk doesn't support u64s
+        "int16"                                               => "Int16",
+        "uint16"                                              => "UInt16",
+        "byte" or "sbyte" or "char"                           => "Int8",
+        "uchar"                                               => "UInt8",
+        "uintptr" or "intptr" or "void" or "ptr" or "typehandle" => "IntPtr",
+
+        // Should not use pointer-sized NativeTypedefs, we should use the typedefs themselves
+        _ => throw new NotSupportedException($"Unknown primitive type '{Name}'")
     };
 
     public override int Width => Name.ToLowerInvariant() switch
@@ -85,6 +110,12 @@ public sealed record PointerType(ResolvedType? Pointee) : ResolvedType
         _                                                                    => "ptr"
     };
 
+    /// <summary>
+    /// Always throw - these are used for function calls but can't be struct members.
+    /// </summary>
+    public override string TypeSpecifier => throw new InvalidOperationException(
+        "PointerTypes cannot be embedded in structures and thus do not have type specifiers");
+
     public override int Width => 8;
 }
 
@@ -95,6 +126,7 @@ public sealed record ArrayType(ResolvedType ElementType, int Length) : ResolvedT
 {
     public override string DisplayName => $"Array<{ElementType.DisplayName}>";
     public override string DllCallType => "ptr";
+    public override string TypeSpecifier => $"{ElementType.TypeSpecifier}[{Length}]";
     public override int Width => Length * ElementType.Width;
 }
 
@@ -106,6 +138,8 @@ public sealed record StringType(int Length, StringEncoding Encoding) : ResolvedT
 {
     public override string DisplayName => "String";
     public override string DllCallType => "ptr";
+    public override string TypeSpecifier => throw new NotSupportedException(
+        "Not supported for v2.1 - Use fixed-size UCHAR or CHAR arrays instead");
     public override int Width => Length * (Encoding == StringEncoding.Ansi ? 1 : 2);
 }
 
@@ -117,6 +151,7 @@ public sealed record StructRef(string FQN, string Name) : ResolvedType
 {
     public override string DisplayName => Name;
     public override string DllCallType => "ptr";
+    public override string TypeSpecifier => Name;
     public override int Width => throw new InvalidOperationException(
         $"Width of StructRef '{FQN}' must be resolved from the TypeRegistry");
 }
@@ -128,6 +163,7 @@ public sealed record EnumRef(string FQN, string Name, PrimitiveType UnderlyingTy
 {
     public override string DisplayName => Name;
     public override string DllCallType => UnderlyingType.DllCallType;
+    public override string TypeSpecifier => Name;
     public override int Width => UnderlyingType.Width;
 }
 
@@ -138,6 +174,7 @@ public sealed record ComRef(string FQN, string Name) : ResolvedType
 {
     public override string DisplayName => Name;
     public override string DllCallType => "ptr";
+    public override string TypeSpecifier => Name;
     public override int Width => 8;
 }
 
@@ -148,6 +185,7 @@ public sealed record HandleRef(string FQN, string Name) : ResolvedType
 {
     public override string DisplayName => Name;
     public override string DllCallType => "ptr";
+    public override string TypeSpecifier => Name;
     public override int Width => 8;
 }
 
@@ -158,6 +196,7 @@ public sealed record HResultType() : ResolvedType
 {
     public override string DisplayName => "HRESULT";
     public override string DllCallType => "int";
+    public override string TypeSpecifier => "HRESULT";
     public override int Width => 4;
 }
 
@@ -168,6 +207,7 @@ public sealed record NtStatusType() : ResolvedType
 {
     public override string DisplayName => "NTSTATUS";
     public override string DllCallType => "int";
+    public override string TypeSpecifier => "NTSTATUS";
     public override int Width => 4;
 }
 
@@ -179,6 +219,7 @@ public sealed record FunctionPointerType(string Name, string Signature) : Resolv
 {
     public override string DisplayName => $"Pointer<{Name}>";
     public override string DllCallType => "ptr";
+    public override string TypeSpecifier => "IntPtr";   // TODO we can have function pointer types now!
     public override int Width => 8;
 }
 
@@ -190,5 +231,6 @@ public sealed record NativeTypedefType(string Name, string FQN, ResolvedType Und
 {
     public override string DisplayName => Name;
     public override string DllCallType => Underlying.DllCallType;
+    public override string TypeSpecifier => Name;
     public override int Width => Underlying.Width;
 }
