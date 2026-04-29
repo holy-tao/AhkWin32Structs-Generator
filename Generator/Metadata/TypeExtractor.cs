@@ -63,8 +63,8 @@ public sealed class TypeExtractor
             asmWatch.Stop();
 
             _logger.LogInformation(
-                "Extracted {StructCount} structs, {HandleCount} handles, {EnumCount} enums, {ComCount} COM, {ApiCount} APIs from {AssemblyName} in {Elapsed:F1}s",
-                counts.Structs, counts.Handles, counts.Enums, counts.ComInterfaces, counts.ApiTypes,
+                "Extracted {StructCount} structs, {HandleCount} handles, {TypedefCount} typedefs, {EnumCount} enums, {ComCount} COM, {ApiCount} APIs from {AssemblyName} in {Elapsed:F1}s",
+                counts.Structs, counts.Handles, counts.NativeTypedefs, counts.Enums, counts.ComInterfaces, counts.ApiTypes,
                 assemblyName, asmWatch.Elapsed.TotalSeconds);
             _logger.LogInformation(
                 "  Skipped: {Arch} arch-filtered, {Nested} nested, {Delegate} delegates, {Other} other, {Errors} errors",
@@ -89,7 +89,7 @@ public sealed class TypeExtractor
     /// Counts from a single assembly extraction pass.
     /// </summary>
     public sealed record ExtractionCounts(
-        int Structs, int Handles, int Enums,
+        int Structs, int Handles, int NativeTypedefs, int Enums,
         int ComInterfaces, int ApiTypes,
         int SkippedArch, int SkippedNested, int SkippedDelegate, int SkippedOther,
         int Errors);
@@ -100,7 +100,7 @@ public sealed class TypeExtractor
     private ExtractionCounts ExtractFromAssembly(
         MetadataReader reader, string assemblyName, string version, TypeRegistry registry)
     {
-        int structCount = 0, handleCount = 0, enumCount = 0;
+        int structCount = 0, handleCount = 0, typedefCount = 0, enumCount = 0;
         int comCount = 0, apiCount = 0;
         int archSkipCount = 0, nestedSkipCount = 0, delegateSkipCount = 0, otherSkipCount = 0;
         int errorCount = 0;
@@ -157,6 +157,7 @@ public sealed class TypeExtractor
                 Win32Type? extracted = kind.Value switch
                 {
                     TypeKind.Handle => ExtractHandle(reader, typeDef, assemblyName, version, attrs),
+                    TypeKind.NativeTypedef => ExtractNativeTypedef(reader, typeDef, assemblyName, version, attrs),
                     TypeKind.Struct => ExtractStruct(reader, typeDef, assemblyName, version, attrs),
                     TypeKind.Enum => ExtractEnum(reader, typeDef, assemblyName, version, attrs),
                     TypeKind.ComInterface => _comExtractor.ExtractComInterface(reader, typeDef, assemblyName, version, attrs),
@@ -172,6 +173,9 @@ public sealed class TypeExtractor
                     {
                         case HandleType:
                             Interlocked.Increment(ref handleCount);
+                            break;
+                        case NativeTypedefType:
+                            Interlocked.Increment(ref typedefCount);
                             break;
                         case StructType:
                             Interlocked.Increment(ref structCount);
@@ -196,7 +200,7 @@ public sealed class TypeExtractor
         });
 
         return new ExtractionCounts(
-            structCount, handleCount, enumCount,
+            structCount, handleCount, typedefCount, enumCount,
             comCount, apiCount,
             archSkipCount, nestedSkipCount, delegateSkipCount, otherSkipCount,
             errorCount);
@@ -204,7 +208,7 @@ public sealed class TypeExtractor
 
     // --- Type classification ---
 
-    private enum TypeKind { Struct, Handle, Enum, ComInterface, ApiType }
+    private enum TypeKind { Struct, Handle, NativeTypedef, Enum, ComInterface, ApiType }
 
     private enum SkipReason { Module, NotTypeReference, Delegate, Attribute, Nested }
 
@@ -265,6 +269,7 @@ public sealed class TypeExtractor
         {
             "Enum" => TypeKind.Enum,
             "Struct" or "ValueType" when attrs.IsHandle => TypeKind.Handle,
+            "Struct" or "ValueType" when attrs.IsNativeTypedef => TypeKind.NativeTypedef,
             "Struct" or "ValueType" => TypeKind.Struct,
             _ => null
         };
@@ -398,6 +403,68 @@ public sealed class TypeExtractor
             fqn, string.Join(", ", invalidValues), freeFunc?.Name ?? "null");
 
         return result;
+    }
+
+    // --- NativeTypedef extraction ---
+
+    /// <summary>
+    /// Extract a NativeTypedefType from a TypeDefinition. The typedef's underlying
+    /// type is read from its single field's signature.
+    /// </summary>
+    private NativeTypedefType ExtractNativeTypedef(
+        MetadataReader reader, TypeDefinition typeDef,
+        string assemblyName, string version, TypeAttrs attrs)
+    {
+        string typeName = reader.GetString(typeDef.Name);
+        string typeNamespace = reader.GetString(typeDef.Namespace);
+        string fqn = $"{typeNamespace}.{typeName}";
+
+        TypeIdentity identity = BuildIdentity(fqn, attrs);
+
+        // Decode the single field's signature to get the underlying type
+        FieldDefinitionHandle hField = typeDef.GetFields().Single();
+        FieldDefinition fieldDef = reader.GetFieldDefinition(hField);
+        ResolvedType underlying = fieldDef.DecodeSignature(new SignatureDecoder(reader, _loader, _logger, typeDef), new());
+
+        // Get API documentation
+        ApiDetails? apiDetails = _docs.GetApiDetails(reader, typeDef);
+
+        // Imports for the underlying type, if it references another named type
+        ImportCollection imports = new();
+        foreach (string refFqn in CollectTypeReferenceFqns(underlying))
+            imports.AddType(refFqn);
+
+        string displayName = DeconflictName(typeName);
+
+        NativeTypedefType result = new()
+        {
+            Identity = identity,
+            Name = displayName,
+            CanonicalName = typeName,
+            AssemblyName = assemblyName,
+            MetadataVersion = version,
+            Flags = attrs.Flags,
+            Underlying = underlying,
+            Description = apiDetails?.Description,
+            Remarks = apiDetails?.Remarks,
+            HelpLink = apiDetails?.HelpLink,
+            DeprecationMessage = attrs.DeprecationMessage,
+            SupportedOSPlatform = attrs.SupportedOSPlatform,
+            Imports = imports
+        };
+
+        _logger.LogDebug("Extracted NativeTypedefType {FQN} (underlying={Underlying})",
+            fqn, underlying.DisplayName);
+
+        return result;
+    }
+
+    /// <summary>Collect FQN references from a single ResolvedType (for typedef imports).</summary>
+    private static List<string> CollectTypeReferenceFqns(ResolvedType type)
+    {
+        List<string> refs = [];
+        CollectTypeReferences(type, refs);
+        return refs;
     }
 
     // --- Enum extraction ---

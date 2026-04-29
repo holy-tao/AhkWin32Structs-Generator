@@ -17,6 +17,7 @@ public sealed record TypeAttrs(
     IReadOnlyList<CAInfo> All,
     Architecture? SupportedArchitecture,
     bool IsHandle,
+    bool IsNativeTypedef,
     bool IsFlags,
     bool IsDeprecated,
     string? DeprecationMessage,
@@ -71,6 +72,7 @@ public static class AttributeReader
         string? structSizeFieldName = null;
         string? supportedOSPlatform = null;
         bool hasHandleAttr = false;
+        bool hasNativeTypedefAttr = false;
 
         List<CAInfo> allAttrs = [];
 
@@ -127,6 +129,10 @@ public static class AttributeReader
                 case "InvalidHandleValueAttribute":
                     hasHandleAttr = true;
                     break;
+
+                case "NativeTypedefAttribute":
+                    hasNativeTypedefAttr = true;
+                    break;
             }
         }
 
@@ -138,6 +144,7 @@ public static class AttributeReader
             flags |= MemberFlags.Anonymous;
 
         bool isHandle = fieldCount == 1 && hasHandleAttr;
+        bool isNativeTypedef = fieldCount == 1 && hasNativeTypedefAttr && !hasHandleAttr;
 
         if (logger != null)
         {
@@ -150,7 +157,7 @@ public static class AttributeReader
         }
 
         return new TypeAttrs(
-            allAttrs, supportedArch, isHandle, isFlags, isDeprecated,
+            allAttrs, supportedArch, isHandle, isNativeTypedef, isFlags, isDeprecated,
             deprecationMessage, structSizeFieldName, supportedOSPlatform, flags);
     }
 

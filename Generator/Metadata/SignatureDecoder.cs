@@ -88,9 +88,9 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         bool isString = elementType switch
         {
             PrimitiveType p when p.Name.Equals("Char", StringComparison.OrdinalIgnoreCase) => true,
-            NativeTypedefType n when n.Name is "CHAR" or "WCHAR" or "TCHAR" => true,
+            NativeTypedefRef n when n.Name is "CHAR" or "WCHAR" or "TCHAR" => true,
             // SByte that comes from a CHAR typedef — in Win32Metadata, CHAR is NativeTypedef over SByte,
-            // so by the time we see it here it's already a NativeTypedefType, not raw SByte.
+            // so by the time we see it here it's already a NativeTypedefRef, not raw SByte.
             _ => false
         };
 
@@ -98,7 +98,7 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         {
             StringEncoding encoding = elementType switch
             {
-                NativeTypedefType n when n.Name is "CHAR" => StringEncoding.Ansi,
+                NativeTypedefRef n when n.Name is "CHAR" => StringEncoding.Ansi,
                 _ => StringEncoding.Unicode
             };
             return new StringType(length, encoding);
@@ -188,7 +188,7 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         {
             ResolvedType resolved = DecodeNativeTypedef(reader, td);
             _logger.LogDebug("Decoded NativeTypedef {Name} → {UnderlyingType}",
-                typeName, ((NativeTypedefType)resolved).Underlying.DisplayName);
+                typeName, ((NativeTypedefRef)resolved).Underlying.DisplayName);
             return resolved;
         }
 
@@ -362,7 +362,7 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
     /// <summary>
     /// Decode a NativeTypedef's underlying type by reading its single field.
     /// </summary>
-    private NativeTypedefType DecodeNativeTypedef(MetadataReader reader, TypeDefinition td)
+    private NativeTypedefRef DecodeNativeTypedef(MetadataReader reader, TypeDefinition td)
     {
         string typeName = reader.GetString(td.Name);
         string typeNamespace = reader.GetString(td.Namespace);
@@ -375,6 +375,6 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         var innerDecoder = new SignatureDecoder(reader, _loader, _logger, td);
         ResolvedType underlying = fieldDef.DecodeSignature(innerDecoder, new SignatureGenericContext());
 
-        return new NativeTypedefType(typeName, fqn, underlying);
+        return new NativeTypedefRef(typeName, fqn, underlying);
     }
 }

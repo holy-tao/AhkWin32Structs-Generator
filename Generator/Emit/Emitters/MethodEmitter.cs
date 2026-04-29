@@ -438,7 +438,7 @@ public static class MethodEmitter
     private static string GetParamDllCallType(ResolvedType type) => type switch
     {
         PointerType p => p.TypedDllCallType,
-        NativeTypedefType n => GetParamDllCallType(n.Underlying),
+        NativeTypedefRef n => GetParamDllCallType(n.Underlying),
         _ => type.DllCallType
     };
 

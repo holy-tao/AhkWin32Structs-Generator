@@ -104,7 +104,7 @@ public sealed record PointerType(ResolvedType? Pointee) : ResolvedType
         FunctionPointerType                                                  => "ptr*",
         PrimitiveType p when p.Name.Equals("Void", StringComparison.OrdinalIgnoreCase) => "ptr",
         PrimitiveType p                                                      => p.DllCallType + "*",
-        NativeTypedefType n                                                  => n.DllCallType + "*",
+        NativeTypedefRef n                                                  => n.DllCallType + "*",
         EnumRef e                                                            => e.UnderlyingType.DllCallType + "*",
         HResultType                                                          => "int*",
         _                                                                    => "ptr"
@@ -227,7 +227,7 @@ public sealed record FunctionPointerType(string Name, string Signature) : Resolv
 /// A NativeTypedef — a named alias for another type (e.g., DWORD -> UInt32).
 /// Carries both the alias name and the underlying resolved type.
 /// </summary>
-public sealed record NativeTypedefType(string Name, string FQN, ResolvedType Underlying) : ResolvedType
+public sealed record NativeTypedefRef(string Name, string FQN, ResolvedType Underlying) : ResolvedType
 {
     public override string DisplayName => Name;
     public override string DllCallType => Underlying.DllCallType;

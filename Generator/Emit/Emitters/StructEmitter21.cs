@@ -145,7 +145,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
             case EnumRef enumRef:
                 EmitNumericMember(w, field, offset, enumRef.UnderlyingType.DllCallType);
                 break;
-            case NativeTypedefType nativeTypedef:
+            case NativeTypedefRef nativeTypedef:
                 EmitNumericMember(w, field, offset, nativeTypedef.Underlying.DllCallType);
                 break;
             default:
@@ -227,7 +227,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
                     ? $"{parentClassName}.{structRef.Name}"
                     : structRef.Name;
                 break;
-            case NativeTypedefType nativeTypedef:
+            case NativeTypedefRef nativeTypedef:
                 ahkElementType = "Primitive";
                 dllCallType = nativeTypedef.Underlying.DllCallType;
                 break;
