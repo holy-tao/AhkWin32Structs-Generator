@@ -157,7 +157,7 @@ public class Program
             new ComInterfaceEmitter(registry, ahkVersion)
         ];
         if (ahkVersion is AhkVersion.v21)
-            emitters = [.. emitters, new ApiConstantsEmitter21()];
+            emitters = [.. emitters, new ApiConstantsEmitter21(), new NativeTypedefEmitter21()];
         var pipeline = new TypeEmissionPipeline(emitters, loggerFactory.CreateLogger<TypeEmissionPipeline>(), maxParallelism);
         var (emitted, _, errors) = pipeline.EmitAll(registry, outputPath,
             namespaceFilter.Length > 0 ? namespaceFilter : null);

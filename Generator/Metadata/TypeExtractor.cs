@@ -1022,6 +1022,13 @@ public sealed class TypeExtractor
             case EnumRef e:
                 refs.Add(e.FQN);
                 break;
+            case NativeTypedefRef n:
+                refs.Add(n.FQN);
+                CollectTypeReferences(n.Underlying, refs);
+                break;
+            case HResultType or NtStatusType:
+                refs.Add($"Windows.Win32.Foundation.{type.DisplayName}");
+                break;
             case PointerType p when p.Pointee != null:
                 CollectTypeReferences(p.Pointee, refs);
                 break;

@@ -32,7 +32,9 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
     {
         w.Require("AutoHotkey v2.1-alpha.26+ 64-bit");
 
-        EmitImports(w, structType);
+        var extraImports = new HashSet<string>();
+        CollectExtraImports(structType, extraImports);
+        EmitImports(w, structType, extraImports);
 
         w.BlankLine();
 
@@ -166,9 +168,10 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
     {
         return field.Type switch
         {
-            // String fields (CHAR[N]/WCHAR[N]) - IR collapses these to StringType,
-            // re-expand to typedef-element arrays so the named CHAR/WCHAR survives.
-            StringType s => $"{(s.Encoding == StringEncoding.Ansi ? "CHAR" : "WCHAR")}[{s.Length}]",
+            // String fields - IR collapses fixed-size character arrays into StringType.
+            // ANSI uses the CHAR NativeTypedef from Foundation; Unicode strings come from
+            // CLR char[] which has no metadata typedef, so render as raw UInt16 elements.
+            StringType s => $"{(s.Encoding == StringEncoding.Ansi ? "CHAR" : "UInt16")}[{s.Length}]",
 
             // Array of nested-defined struct: qualify the element name
             ArrayType { ElementType: StructRef es } a when field.IsNested
@@ -214,12 +217,41 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
         }
     }
 
-    internal void EmitImports(AhkWriter w, Win32Type type)
+    /// <summary>
+    /// Collect extra import FQNs needed by typed-property type expressions but
+    /// not present in <see cref="Win32Type.Imports"/> â€” currently just CHAR/WCHAR
+    /// for <see cref="StringType"/> fields, which the IR collapses away from arrays.
+    /// </summary>
+    private static void CollectExtraImports(StructType structType, HashSet<string> extras)
     {
+        foreach (FieldMember field in structType.Members)
+        {
+            // Only ANSI StringType needs an import (the CHAR NativeTypedef from Foundation).
+            // Unicode StringType renders as raw UInt16[N] which needs no import.
+            if (field.Type is StringType { Encoding: StringEncoding.Ansi })
+                extras.Add("Windows.Win32.Foundation.CHAR");
+
+            if (field.EmbeddedStruct is not null)
+                CollectExtraImports(field.EmbeddedStruct, extras);
+        }
+    }
+
+    internal void EmitImports(AhkWriter w, Win32Type type, HashSet<string> extraImports)
+    {
+        var seen = new HashSet<string>();
+
         // Restrict to types available in the registry to filter out nested types
         foreach (string fqn in type.Imports.GetTypes()
             .Where(fqn => _registry.Contains(fqn) && fqn != type.FQN))
         {
+            if (!seen.Add(fqn)) continue;
+            string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
+            w.Import(path, [ImportResolver.GetImportName(fqn)]);
+        }
+
+        foreach (string fqn in extraImports)
+        {
+            if (fqn == type.FQN || !_registry.Contains(fqn) || !seen.Add(fqn)) continue;
             string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
             w.Import(path, [ImportResolver.GetImportName(fqn)]);
         }
