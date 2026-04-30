@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit;
 
+using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
 using AhkWin32.Generator.Model.Types;
@@ -85,7 +86,7 @@ public static class DocCommentWriter
     /// Write a field-level JSDoc comment.
     /// Port of AhkStructMember.MaybeAppendDocumentation.
     /// </summary>
-    public static void WriteFieldDoc(AhkWriter w, FieldMember field)
+    public static void WriteFieldDoc(AhkWriter w, FieldMember field, AhkVersion version = AhkVersion.v20)
     {
         w.Line("/**");
 
@@ -107,10 +108,15 @@ public static class DocCommentWriter
             w.Line(deprecatedTag);
         }
 
-        string typeName = field.EmbeddedStruct is not null
-            ? field.EmbeddedStruct.Name
-            : field.Type.DisplayName;
-        w.Line($" * @type {{{typeName}}}");
+        // No type doc for v2.1 struct fields since they carry type info in their
+        // type specifiers
+        if (version is AhkVersion.v20)
+        {
+            string typeName = field.EmbeddedStruct is not null
+                ? field.EmbeddedStruct.Name
+                : field.Type.DisplayName;
+            w.Line($" * @type {{{typeName}}}");
+        }
         w.Line(" */");
     }
 

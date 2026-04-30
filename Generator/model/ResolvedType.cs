@@ -111,10 +111,19 @@ public sealed record PointerType(ResolvedType? Pointee) : ResolvedType
     };
 
     /// <summary>
-    /// Always throw - these are used for function calls but can't be struct members.
+    /// AHK v2.1 type specifier. For pointers to named types (struct/handle/COM/typedef/enum)
+    /// emit the typed `Pointee.Ptr` form so DllCall and field reads honour the pointee type;
+    /// for void/opaque/function/primitive pointers fall back to the generic IntPtr.
     /// </summary>
-    public override string TypeSpecifier => throw new InvalidOperationException(
-        "PointerTypes cannot be embedded in structures and thus do not have type specifiers");
+    public override string TypeSpecifier => Pointee switch
+    {
+        StructRef s         => $"{s.Name}.Ptr",
+        HandleRef h         => $"{h.Name}.Ptr",
+        ComRef c            => $"{c.Name}.Ptr",
+        NativeTypedefRef n  => $"{n.Name}.Ptr",
+        EnumRef e           => $"{e.Name}.Ptr",
+        _                   => "IntPtr"
+    };
 
     public override int Width => 8;
 }

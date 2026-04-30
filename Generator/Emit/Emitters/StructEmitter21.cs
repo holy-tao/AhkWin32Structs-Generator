@@ -1,13 +1,15 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
 using AhkWin32.Generator.Model.Types;
 
 /// <summary>
-/// Emits StructType as a complete .ahk file.
-/// Port of legacy AhkStruct.ToAhk() and AhkStructMember.ToAhk().
-/// Body emission methods are internal static so HandleEmitter can reuse them.
+/// Emits a StructType as a v2.1 native `struct` block. Fields are typed properties
+/// (`name : TypeSpecifier`) when their metadata offset matches natural layout; fields
+/// whose offsets diverge (anonymous-union overlaps, padding gaps) are emitted as
+/// DefineProp calls on the prototype with explicit `offset:`.
 /// </summary>
 public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 {
@@ -18,7 +20,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
     public EmitResult Emit(Win32Type type, string outputRoot)
     {
         var structType = (StructType)type;
-        var w = new AhkWriter();
+        var w = new AhkWriter(AhkVersion.v21);
 
         EmitStruct(w, structType);
 
@@ -28,9 +30,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 
     private void EmitStruct(AhkWriter w, StructType structType)
     {
-        string pathToBase = ImportResolver.GetPathToBase(structType.Namespace);
-        w.Require("AutoHotkey v2.1-alpha.24+ 64-bit");
-        w.Import($"{pathToBase}Win32Struct.ahk", ["Win32Struct"]);
+        w.Require("AutoHotkey v2.1-alpha.26+ 64-bit");
 
         EmitImports(w, structType);
 
@@ -38,24 +38,31 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 
         DocCommentWriter.WriteTypeDoc(w, structType);
 
-        using (w.Class(structType.Name, "Win32Struct"))
+        var deferred = new List<DeferredProp>();
+        using (w.Struct(structType.Name))
         {
-            w.StaticField("sizeof", structType.Size.ToString());
+            w.Line($"#StructPack {structType.PackingSize}");
             w.BlankLine();
-            w.StaticField("packingSize", structType.PackingSize.ToString());
+            EmitBody(w, structType, structType.Name, deferred);
+        }
 
-            EmitBody(w, structType, 0, [], structType.Name);
+        w.BlankLine();
+
+        // DefineProp calls for fields whose offsets diverge from natural layout
+        foreach (DeferredProp d in deferred)
+        {
+            w.Line($"DefineProp({d.QualifiedClass}.Prototype, '{d.Name}', {{type: {d.TypeExpr}, offset: {d.Offset}}})");
         }
     }
 
     /// <summary>
-    /// Emit the body of a struct: nested class definitions, member properties, extensions, __New.
-    /// Shared by StructEmitter and HandleEmitter.
+    /// Emit the body of a struct: nested struct definitions, typed property fields,
+    /// bit accessors, struct-size init, and extension blocks.
     /// </summary>
-    internal static void EmitBody(AhkWriter w, StructType structType, int embeddingOffset,
-        List<EmittedField> emittedMembers, string parentClassName)
+    internal void EmitBody(AhkWriter w, StructType structType, string parentClassName,
+        List<DeferredProp> deferred)
     {
-        // 1. Nested class definitions (non-anonymous, non-Reserved named nested types)
+        // 1. Nested non-anonymous struct definitions (referenced by member fields below)
         var nestedClassDefs = structType.Members
             .Where(m => m.IsNested && !m.IsAnonymous && m.Name is not "Reserved")
             .Where(m => m.EmbeddedStruct is not null)
@@ -65,111 +72,129 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
         foreach (StructType nested in nestedClassDefs)
         {
             w.BlankLine();
-            using (w.Class(nested.Name, "Win32Struct"))
+            using (w.Struct(nested.Name))
             {
-                w.StaticField("sizeof", nested.Size.ToString());
-                w.StaticField("packingSize", nested.PackingSize.ToString());
-
-                EmitBody(w, nested, 0, [], $"{parentClassName}.{nested.Name}");
+                EmitBody(w, nested, $"{parentClassName}.{nested.Name}", deferred);
             }
         }
 
-        // 2. Members
-        foreach (FieldMember field in structType.Members)
-        {
-            if (field.IsReserved || field.IsAlignment)
-                continue;
+        // 2. Field properties - track the natural-layout cursor to detect overlaps.
+        int cursor = 0;
+        var emitted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            // Flatten anonymous unions
-            if (field.IsNested && field.IsAnonymous)
-            {
-                if (field.EmbeddedStruct is null)
-                    throw new InvalidOperationException(
-                        $"{structType.Name}.{field.Name} is anonymous but has no EmbeddedStruct");
-
-                EmitBody(w, field.EmbeddedStruct, field.Offset + embeddingOffset,
-                    emittedMembers, parentClassName);
-                continue;
-            }
-
-            // Skip duplicates
-            if (IsDuplicate(field, emittedMembers))
-                continue;
-
-            // Name deconfliction
-            int suffix = 0;
-            while (emittedMembers.Any(e =>
-                e.Name.Equals(field.Name, StringComparison.OrdinalIgnoreCase)))
-            {
-                field.Name += ++suffix;
-            }
-
-            w.BlankLine();
-            EmitMember(w, field, field.Offset + embeddingOffset, parentClassName);
-            emittedMembers.Add(new EmittedField(field.Name, field.Offset, field.Bitfields, field.IsBitField));
-        }
+        EmitFields(w, structType, structType.Members, parentClassName, deferred, ref cursor, emitted, embeddingOffset: 0);
 
         // 3. Extensions
         EmitExtensions(w, structType);
 
-        // 4. __New for StructSizeField
-        if (structType.StructSizeFieldName is not null)
-        {
-            w.BlankLine();
-            w.Line($"__New(ptrOrObj := 0, parent := \"\"){{");
-            w.Line($"    super.__New(ptrOrObj, parent)");
-            w.Line($"    this.{structType.StructSizeFieldName} := {structType.Size}");
-            w.Line("}");
-        }
+        // Struct-size init is handled by the typed-property initializer (`:= this.Size`)
+        // emitted at the size field above; no separate __New() needed.
     }
 
-    private static void EmitMember(AhkWriter w, FieldMember field, int offset, string parentClassName)
+    /// <summary>
+    /// Walk the field list emitting typed properties; recurse into anonymous nested
+    /// structs/unions to flatten them into the parent's namespace.
+    /// </summary>
+    private void EmitFields(AhkWriter w, StructType owner, IReadOnlyList<FieldMember> fields,
+        string parentClassName, List<DeferredProp> deferred,
+        ref int cursor, HashSet<string> emitted, int embeddingOffset)
     {
-        switch (field.Type)
+        foreach (FieldMember field in fields)
         {
-            case StructRef when field.EmbeddedStruct is not null:
-                EmitEmbeddedTypeMember(w, field, offset,
-                    field.IsNested ? $"{parentClassName}.{field.EmbeddedStruct.Name}" : field.EmbeddedStruct.Name);
-                break;
-            case HandleRef handleRef:
-                // Handle-typed fields use lazy-init pattern (handles are struct types in metadata).
-                // Handles are always top-level types, so no parent qualification needed.
-                EmitEmbeddedTypeMember(w, field, offset, handleRef.Name);
-                break;
-            case ArrayType:
-                EmitArrayMember(w, field, offset, parentClassName);
-                break;
-            case StringType:
-                EmitStringMember(w, field, offset);
-                break;
-            case EnumRef enumRef:
-                EmitNumericMember(w, field, offset, enumRef.UnderlyingType.DllCallType);
-                break;
-            case NativeTypedefRef nativeTypedef:
-                EmitNumericMember(w, field, offset, nativeTypedef.Underlying.DllCallType);
-                break;
-            default:
-                // PrimitiveType, PointerType, ComRef, HResultType, NtStatusType, FunctionPointerType
-                EmitNumericMember(w, field, offset, field.Type.DllCallType);
-                break;
+            int absOffset = field.Offset + embeddingOffset;
+
+            // Anonymous nested struct/union - flatten into parent
+            if (field.IsNested && field.IsAnonymous)
+            {
+                if (field.EmbeddedStruct is null)
+                    throw new InvalidOperationException(
+                        $"{owner.Name}.{field.Name} is anonymous but has no EmbeddedStruct");
+
+                EmitFields(w, owner, field.EmbeddedStruct.Members, parentClassName, deferred,
+                    ref cursor, emitted, absOffset);
+                continue;
+            }
+
+            // Reserved / alignment fields participate in declaration-order layout under
+            // v2.1 and so MUST be emitted; auto-layout + #StructPack handles their offsets.
+
+            // Name deconfliction against already-emitted fields
+            string name = field.Name;
+            int suffix = 0;
+            while (emitted.Contains(name))
+                name = field.Name + ++suffix;
+            field.Name = name;
+
+            string typeExpr = GetTypeExpression(field, parentClassName);
+
+            // Forward fields (offset >= cursor) become typed properties in the body;
+            // overlap fields (offset < cursor) become DefineProp calls on the prototype.
+            // Auto-layout + #StructPack handles natural alignment padding, so a gap
+            // between cursor and absOffset is fine.
+            if (absOffset >= cursor)
+            {
+                DocCommentWriter.WriteFieldDoc(w, field, AhkVersion.v21);
+                if (owner.StructSizeFieldName == name)
+                {
+                    w.Line($"{name} : {typeExpr} := this.Size");
+                }
+                else
+                {
+                    w.Line($"{name} : {typeExpr}");
+                }
+
+                cursor = absOffset + field.Size;
+                w.BlankLine();
+            }
+            else
+            {
+                deferred.Add(new DeferredProp(parentClassName, name, typeExpr, absOffset));
+            }
+
+            emitted.Add(name);
+
+            // Bitfield accessors are dynamic properties regardless of how the backing was emitted
+            if (field.IsBitField)
+                EmitBitfieldAccessors(w, field);
         }
     }
 
-    private static void EmitNumericMember(AhkWriter w, FieldMember field, int offset, string dllCallType)
+    /// <summary>
+    /// Build the AHK type expression for a field's typed-property declaration.
+    /// </summary>
+    private string GetTypeExpression(FieldMember field, string parentClassName)
     {
-        DocCommentWriter.WriteFieldDoc(w, field);
-
-        using (w.InstanceProperty(field.Name))
+        return field.Type switch
         {
-            w.Line($"get => NumGet(this, {offset}, \"{dllCallType}\")");
-            w.Line($"set => NumPut(\"{dllCallType}\", value, this, {offset})");
-        }
+            // String fields (CHAR[N]/WCHAR[N]) - IR collapses these to StringType,
+            // re-expand to typedef-element arrays so the named CHAR/WCHAR survives.
+            StringType s => $"{(s.Encoding == StringEncoding.Ansi ? "CHAR" : "WCHAR")}[{s.Length}]",
 
-        if (field.IsBitField)
-            EmitBitfieldMembers(w, field);
+            // Array of nested-defined struct: qualify the element name
+            ArrayType { ElementType: StructRef es } a when field.IsNested
+                => $"{parentClassName}.{es.Name}[{a.Length}]",
+
+            // Bitfields - backing field uses a primitive type derived from its size
+            _ when field.IsBitField => BitfieldBackingTypeSpecifier(field.Size),
+
+            // Nested struct ref defined inline in the parent: qualify the name
+            StructRef sr when field.IsNested => $"{parentClassName}.{sr.Name}",
+
+            // Anything else: TypeSpecifier already produces the right token
+            _ => field.Type.TypeSpecifier
+        };
     }
 
-    private static void EmitBitfieldMembers(AhkWriter w, FieldMember field)
+    private static string BitfieldBackingTypeSpecifier(int sizeBytes) => sizeBytes switch
+    {
+        1 => "Int8",
+        2 => "Int16",
+        4 => "Int32",
+        8 => "Int64",
+        _ => throw new InvalidOperationException($"Unsupported bitfield backing size: {sizeBytes} bytes")
+    };
+
+    private static void EmitBitfieldAccessors(AhkWriter w, FieldMember field)
     {
         foreach (BitfieldMember bf in field.Bitfields)
         {
@@ -177,10 +202,6 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
                 continue;
 
             w.BlankLine();
-
-            // Look up description from field's embedded docs if available
-            // Bitfield members don't have individual descriptions in FieldMember,
-            // so we pass null for description
             DocCommentWriter.WriteBitfieldDoc(w, field, bf, null);
 
             long mask = (1L << (int)bf.Length) - 1;
@@ -190,82 +211,6 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
                 w.Line($"get => (this.{field.Name} >> {bf.Offset}) & 0x{mask:X}");
                 w.Line($"set => this.{field.Name} := ((value & 0x{mask:X}) << {bf.Offset}) | (this.{field.Name} & ~(0x{mask:X} << {bf.Offset}))");
             }
-        }
-    }
-
-    private static void EmitEmbeddedTypeMember(AhkWriter w, FieldMember field, int offset,
-        string qualifiedName)
-    {
-        DocCommentWriter.WriteFieldDoc(w, field);
-
-        using (w.InstanceProperty(field.Name))
-        {
-            using (w.GetBlock())
-            {
-                w.Line($"if(!this.HasProp(\"__{field.Name}\"))");
-                w.Line($"    this.__{field.Name} := {qualifiedName}({offset}, this)");
-                w.Line($"return this.__{field.Name}");
-            }
-        }
-    }
-
-    private static void EmitArrayMember(AhkWriter w, FieldMember field, int offset,
-        string parentClassName)
-    {
-        var arrayType = (ArrayType)field.Type;
-        ResolvedType elementType = arrayType.ElementType;
-
-        // Determine AHK element type and DllCall type for Win32FixedArray
-        string ahkElementType;
-        string dllCallType;
-
-        switch (elementType)
-        {
-            case StructRef structRef:
-                dllCallType = "";
-                ahkElementType = field.IsNested
-                    ? $"{parentClassName}.{structRef.Name}"
-                    : structRef.Name;
-                break;
-            case NativeTypedefRef nativeTypedef:
-                ahkElementType = "Primitive";
-                dllCallType = nativeTypedef.Underlying.DllCallType;
-                break;
-            case EnumRef enumRef:
-                ahkElementType = "Primitive";
-                dllCallType = enumRef.UnderlyingType.DllCallType;
-                break;
-            default:
-                // PrimitiveType, PointerType, ComRef, HandleRef, HResultType, NtStatusType, FunctionPointerType
-                ahkElementType = "Primitive";
-                dllCallType = elementType.DllCallType;
-                break;
-        }
-
-        DocCommentWriter.WriteFieldDoc(w, field);
-
-        using (w.InstanceProperty(field.Name))
-        {
-            using (w.GetBlock())
-            {
-                w.Line($"if(!this.HasProp(\"__{field.Name}ProxyArray\"))");
-                w.Line($"    this.__{field.Name}ProxyArray := Win32FixedArray(this.ptr + {offset}, {arrayType.Length}, {ahkElementType}, \"{dllCallType}\")");
-                w.Line($"return this.__{field.Name}ProxyArray");
-            }
-        }
-    }
-
-    private static void EmitStringMember(AhkWriter w, FieldMember field, int offset)
-    {
-        var stringType = (StringType)field.Type;
-        string encoding = stringType.Encoding == StringEncoding.Ansi ? "UTF-8" : "UTF-16";
-
-        DocCommentWriter.WriteFieldDoc(w, field);
-
-        using (w.InstanceProperty(field.Name))
-        {
-            w.Line($"get => StrGet(this.ptr + {offset}, {stringType.Length - 1}, \"{encoding}\")");
-            w.Line($"set => StrPut(value, this.ptr + {offset}, {stringType.Length - 1}, \"{encoding}\")");
         }
     }
 
@@ -292,7 +237,6 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 
         foreach (var ext in type.Extensions)
         {
-            // Replace tokens
             string code = ext.Code.Replace("$Class", type.Name)
                 .Replace("$Namespace", type.Namespace)
                 .Replace("$Arch", type.Arch.ToString());
@@ -308,32 +252,9 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
         }
     }
 
-    // --- Duplicate detection ---
-
-    private static bool IsDuplicate(FieldMember field, List<EmittedField> emitted)
-    {
-        foreach (var existing in emitted)
-        {
-            if (field.IsBitField && existing.IsBitField)
-            {
-                // Bitfield fields are duplicates if they back the same bitfield list
-                if (field.Bitfields.SequenceEqual(existing.Bitfields))
-                    return true;
-            }
-            else
-            {
-                // Non-bitfield fields are duplicates if same offset + same name
-                if (field.Offset == existing.Offset &&
-                    field.Name.Equals(existing.Name, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-        }
-        return false;
-    }
-
     /// <summary>
-    /// Tracks emitted fields for duplicate detection and name deconfliction.
+    /// A typed-property field whose metadata offset doesn't match natural layout
+    /// and must be emitted as a DefineProp call after the struct body.
     /// </summary>
-    internal record EmittedField(
-        string Name, int Offset, IReadOnlyList<BitfieldMember> Bitfields, bool IsBitField);
+    internal record DeferredProp(string QualifiedClass, string Name, string TypeExpr, int Offset);
 }

@@ -104,6 +104,26 @@ public sealed class AhkWriter(AhkVersion version = AhkVersion.v20)
     }
 
     /// <summary>
+    /// Open a struct block (v2.1 native struct). Returns an IDisposable that writes
+    /// the closing brace on Dispose. Format: "struct NAME {" or "struct NAME extends BASE {".
+    /// `struct` defaults to extending Struct, so an explicit extends is only needed when
+    /// inheriting from another struct subclass.
+    /// </summary>
+    public IndentScope Struct(string name, string? extends = null)
+    {
+        string header = extends != null
+            ? $"struct {name} extends {extends}"
+            : $"struct {name}";
+
+        if (version is AhkVersion.v21 && _indentLevel == 0)
+            header = $"export default {header}";
+
+        _sb.AppendLine($"{Indent}{header} {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
     /// Open a top-level function.
     /// </summary>
     public IndentScope Function(string name, string args = "")
