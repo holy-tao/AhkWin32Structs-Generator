@@ -1,11 +1,18 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using AhkWin32.Generator.Metadata;
+using AhkWin32.Generator.Model.Members;
 using AhkWin32.Generator.Model.Types;
+using YamlDotNet.Core.Tokens;
+
 
 /// <summary>
-/// Emits v2.1 HandleType as a complete .ahk file.
-/// Port of legacy AhkHandle.ToAhk().
-/// Delegates body emission to StructEmitter shared methods.
+/// Emits a HandleType as a v2.1 native `struct` block. Handles are emitted as a
+/// single-field struct with `__value` get/set so the instance is transparently
+/// usable as the underlying integer/pointer in DllCall and assignment.
+///
+/// `Free()` is emitted from <see cref="HandleType.FreeFunc"/> metadata but is NOT
+/// wired into `__delete` - auto-cleanup is the caller's responsibility for now.
 /// </summary>
 public sealed class HandleEmitter21 : ITypeEmitter
 {
@@ -14,7 +21,7 @@ public sealed class HandleEmitter21 : ITypeEmitter
     public EmitResult Emit(Win32Type type, string outputRoot)
     {
         var handleType = (HandleType)type;
-        var w = new AhkWriter();
+        var w = new AhkWriter(AhkVersion.v21);
 
         EmitHandle(w, handleType);
 
@@ -24,27 +31,28 @@ public sealed class HandleEmitter21 : ITypeEmitter
 
     private static void EmitHandle(AhkWriter w, HandleType handleType)
     {
-        string pathToBase = ImportResolver.GetPathToBase(handleType.Namespace);
-
-        // Headers — Win32Handle.ahk comes after imports (matching legacy ordering)
-        w.Require("AutoHotkey v2.1-alpha.24+ 64-bit");
-        w.Import($"{pathToBase}Win32Struct.ahk", ["Win32Struct"]);
+        w.Require("AutoHotkey v2.1-alpha.26+ 64-bit");
 
         EmitImports(w, handleType);
-
-        w.Import($"{pathToBase}Win32Handle.ahk", ["Win32Handle"]);
 
         w.BlankLine();
 
         DocCommentWriter.WriteTypeDoc(w, handleType);
 
-        using (w.Class(handleType.Name, "Win32Handle"))
-        {
-            w.StaticField("sizeof", handleType.Size.ToString());
-            w.BlankLine();
-            w.StaticField("packingSize", handleType.PackingSize.ToString());
+        FieldMember valueField = handleType.Members.Single();
+        long firstInvalid = handleType.InvalidValues.FirstOrDefault(0);
 
-            // Invalid values
+        using (w.Struct(handleType.Name))
+        {
+            w.Line($"{valueField.Name} : {valueField.Type.TypeSpecifier}");
+
+            w.BlankLine();
+            using (w.InstanceProperty("__value"))
+            {
+                w.Line($"get => this.{valueField.Name}");
+                w.Line($"set => this.{valueField.Name} := value");
+            }
+
             w.BlankLine();
             w.Line("/**");
             w.Line(" * The list of values which indicate that the handle is invalid");
@@ -52,19 +60,22 @@ public sealed class HandleEmitter21 : ITypeEmitter
             w.Line(" */");
             w.StaticField("invalidValues", $"[{string.Join(", ", handleType.InvalidValues)}]");
 
-            // Body (member properties, extensions, __New)
-            StructEmitter.EmitBody(w, handleType, 0, [], handleType.Name);
+            w.BlankLine();
+            using (w.InstanceMethod("__New", $"{valueField.Name} := {firstInvalid}"))
+            {
+                w.Line($"this.{valueField.Name} := {valueField.Name}");
+            }
 
-            // Free destructor
-            if (handleType.FreeFunc is not null && handleType.Members.Count > 0)
+            // Extension code blocks (e.g. helper methods from metadata/extensions/*.yml)
+            StructEmitter21.EmitExtensions(w, handleType);
+
+            // Free() is emitted but NOT auto-invoked via __delete.
+            if (handleType.FreeFunc is not null)
             {
                 w.BlankLine();
-                string firstMemberName = handleType.Members[0].Name;
-                long firstInvalidValue = handleType.InvalidValues.FirstOrDefault(0);
-
-                w.Line($"Free(){{");
-                w.Line($"    {handleType.FreeFunc.Name}(this.{firstMemberName})");
-                w.Line($"    this.{firstMemberName} := {firstInvalidValue}");
+                w.Line("Free() {");
+                w.Line($"    {handleType.FreeFunc.Name}(this.{valueField.Name})");
+                w.Line($"    this.{valueField.Name} := {firstInvalid}");
                 w.Line("}");
             }
         }
