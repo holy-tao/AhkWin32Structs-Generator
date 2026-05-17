@@ -31,7 +31,7 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
         // Directives
         string pathToBase = ImportResolver.GetPathToBase(apiType.Namespace);
         w.Require("AutoHotkey >= v2.1-alpha.24+ 64-bit");
-        w.Import($"{pathToBase}Win32Handle.ahk", ["Win32Handle"]);
+        w.BlankLine();
 
         // Referenced type imports needed by methods (and any extension imports not consumed
         // exclusively by constants).

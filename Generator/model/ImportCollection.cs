@@ -15,6 +15,8 @@ public sealed class ImportCollection
 
     public bool AddType(string fqn) => _types.Add(fqn);
 
+    public int AddTypes(IEnumerable<string> fqns) => fqns.Count(_types.Add);
+
     public bool HasType(string fqn) => _types.Contains(fqn);
 
     public IEnumerable<string> GetTypes() => _types;
@@ -24,6 +26,9 @@ public sealed class ImportCollection
         var fns = _functions.GetOrAdd(apisFqn, _ => []);
         return fns.Add(fnName);
     }
+
+    public int AddFunctions(string apisFqn, IEnumerable<string> fns) =>
+        fns.Count(fn => AddFunction(apisFqn, fn));
 
     public IEnumerable<string> GetFunctionNamespaces() => _functions.Keys;
 

@@ -70,6 +70,13 @@ public class MethodMember
     }
 
     /// <summary>
+    /// Returns an IEnumerable of all the method's input parameters
+    /// </summary>
+    public IEnumerable<ParameterMember> InputParameters => Parameters
+        .Skip(1)    // Skip the return type
+        .Where(p => !p.IsReserved && p != OutputParameter);
+
+    /// <summary>
     /// All parameters, including the return value at index 0.
     /// Parameters[0] is always the return type (may be Void).
     /// Parameters[1..] are the actual function parameters.

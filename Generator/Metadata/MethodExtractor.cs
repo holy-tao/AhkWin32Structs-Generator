@@ -5,6 +5,7 @@ using System.Reflection.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
 using Microsoft.Extensions.Logging;
+using Microsoft.VisualBasic;
 using Microsoft.Windows.SDK.Win32Docs;
 
 /// <summary>
@@ -261,32 +262,19 @@ public sealed class MethodExtractor
         if (entryPoint.StartsWith('#'))
         {
             imports.AddFunction("Windows.Win32.Foundation.Apis", "FreeLibrary");
-            imports.AddFunction("Windows.Win32.System.LibraryLoader.Apis", "LoadLibraryW");
-            imports.AddFunction("Windows.Win32.System.LibraryLoader.Apis", "GetProcAddress");
+            imports.AddFunctions("Windows.Win32.System.LibraryLoader.Apis", 
+                ["LoadLibraryW", "GetProcAddress"]);
         }
 
-        // Import handle if we return a handle
-        if (parameters.Count > 0 && parameters[0].Type is HandleRef hr)
+        // Import every named type referenced anywhere in the signature (return + params).
+        // v2.1's DllCall uses class refs (HWND, RECT.Ptr, BOOL) as type tokens, so the
+        // declaring Apis file must import them; v2.0 string-typed DllCall doesn't need
+        // these but extra #Includes are harmless.
+        foreach (ParameterMember p in parameters)
         {
-            imports.AddType(hr.FQN);
-        }
-
-        // Import NTSTATUS if we return NTStatus
-        if (parameters.Count > 0 && parameters[0].Type is NtStatusType)
-        {
-            imports.AddType("Windows.Win32.Foundation.NTSTATUS");
-        }
-
-        // Import output parameter pointee type
-        if (outputParameter != null)
-        {
-            ResolvedType? pointee = outputParameter.Pointee;
-            if (pointee is StructRef sr)
-                imports.AddType(sr.FQN);
-            else if (pointee is ComRef cr)
-                imports.AddType(cr.FQN);
-            else if (pointee is HandleRef ohr)
-                imports.AddType(ohr.FQN);
+            List<string> fqns = [];
+            TypeExtractor.CollectTypeReferences(p.Type, fqns);
+            imports.AddTypes(fqns);
         }
 
         // Import [FreeWith] parameter functions

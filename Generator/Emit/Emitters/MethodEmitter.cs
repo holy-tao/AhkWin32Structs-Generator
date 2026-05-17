@@ -51,7 +51,7 @@ public static class MethodEmitter
         }
 
         EmitReservedParams(w, method);
-        EmitParameterConversions(w, method, false);
+        EmitParameterConversions(w, method, false, unqualifyApis);
         EmitParameterMarshalling(w, method);
 
         if (method.SetsLastError)
@@ -68,7 +68,7 @@ public static class MethodEmitter
         if (method.IsVariadic)
             EmitVariadicMarshalling(w, method);
 
-        w.Line(BuildDllCallExpression(method));
+        w.Line(BuildDllCallExpression(method, unqualifyApis));
 
         if (method.IsOrdinal)
         {
@@ -78,7 +78,7 @@ public static class MethodEmitter
         }
 
         EmitErrorCheck(w, method, unqualifyApis);
-        EmitReturnStatement(w, method, registry);
+        EmitReturnStatement(w, method, registry, unqualifyApis);
     }
 
     // --- Argument list ---
@@ -114,12 +114,11 @@ public static class MethodEmitter
 
     // --- Parameter conversions (String→StrPtr, Handle→NumGet) ---
 
-    private static void EmitParameterConversions(AhkWriter w, MethodMember method, bool isComMethod)
+    private static void EmitParameterConversions(AhkWriter w, MethodMember method, bool isComMethod, bool unqualifyApis = false)
     {
         int startLen = w.Length;
 
-        foreach (var param in method.Parameters.Skip(1)
-            .Where(p => !p.IsReserved && p != method.OutputParameter))
+        foreach (var param in method.InputParameters)
         {
             if (isComMethod && param.TypeDefName is "BSTR")
             {
@@ -129,10 +128,12 @@ public static class MethodEmitter
             }
             else if (param.TypeDefName is "PSTR" or "PWSTR")
             {
+                // DllImport methods allow AHK strings or string pointers
                 w.Line($"{param.Name} := {param.Name} is String ? StrPtr({param.Name}) : {param.Name}");
             }
-            else if (param.IsHandle)
+            else if (param.IsHandle && !unqualifyApis)
             {
+                // v2.0: manual handle dereference.
                 w.Line($"{param.Name} := {param.Name} is Win32Handle ? NumGet({param.Name}, \"ptr\") : {param.Name}");
             }
         }
@@ -147,8 +148,7 @@ public static class MethodEmitter
     {
         int startLen = w.Length;
 
-        foreach (var param in method.Parameters.Skip(1)
-            .Where(p => !p.IsReserved && p != method.OutputParameter && p.IsPtrToPrimitive))
+        foreach (var param in method.InputParameters.Where(p => p.IsPtrToPrimitive))
         {
             string typedDllCallType = ((PointerType)param.Type).TypedDllCallType;
             w.Line($"{param.Name}Marshal := {param.Name} is VarRef ? \"{typedDllCallType}\" : \"ptr\"");
@@ -231,7 +231,7 @@ public static class MethodEmitter
         return sb.ToString().Trim();
     }
 
-    private static string BuildDllCallExpression(MethodMember method)
+    private static string BuildDllCallExpression(MethodMember method, bool unqualifyApis = false)
     {
         var sb = new System.Text.StringBuilder();
 
@@ -249,7 +249,7 @@ public static class MethodEmitter
         if (method.Parameters.Count > 1)
         {
             sb.Append(", ");
-            sb.Append(BuildDllCallArguments(method));
+            sb.Append(BuildDllCallArguments(method, unqualifyApis));
         }
 
         // Variadic: append varArgs* (convention string is already in the array)
@@ -271,7 +271,7 @@ public static class MethodEmitter
         return sb.ToString();
     }
 
-    private static string BuildDllCallArguments(MethodMember method)
+    private static string BuildDllCallArguments(MethodMember method, bool unqualifyApis = false)
     {
         var sb = new System.Text.StringBuilder();
 
@@ -279,16 +279,23 @@ public static class MethodEmitter
         {
             var param = method.Parameters[i];
 
-            // Type string
-            bool isString = param.TypeDefName is "PWSTR" or "PSTR";
-            string dllCallType = isString ? "ptr" : GetParamDllCallType(param.Type);
-
             bool useMarshalVar = param.IsPtrToPrimitive
                 && !param.IsReserved
                 && param != method.OutputParameter;
-            string marshalAs = useMarshalVar
-                ? $"{param.Name}Marshal"
-                : $"\"{dllCallType}\"";
+
+            string marshalAs;
+            if (useMarshalVar)
+            {
+                marshalAs = $"{param.Name}Marshal";
+            }
+            else if (param.TypeDefName is "PWSTR" or "PSTR")
+            {
+                marshalAs = "\"ptr\"";
+            }
+            else
+            {
+                marshalAs = GetParamDllCallTypeToken(param.Type, unqualifyApis);
+            }
 
             // Value string
             bool isVarRefOutput = param == method.OutputParameter
@@ -357,7 +364,7 @@ public static class MethodEmitter
 
     // --- Return statement ---
 
-    private static void EmitReturnStatement(AhkWriter w, MethodMember method, TypeRegistry registry)
+    private static void EmitReturnStatement(AhkWriter w, MethodMember method, TypeRegistry registry, bool unqualifyApis = false)
     {
         if (!method.HasReturnValue && method.OutputParameter == null)
             return;
@@ -367,7 +374,7 @@ public static class MethodEmitter
         // Handle return (direct HandleRef only — ptr-to-handle output params return raw values)
         if (fnRetVal.IsHandle)
         {
-            EmitHandleReturn(w, fnRetVal, registry);
+            EmitHandleReturn(w, fnRetVal, registry, unqualifyApis);
             return;
         }
 
@@ -383,7 +390,7 @@ public static class MethodEmitter
         w.Line($"return {fnRetVal.Name}");
     }
 
-    private static void EmitHandleReturn(AhkWriter w, ParameterMember fnRetVal, TypeRegistry registry)
+    private static void EmitHandleReturn(AhkWriter w, ParameterMember fnRetVal, TypeRegistry registry, bool unqualifyApis = false)
     {
         // Get handle info from the type
         string handleName, handleFqn;
@@ -417,13 +424,24 @@ public static class MethodEmitter
         }
 
         // Construct handle wrapper
-        string scriptOwned = fnRetVal.ScriptOwned ? "True" : "False";
-        w.Line($"resultHandle := {handleName}({{{fieldName}: {fnRetVal.Name}}}, {scriptOwned})");
+        if (unqualifyApis)
+        {
+            // v2.1 handle: `__New(value := default) { this.value := value }`. Pass the raw value.
+            // TODO: handle ownership
+            w.Line($"resultHandle := {handleName}({fnRetVal.Name})");
+        }
+        else
+        {
+            // v2.0 Win32Handle base: takes {field: value} object + owned flag.
+            string scriptOwned = fnRetVal.ScriptOwned ? "True" : "False";
+            w.Line($"resultHandle := {handleName}({{{fieldName}: {fnRetVal.Name}}}, {scriptOwned})");
+        }
 
-        // RAIIFree destructor
+        // RAIIFree per-instance override (callable as .Free(); not auto-invoked in v2.1)
         if (fnRetVal.RAIIFree is { } raiiFree)
         {
-            w.Line($"resultHandle.DefineProp(\"Free\", {{ Call: (self) => {raiiFree.DeclarerName}.{raiiFree.Name}(self.{fieldName}) }})");
+            string callee = unqualifyApis ? raiiFree.Name : $"{raiiFree.DeclarerName}.{raiiFree.Name}";
+            w.Line($"resultHandle.DefineProp(\"Free\", {{ Call: (self) => {callee}(self.{fieldName}) }})");
         }
 
         w.Line("return resultHandle");
@@ -441,6 +459,32 @@ public static class MethodEmitter
         NativeTypedefRef n => GetParamDllCallType(n.Underlying),
         _ => type.DllCallType
     };
+
+    /// <summary>
+    /// Render the DllCall type token for a parameter â€” the exact text to paste into
+    /// the DllCall arg list. For v2.0 this is a quoted type string. For v2.1
+    /// (<paramref name="unqualifyApis"/> = true) named types render as unquoted class
+    /// references (HWND, RECT.Ptr, BOOL, â€¦) so DllCall uses the type class directly.
+    /// </summary>
+    private static string GetParamDllCallTypeToken(ResolvedType type, bool unqualifyApis)
+    {
+        if (!unqualifyApis)
+            return $"\"{GetParamDllCallType(type)}\"";
+
+        return type switch
+        {
+            HandleRef h                                  => h.Name,
+            NativeTypedefRef n                           => n.Name,
+            StructRef s                                  => s.Name,
+            NtStatusType                                 => "NTSTATUS",
+            PointerType { Pointee: StructRef s }         => $"{s.Name}.Ptr",
+            PointerType { Pointee: HandleRef h }         => $"{h.Name}.Ptr",
+            PointerType { Pointee: ComRef c }            => $"{c.Name}.Ptr",
+            PointerType { Pointee: NativeTypedefRef n }  => $"{n.Name}.Ptr",
+            // Fallback: pointer-to-primitive (typed star), void*, function ptr, enum, HRESULT, etc.
+            _                                            => $"\"{GetParamDllCallType(type)}\""
+        };
+    }
 
     /// <summary>
     /// Get the display name of a pointer's pointee (for struct/handle/COM output params).
@@ -477,7 +521,7 @@ public static class MethodEmitter
         using (w.InstanceMethod(method.DeduplicatedName, argList))
         {
             EmitReservedParams(w, method);
-            EmitParameterConversions(w, method, true);
+            EmitParameterConversions(w, method, isComMethod: true, unqualifyApis);
             EmitParameterMarshalling(w, method);
 
             if (method.SetsLastError)
@@ -487,10 +531,10 @@ public static class MethodEmitter
             }
 
             EmitOutputParamMarshalling(w, method);
-            w.Line(BuildComCallExpression(method));
+            w.Line(BuildComCallExpression(method, unqualifyApis));
 
             EmitErrorCheck(w, method, unqualifyApis);
-            EmitReturnStatement(w, method, registry);
+            EmitReturnStatement(w, method, registry, unqualifyApis);
         }
     }
 
@@ -498,7 +542,7 @@ public static class MethodEmitter
     /// Build a ComCall expression: [result := ] ComCall(VTableIndex, this[, args][, "conv retType"])
     /// Port of legacy AhkComMethod.BuildDllCallCall.
     /// </summary>
-    private static string BuildComCallExpression(ComMethodMember method)
+    private static string BuildComCallExpression(ComMethodMember method, bool unqualifyApis = false)
     {
         var sb = new System.Text.StringBuilder();
 
@@ -511,7 +555,7 @@ public static class MethodEmitter
         if (method.Parameters.Count > 1)
         {
             sb.Append(", ");
-            sb.Append(BuildDllCallArguments(method));
+            sb.Append(BuildDllCallArguments(method, unqualifyApis));
         }
 
         // Calling convention + return type

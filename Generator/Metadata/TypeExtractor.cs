@@ -305,8 +305,7 @@ public sealed class TypeExtractor
 
         // Build imports
         ImportCollection imports = new();
-        foreach (string refFqn in CollectStructReferencedTypes(layout.Fields))
-            imports.AddType(refFqn);
+        imports.AddTypes(CollectStructReferencedTypes(layout.Fields));
 
         // Name deconfliction
         string displayName = DeconflictName(typeName);
@@ -369,8 +368,7 @@ public sealed class TypeExtractor
 
         // Build imports
         ImportCollection imports = new();
-        foreach (string refFqn in CollectStructReferencedTypes(layout.Fields))
-            imports.AddType(refFqn);
+        imports.AddTypes(CollectStructReferencedTypes(layout.Fields));
         if (freeFunc != null)
             imports.AddFunction(freeFunc.ApisFQN, freeFunc.Name);
 
@@ -431,8 +429,7 @@ public sealed class TypeExtractor
 
         // Imports for the underlying type, if it references another named type
         ImportCollection imports = new();
-        foreach (string refFqn in CollectTypeReferenceFqns(underlying))
-            imports.AddType(refFqn);
+        imports.AddTypes(CollectTypeReferenceFqns(underlying));
 
         string displayName = DeconflictName(typeName);
 
@@ -1004,7 +1001,7 @@ public sealed class TypeExtractor
     /// <summary>
     /// Recursively collect type FQN references from a ResolvedType.
     /// </summary>
-    private static void CollectTypeReferences(ResolvedType type, List<string> refs)
+    public static void CollectTypeReferences(ResolvedType type, List<string> refs)
     {
         switch (type)
         {
