@@ -958,9 +958,7 @@ public sealed class TypeExtractor
     /// </summary>
     private string DeconflictName(string name)
     {
-        string candidate = name.EndsWith("_e__Struct")
-            ? name[..^"_e__Struct".Length]
-            : name;
+        string candidate = SignatureDecoder.StripGeneratedSuffix(name);
 
         if (_reservedNames.Contains(candidate))
             return $"Win32{candidate}";

@@ -165,9 +165,13 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
     internal ResolvedType ClassifyTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle)
     {
         TypeDefinition td = reader.GetTypeDefinition(tdHandle);
-        string typeName = reader.GetString(td.Name);
+        string rawName = reader.GetString(td.Name);
         string typeNamespace = reader.GetString(td.Namespace);
-        string fqn = $"{typeNamespace}.{typeName}";
+        string fqn = $"{typeNamespace}.{rawName}";
+        // *Ref.Name carries the display name â€” strip the generator-injected
+        // _e__Struct / _e__Union suffixes so it matches DeconflictName on the
+        // referent. FQN stays as the metadata-form for registry lookups.
+        string typeName = StripGeneratedSuffix(rawName);
 
         // Exclude WinRT namespaces — treat as pointer
         if (s_excludeNamespaces.Any(typeNamespace.StartsWith))
@@ -364,9 +368,9 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
     /// </summary>
     private NativeTypedefRef DecodeNativeTypedef(MetadataReader reader, TypeDefinition td)
     {
-        string typeName = reader.GetString(td.Name);
+        string rawName = reader.GetString(td.Name);
         string typeNamespace = reader.GetString(td.Namespace);
-        string fqn = $"{typeNamespace}.{typeName}";
+        string fqn = $"{typeNamespace}.{rawName}";
 
         FieldDefinitionHandle fieldHandle = td.GetFields().First();
         FieldDefinition fieldDef = reader.GetFieldDefinition(fieldHandle);
@@ -375,6 +379,20 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         var innerDecoder = new SignatureDecoder(reader, _loader, _logger, td);
         ResolvedType underlying = fieldDef.DecodeSignature(innerDecoder, new SignatureGenericContext());
 
-        return new NativeTypedefRef(typeName, fqn, underlying);
+        return new NativeTypedefRef(StripGeneratedSuffix(rawName), fqn, underlying);
+    }
+
+    /// <summary>
+    /// Strip Win32 metadata's generated suffixes (_e__Struct / _e__Union) from a
+    /// type name. The stripped form is the display name; the original (with
+    /// suffix) remains in the FQN for registry lookup.
+    /// </summary>
+    internal static string StripGeneratedSuffix(string name)
+    {
+        const string structSuffix = "_e__Struct";
+        const string unionSuffix = "_e__Union";
+        if (name.EndsWith(structSuffix)) return name[..^structSuffix.Length];
+        if (name.EndsWith(unionSuffix)) return name[..^unionSuffix.Length];
+        return name;
     }
 }
