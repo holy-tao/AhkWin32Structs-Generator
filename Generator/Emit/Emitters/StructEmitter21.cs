@@ -297,8 +297,11 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 
         foreach (var ext in type.Extensions)
         {
-            string code = ext
-                .Code.Replace("$Class", type.Name)
+            if (!ext.CodeByVersion.TryGetValue(AhkVersion.v21, out string? rawCode))
+                continue;
+
+            string code = rawCode
+                .Replace("$Class", type.Name)
                 .Replace("$Namespace", type.Namespace)
                 .Replace("$Arch", type.Arch.ToString());
             if (type is ComInterfaceType iface)

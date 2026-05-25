@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
 using AhkWin32.Generator.Model.Types;
@@ -300,9 +301,11 @@ public sealed class StructEmitter : ITypeEmitter
 
         foreach (var ext in type.Extensions)
         {
-            // Replace tokens
-            string code = ext
-                .Code.Replace("$Class", type.Name)
+            if (!ext.CodeByVersion.TryGetValue(AhkVersion.v20, out string? rawCode))
+                continue;
+
+            string code = rawCode
+                .Replace("$Class", type.Name)
                 .Replace("$Namespace", type.Namespace)
                 .Replace("$Arch", type.Arch.ToString());
             if (type is ComInterfaceType iface)

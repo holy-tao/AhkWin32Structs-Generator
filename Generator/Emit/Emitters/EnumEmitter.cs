@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model.Types;
 
 /// <summary>
@@ -68,10 +69,11 @@ public sealed class EnumEmitter : ITypeEmitter
 
         foreach (var ext in enumType.Extensions)
         {
-            // Replace tokens (only $Class for now)
-            string code = ext.Code.Replace("$Class", enumType.Name);
+            if (!ext.CodeByVersion.TryGetValue(AhkVersion.v20, out string? rawCode))
+                continue;
 
-            // Indent extension code to current level (inside class body)
+            string code = rawCode.Replace("$Class", enumType.Name);
+
             string indentStr = w.CurrentIndent;
             string indented = indentStr + code.Replace("\n", "\n" + indentStr);
             w.RawLine(indented);

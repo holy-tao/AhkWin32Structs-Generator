@@ -43,8 +43,13 @@ public sealed class ExtensionApplier
             {
                 type.Extensions.AddRange(extensions);
                 foreach (var ext in extensions)
-                foreach (string req in ext.Requirements)
-                    type.Imports.AddType(req);
+                foreach (var (importFqn, names) in ext.Imports)
+                {
+                    if (names.Count == 0)
+                        type.Imports.AddType(importFqn);
+                    else
+                        type.Imports.AddFunctions(importFqn, names);
+                }
             }
 
             matchedTypes++;
