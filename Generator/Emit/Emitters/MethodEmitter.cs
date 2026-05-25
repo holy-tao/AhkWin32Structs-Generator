@@ -461,10 +461,10 @@ public static class MethodEmitter
     };
 
     /// <summary>
-    /// Render the DllCall type token for a parameter â€” the exact text to paste into
+    /// Render the DllCall type token for a parameter - the exact text to paste into
     /// the DllCall arg list. For v2.0 this is a quoted type string. For v2.1
     /// (<paramref name="unqualifyApis"/> = true) named types render as unquoted class
-    /// references (HWND, RECT.Ptr, BOOL, â€¦) so DllCall uses the type class directly.
+    /// references (HWND, RECT.Ptr, BOOL, ...) so DllCall uses the type class directly.
     /// </summary>
     private static string GetParamDllCallTypeToken(ResolvedType type, bool unqualifyApis)
     {
@@ -476,6 +476,7 @@ public static class MethodEmitter
             HandleRef h                                  => h.Name,
             NativeTypedefRef n                           => n.Name,
             StructRef s                                  => s.Name,
+            EnumRef e                                    => e.Name,
             NtStatusType                                 => "NTSTATUS",
             PointerType { Pointee: StructRef s }         => $"{s.Name}.Ptr",
             PointerType { Pointee: HandleRef h }         => $"{h.Name}.Ptr",
