@@ -1,8 +1,9 @@
 add-to:
   - Windows.Win32.Foundation.POINT
   - Windows.Win32.Foundation.POINTL
-requires: []
-code: |
+
+code:
+  v20: &shared |
     /**
      * Many Win32 APIs take points as 64-bit integer value types.
      * This will return the POINT in a compatible format
@@ -12,3 +13,4 @@ code: |
     ToString() {
         return Format("({1}, {2})", this.x, this.y)
     }
+  v21: *shared
