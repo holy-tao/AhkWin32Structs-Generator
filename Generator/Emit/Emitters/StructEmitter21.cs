@@ -266,8 +266,10 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
     {
         var seen = new HashSet<string>();
 
-        // Restrict to types available in the registry to filter out nested types
-        foreach (string fqn in type.Imports.GetTypes().Where(fqn => _registry.Contains(fqn) && fqn != type.FQN))
+        // Restrict to types available in the registry to filter out nested types.
+        // System.Guid isn't in the registry (it's a pseudo-type at the projection root)
+        // but ImportResolver resolves it to Guid.ahk — let it through.
+        foreach (string fqn in type.Imports.GetTypes().Where(fqn => IsImportable(fqn) && fqn != type.FQN))
         {
             if (!seen.Add(fqn))
                 continue;
@@ -277,7 +279,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 
         foreach (string fqn in extraImports)
         {
-            if (fqn == type.FQN || !_registry.Contains(fqn) || !seen.Add(fqn))
+            if (fqn == type.FQN || !IsImportable(fqn) || !seen.Add(fqn))
                 continue;
             string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
             w.Import(path, [ImportResolver.GetImportName(fqn)]);
@@ -289,6 +291,8 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
             w.Import(path, type.Imports.GetFunctionsForNamespace(apisFqn));
         }
     }
+
+    private bool IsImportable(string fqn) => fqn == "System.Guid" || _registry.Contains(fqn);
 
     internal static void EmitExtensions(AhkWriter w, Win32Type type)
     {
