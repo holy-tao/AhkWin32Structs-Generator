@@ -207,6 +207,41 @@ public sealed class AhkWriter(AhkVersion version = AhkVersion.v20)
         return new IndentScope(this);
     }
 
+    /// <summary>
+    /// Open an if statement - these always use braces: "if (condition) {"
+    /// </summary>
+    /// <param name="condition">AHK code for the condition to evaluate</param>
+    /// <returns></returns>
+    public IndentScope If(string condition)
+    {
+        _sb.AppendLine($"{Indent}if ({condition}) {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
+    /// Open an else statement: "else {"
+    /// </summary>
+    /// <returns></returns>
+    public IndentScope Else()
+    {
+        _sb.AppendLine($"{Indent}else {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
+    /// Open an else-if statement: "else if (condition) {"
+    /// </summary>
+    /// <param name="condition">Condition(s) to evaluate</param>
+    /// <returns></returns>
+    public IndentScope ElseIf(string condition)
+    {
+        _sb.AppendLine($"{Indent}else if (${condition}) {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
     // --- Content ---
 
     /// <summary>Write a static fat-arrow field: "static NAME => expr".</summary>
