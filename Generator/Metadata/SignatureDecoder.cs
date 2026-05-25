@@ -210,7 +210,7 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         if (IsNonHandleNativeTypedef(reader, td))
         {
             ResolvedType resolved = DecodeNativeTypedef(reader, td);
-            _logger.LogDebug(
+            _logger.LogTrace(
                 "Decoded NativeTypedef {Name} → {UnderlyingType}",
                 typeName,
                 ((NativeTypedefRef)resolved).Underlying.DisplayName
