@@ -1,8 +1,8 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Types;
-using AhkWin32.Generator.Metadata;
 
 /// <summary>
 /// Emits a v2.1 ApiType's free functions as a complete .ahk file.
@@ -42,7 +42,7 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
         // Type documentation
         DocCommentWriter.WriteTypeDoc(w, apiType);
 
-         w.BlankLine();
+        w.BlankLine();
 
         // Functions region
         EmitFunctions(w, apiType);
@@ -74,13 +74,9 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
     /// </summary>
     private static IEnumerable<string> GetConstantOnlyTypeImports(ApiType apiType)
     {
-        var methodTypes = new HashSet<string>(
-            apiType.Methods.SelectMany(m => m.Imports.GetTypes()));
+        var methodTypes = new HashSet<string>(apiType.Methods.SelectMany(m => m.Imports.GetTypes()));
 
-        return apiType.Constants
-            .SelectMany(c => c.Imports.GetTypes())
-            .Where(t => !methodTypes.Contains(t))
-            .Distinct();
+        return apiType.Constants.SelectMany(c => c.Imports.GetTypes()).Where(t => !methodTypes.Contains(t)).Distinct();
     }
 
     private void EmitFunctions(AhkWriter w, ApiType apiType)

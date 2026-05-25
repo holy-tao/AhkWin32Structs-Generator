@@ -61,12 +61,11 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
     /// Emit the body of a struct: nested struct definitions, typed property fields,
     /// bit accessors, struct-size init, and extension blocks.
     /// </summary>
-    internal void EmitBody(AhkWriter w, StructType structType, string parentClassName,
-        List<DeferredProp> deferred)
+    internal void EmitBody(AhkWriter w, StructType structType, string parentClassName, List<DeferredProp> deferred)
     {
         // 1. Nested non-anonymous struct definitions (referenced by member fields below)
-        var nestedClassDefs = structType.Members
-            .Where(m => m.IsNested && !m.IsAnonymous && m.Name is not "Reserved")
+        var nestedClassDefs = structType
+            .Members.Where(m => m.IsNested && !m.IsAnonymous && m.Name is not "Reserved")
             .Where(m => m.EmbeddedStruct is not null)
             .Select(m => m.EmbeddedStruct!)
             .DistinctBy(s => s.Name);
@@ -84,7 +83,16 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
         int cursor = 0;
         var emitted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        EmitFields(w, structType, structType.Members, parentClassName, deferred, ref cursor, emitted, embeddingOffset: 0);
+        EmitFields(
+            w,
+            structType,
+            structType.Members,
+            parentClassName,
+            deferred,
+            ref cursor,
+            emitted,
+            embeddingOffset: 0
+        );
 
         // 3. Extensions
         EmitExtensions(w, structType);
@@ -97,9 +105,16 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
     /// Walk the field list emitting typed properties; recurse into anonymous nested
     /// structs/unions to flatten them into the parent's namespace.
     /// </summary>
-    private void EmitFields(AhkWriter w, StructType owner, IReadOnlyList<FieldMember> fields,
-        string parentClassName, List<DeferredProp> deferred,
-        ref int cursor, HashSet<string> emitted, int embeddingOffset)
+    private void EmitFields(
+        AhkWriter w,
+        StructType owner,
+        IReadOnlyList<FieldMember> fields,
+        string parentClassName,
+        List<DeferredProp> deferred,
+        ref int cursor,
+        HashSet<string> emitted,
+        int embeddingOffset
+    )
     {
         foreach (FieldMember field in fields)
         {
@@ -110,10 +125,19 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
             {
                 if (field.EmbeddedStruct is null)
                     throw new InvalidOperationException(
-                        $"{owner.Name}.{field.Name} is anonymous but has no EmbeddedStruct");
+                        $"{owner.Name}.{field.Name} is anonymous but has no EmbeddedStruct"
+                    );
 
-                EmitFields(w, owner, field.EmbeddedStruct.Members, parentClassName, deferred,
-                    ref cursor, emitted, absOffset);
+                EmitFields(
+                    w,
+                    owner,
+                    field.EmbeddedStruct.Members,
+                    parentClassName,
+                    deferred,
+                    ref cursor,
+                    emitted,
+                    absOffset
+                );
                 continue;
             }
 
@@ -174,8 +198,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
             StringType s => $"{(s.Encoding == StringEncoding.Ansi ? "CHAR" : "UInt16")}[{s.Length}]",
 
             // Array of nested-defined struct: qualify the element name
-            ArrayType { ElementType: StructRef es } a when field.IsNested
-                => $"{parentClassName}.{es.Name}[{a.Length}]",
+            ArrayType { ElementType: StructRef es } a when field.IsNested => $"{parentClassName}.{es.Name}[{a.Length}]",
 
             // Bitfields - backing field uses a primitive type derived from its size
             _ when field.IsBitField => BitfieldBackingTypeSpecifier(field.Size),
@@ -184,18 +207,19 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
             StructRef sr when field.IsNested => $"{parentClassName}.{sr.Name}",
 
             // Anything else: TypeSpecifier already produces the right token
-            _ => field.Type.TypeSpecifier
+            _ => field.Type.TypeSpecifier,
         };
     }
 
-    private static string BitfieldBackingTypeSpecifier(int sizeBytes) => sizeBytes switch
-    {
-        1 => "Int8",
-        2 => "Int16",
-        4 => "Int32",
-        8 => "Int64",
-        _ => throw new InvalidOperationException($"Unsupported bitfield backing size: {sizeBytes} bytes")
-    };
+    private static string BitfieldBackingTypeSpecifier(int sizeBytes) =>
+        sizeBytes switch
+        {
+            1 => "Int8",
+            2 => "Int16",
+            4 => "Int32",
+            8 => "Int64",
+            _ => throw new InvalidOperationException($"Unsupported bitfield backing size: {sizeBytes} bytes"),
+        };
 
     private static void EmitBitfieldAccessors(AhkWriter w, FieldMember field)
     {
@@ -212,7 +236,9 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
             using (w.InstanceProperty(bf.Name))
             {
                 w.Line($"get => (this.{field.Name} >> {bf.Offset}) & 0x{mask:X}");
-                w.Line($"set => this.{field.Name} := ((value & 0x{mask:X}) << {bf.Offset}) | (this.{field.Name} & ~(0x{mask:X} << {bf.Offset}))");
+                w.Line(
+                    $"set => this.{field.Name} := ((value & 0x{mask:X}) << {bf.Offset}) | (this.{field.Name} & ~(0x{mask:X} << {bf.Offset}))"
+                );
             }
         }
     }
@@ -241,17 +267,18 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
         var seen = new HashSet<string>();
 
         // Restrict to types available in the registry to filter out nested types
-        foreach (string fqn in type.Imports.GetTypes()
-            .Where(fqn => _registry.Contains(fqn) && fqn != type.FQN))
+        foreach (string fqn in type.Imports.GetTypes().Where(fqn => _registry.Contains(fqn) && fqn != type.FQN))
         {
-            if (!seen.Add(fqn)) continue;
+            if (!seen.Add(fqn))
+                continue;
             string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
             w.Import(path, [ImportResolver.GetImportName(fqn)]);
         }
 
         foreach (string fqn in extraImports)
         {
-            if (fqn == type.FQN || !_registry.Contains(fqn) || !seen.Add(fqn)) continue;
+            if (fqn == type.FQN || !_registry.Contains(fqn) || !seen.Add(fqn))
+                continue;
             string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
             w.Import(path, [ImportResolver.GetImportName(fqn)]);
         }
@@ -265,11 +292,13 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 
     internal static void EmitExtensions(AhkWriter w, Win32Type type)
     {
-        if (type.Extensions.Count == 0) return;
+        if (type.Extensions.Count == 0)
+            return;
 
         foreach (var ext in type.Extensions)
         {
-            string code = ext.Code.Replace("$Class", type.Name)
+            string code = ext
+                .Code.Replace("$Class", type.Name)
                 .Replace("$Namespace", type.Namespace)
                 .Replace("$Arch", type.Arch.ToString());
             if (type is ComInterfaceType iface)

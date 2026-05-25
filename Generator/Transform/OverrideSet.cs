@@ -18,8 +18,7 @@ public sealed class OverrideSet
         _byFqn = byFqn;
     }
 
-    public TypeOverride? GetOverride(string fqn)
-        => _byFqn.TryGetValue(fqn, out var ov) ? ov : null;
+    public TypeOverride? GetOverride(string fqn) => _byFqn.TryGetValue(fqn, out var ov) ? ov : null;
 
     public bool HasOverride(string fqn) => _byFqn.ContainsKey(fqn);
 
@@ -37,7 +36,8 @@ public sealed record TypeOverride(
     string? StructSizeField,
     IReadOnlyDictionary<string, FieldOverride>? Fields,
     IReadOnlyDictionary<string, MethodOverride>? Methods,
-    IReadOnlyList<AddMethodRef>? AddMethods);
+    IReadOnlyList<AddMethodRef>? AddMethods
+);
 
 /// <summary>
 /// Override for a struct/type field — adds attribute flags.
@@ -47,9 +47,7 @@ public sealed record FieldOverride(MemberFlags AddAttributes);
 /// <summary>
 /// Override for a method — can skip the method or override its parameters.
 /// </summary>
-public sealed record MethodOverride(
-    bool Skip,
-    IReadOnlyDictionary<string, ParameterOverride>? Parameters);
+public sealed record MethodOverride(bool Skip, IReadOnlyDictionary<string, ParameterOverride>? Parameters);
 
 /// <summary>
 /// Override for a method parameter — adds attribute flags.

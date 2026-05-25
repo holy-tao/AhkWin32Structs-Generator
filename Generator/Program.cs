@@ -16,32 +16,48 @@ public class Program
 {
     public static int Main(string[] args)
     {
-        var metadataDirArg = new Argument<DirectoryInfo>("metadata-dir", "Path to directory containing .winmd files and metadata");
-        var outputDirArg = new Argument<DirectoryInfo>("output-dir", "Path to output directory for generated .ahk files");
+        var metadataDirArg = new Argument<DirectoryInfo>(
+            "metadata-dir",
+            "Path to directory containing .winmd files and metadata"
+        );
+        var outputDirArg = new Argument<DirectoryInfo>(
+            "output-dir",
+            "Path to output directory for generated .ahk files"
+        );
 
-        var namespaceOption = new Option<string[]>("--namespace", "Filter: only generate types in these namespaces (prefix match)")
+        var namespaceOption = new Option<string[]>(
+            "--namespace",
+            "Filter: only generate types in these namespaces (prefix match)"
+        )
         {
-            AllowMultipleArgumentsPerToken = true
+            AllowMultipleArgumentsPerToken = true,
         };
         namespaceOption.AddAlias("-n");
 
         var assemblyOption = new Option<string[]>("--assembly", "Filter: only process these .winmd assemblies")
         {
-            AllowMultipleArgumentsPerToken = true
+            AllowMultipleArgumentsPerToken = true,
         };
         assemblyOption.AddAlias("-a");
 
-        var versionOption = new Option<string>("--ahk-version", () => "2.0", "AutoHotkey version to emit for (2.0 or 2.1)")
-            .FromAmong("2.0", "2.1");
+        var versionOption = new Option<string>(
+            "--ahk-version",
+            () => "2.0",
+            "AutoHotkey version to emit for (2.0 or 2.1)"
+        ).FromAmong("2.0", "2.1");
         versionOption.AddAlias("-v");
 
         var logLevelOption = new Option<LogLevel>("--log-level", () => LogLevel.Information, "Minimum log level");
         var logFileOption = new Option<FileInfo?>("--log-file", "Write log output to a file");
-        var maxParallelismOption = new Option<int>("--max-parallelism",
+        var maxParallelismOption = new Option<int>(
+            "--max-parallelism",
             () => Environment.ProcessorCount,
-            $"Maximum degree of parallelism for extraction and emission (default: CPU count)");
+            $"Maximum degree of parallelism for extraction and emission (default: CPU count)"
+        );
 
-        var rootCommand = new RootCommand("AhkWin32Structs Generator — generates AutoHotkey v2 projections of Win32 and WDK APIs")
+        var rootCommand = new RootCommand(
+            "AhkWin32Structs Generator — generates AutoHotkey v2 projections of Win32 and WDK APIs"
+        )
         {
             metadataDirArg,
             outputDirArg,
@@ -50,7 +66,7 @@ public class Program
             assemblyOption,
             logLevelOption,
             logFileOption,
-            maxParallelismOption
+            maxParallelismOption,
         };
 
         int exitCode = 0;
@@ -61,11 +77,28 @@ public class Program
                 {
                     "2.0" => AhkVersion.v20,
                     "2.1" => AhkVersion.v21,
-                    _ => throw new NotImplementedException($"Unknown AHK version \"{ahkVersion}\"")
+                    _ => throw new NotImplementedException($"Unknown AHK version \"{ahkVersion}\""),
                 };
-                exitCode = RunGenerator(metadataDir, outputDir, resolvedVersion, namespaceFilter ?? [], assemblyFilter ?? [], logLevel, logFile, maxParallelism);
+                exitCode = RunGenerator(
+                    metadataDir,
+                    outputDir,
+                    resolvedVersion,
+                    namespaceFilter ?? [],
+                    assemblyFilter ?? [],
+                    logLevel,
+                    logFile,
+                    maxParallelism
+                );
             },
-            metadataDirArg, outputDirArg, versionOption, namespaceOption, assemblyOption, logLevelOption, logFileOption, maxParallelismOption);
+            metadataDirArg,
+            outputDirArg,
+            versionOption,
+            namespaceOption,
+            assemblyOption,
+            logLevelOption,
+            logFileOption,
+            maxParallelismOption
+        );
 
         rootCommand.Invoke(args);
         return exitCode;
@@ -79,7 +112,8 @@ public class Program
         string[] assemblyFilter,
         LogLevel logLevel,
         FileInfo? logFile,
-        int maxParallelism = 0)
+        int maxParallelism = 0
+    )
     {
         using var loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -106,8 +140,11 @@ public class Program
         // See https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.paralleloptions.maxdegreeofparallelism?view=net-10.0
         if (maxParallelism == 0 || maxParallelism < -1)
         {
-            logger.LogWarning("Invalid --max-parallelism ({ARG}), using CPU count ({CPUS})",
-                maxParallelism, Environment.ProcessorCount);
+            logger.LogWarning(
+                "Invalid --max-parallelism ({ARG}), using CPU count ({CPUS})",
+                maxParallelism,
+                Environment.ProcessorCount
+            );
             maxParallelism = Environment.ProcessorCount;
         }
         logger.LogInformation("Max parallelism: {MaxParallelism}", maxParallelism);
@@ -136,31 +173,42 @@ public class Program
         // Transforms
         var overrideApplier = new OverrideApplier(
             new OverrideReader(loggerFactory.CreateLogger<OverrideReader>(), maxParallelism),
-            loggerFactory.CreateLogger<OverrideApplier>());
+            loggerFactory.CreateLogger<OverrideApplier>()
+        );
         overrideApplier.Apply(registry, Path.Join(metadataPath, "overrides"));
 
         var extensionApplier = new ExtensionApplier(
             new ExtensionReader(loggerFactory.CreateLogger<ExtensionReader>(), maxParallelism),
-            loggerFactory.CreateLogger<ExtensionApplier>());
+            loggerFactory.CreateLogger<ExtensionApplier>()
+        );
         extensionApplier.Apply(registry, Path.Join(metadataPath, "extensions"));
 
         // Emit
-        ITypeEmitter[] emitters = [
+        ITypeEmitter[] emitters =
+        [
             ahkVersion is AhkVersion.v21 ? new EnumEmitter21() : new EnumEmitter(),
             ahkVersion is AhkVersion.v21 ? new HandleEmitter21() : new HandleEmitter(),
             ahkVersion is AhkVersion.v21 ? new StructEmitter21(registry) : new StructEmitter(registry),
-            ahkVersion switch {
+            ahkVersion switch
+            {
                 AhkVersion.v20 => new ApiTypeEmitter(registry),
                 AhkVersion.v21 => new ApiTypeEmitter21(registry),
-                _ => throw new NotImplementedException($"Unknown AHK version \"{ahkVersion}\"")
+                _ => throw new NotImplementedException($"Unknown AHK version \"{ahkVersion}\""),
             },
-            new ComInterfaceEmitter(registry, ahkVersion)
+            new ComInterfaceEmitter(registry, ahkVersion),
         ];
         if (ahkVersion is AhkVersion.v21)
             emitters = [.. emitters, new ApiConstantsEmitter21(), new NativeTypedefEmitter21()];
-        var pipeline = new TypeEmissionPipeline(emitters, loggerFactory.CreateLogger<TypeEmissionPipeline>(), maxParallelism);
-        var (emitted, _, errors) = pipeline.EmitAll(registry, outputPath,
-            namespaceFilter.Length > 0 ? namespaceFilter : null);
+        var pipeline = new TypeEmissionPipeline(
+            emitters,
+            loggerFactory.CreateLogger<TypeEmissionPipeline>(),
+            maxParallelism
+        );
+        var (emitted, _, errors) = pipeline.EmitAll(
+            registry,
+            outputPath,
+            namespaceFilter.Length > 0 ? namespaceFilter : null
+        );
 
         // Write version.ini
         WriteVersionInfo(loader, metadataPath, outputPath, logger);
@@ -181,7 +229,8 @@ public class Program
         foreach (var (name, _, reader) in loader.GetPrimaryAssemblies())
         {
             string displayName = name.EndsWith(".winmd", StringComparison.OrdinalIgnoreCase)
-                ? name[..^".winmd".Length] : name;
+                ? name[..^".winmd".Length]
+                : name;
             AssemblyName asmName = reader.GetAssemblyDefinition().GetAssemblyName();
             versionInfo.AppendLine($"{displayName} = {asmName.Version}");
         }

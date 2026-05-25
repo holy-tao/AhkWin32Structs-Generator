@@ -54,9 +54,7 @@ public sealed record StructConstantValue(
     IReadOnlyList<StructFieldInit>? FieldInits
 ) : ConstantValue
 {
-    public override string AsAhk => IsHandle
-        ? $"{StructName}({{Value: {HandleValue}}}, false)"
-        : StructName;
+    public override string AsAhk => IsHandle ? $"{StructName}({{Value: {HandleValue}}}, false)" : StructName;
 
     public override string AhkTypeName => StructName;
 }
@@ -84,8 +82,10 @@ public enum StructFieldInitKind
 {
     /// <summary>Simple assignment: prefix.field := value</summary>
     Direct,
+
     /// <summary>Array element: prefix.field[index] := value</summary>
     ArrayElement,
+
     /// <summary>GUID pointer: create static guid, assign .ptr</summary>
-    GuidPointer
+    GuidPointer,
 }

@@ -63,6 +63,6 @@ public sealed class ApiConstantsEmitter21 : ITypeEmitter
         }
     }
 
-    private static bool HasHandleConstant(ApiType apiType)
-        => apiType.Constants.Any(c => c.Value is StructConstantValue { IsHandle: true });
+    private static bool HasHandleConstant(ApiType apiType) =>
+        apiType.Constants.Any(c => c.Value is StructConstantValue { IsHandle: true });
 }

@@ -37,7 +37,8 @@ public static class ConstantEmitter
 
             default:
                 throw new NotSupportedException(
-                    $"Unsupported constant value type: {constant.Value.GetType().Name} for '{constant.Name}'");
+                    $"Unsupported constant value type: {constant.Value.GetType().Name} for '{constant.Name}'"
+                );
         }
     }
 
@@ -68,7 +69,8 @@ public static class ConstantEmitter
 
             default:
                 throw new NotSupportedException(
-                    $"Unsupported constant value type: {constant.Value.GetType().Name} for '{constant.Name}'");
+                    $"Unsupported constant value type: {constant.Value.GetType().Name} for '{constant.Name}'"
+                );
         }
     }
 
@@ -137,8 +139,7 @@ public static class ConstantEmitter
                 break;
 
             default:
-                throw new NotSupportedException(
-                    $"Unsupported struct field init kind: {init.Kind}");
+                throw new NotSupportedException($"Unsupported struct field init kind: {init.Kind}");
         }
     }
 }

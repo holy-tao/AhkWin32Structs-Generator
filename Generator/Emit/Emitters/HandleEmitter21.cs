@@ -5,7 +5,6 @@ using AhkWin32.Generator.Model.Members;
 using AhkWin32.Generator.Model.Types;
 using YamlDotNet.Core.Tokens;
 
-
 /// <summary>
 /// Emits a HandleType as a v2.1 native `struct` block. Handles are emitted as a
 /// single-field struct with `__value` get/set so the instance is transparently

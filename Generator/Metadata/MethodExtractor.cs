@@ -19,9 +19,7 @@ public sealed class MethodExtractor
     private readonly ParameterExtractor _paramExtractor;
     private readonly ILogger<MethodExtractor> _logger;
 
-    public MethodExtractor(
-        DocumentationLoader docs,
-        ParameterExtractor paramExtractor, ILogger<MethodExtractor> logger)
+    public MethodExtractor(DocumentationLoader docs, ParameterExtractor paramExtractor, ILogger<MethodExtractor> logger)
     {
         _docs = docs;
         _paramExtractor = paramExtractor;
@@ -32,9 +30,7 @@ public sealed class MethodExtractor
     /// Extract a MethodMember from a MethodDefinition.
     /// Returns null if extraction fails.
     /// </summary>
-    public MethodMember? ExtractMethod(
-        MetadataReader reader, MethodDefinition methodDef,
-        string declaringNamespace)
+    public MethodMember? ExtractMethod(MetadataReader reader, MethodDefinition methodDef, string declaringNamespace)
     {
         string methodName = reader.GetString(methodDef.Name);
 
@@ -44,15 +40,17 @@ public sealed class MethodExtractor
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to extract method {Namespace}.{Method}",
-                declaringNamespace, methodName);
+            _logger.LogError(ex, "Failed to extract method {Namespace}.{Method}", declaringNamespace, methodName);
             return null;
         }
     }
 
     private MethodMember ExtractMethodCore(
-        MetadataReader reader, MethodDefinition methodDef,
-        string methodName, string declaringNamespace)
+        MetadataReader reader,
+        MethodDefinition methodDef,
+        string methodName,
+        string declaringNamespace
+    )
     {
         // Detect variadic methods (__arglist) via signature calling convention
         SignatureHeader sigHeader = reader.GetBlobReader(methodDef.Signature).ReadSignatureHeader();
@@ -74,7 +72,7 @@ public sealed class MethodExtractor
             MethodImportAttributes.CallingConventionThisCall => CallingConvention.ThisCall,
             MethodImportAttributes.CallingConventionFastCall => CallingConvention.FastCall,
             MethodImportAttributes.CallingConventionWinApi => CallingConvention.WinApi,
-            _ => CallingConvention.StdCall
+            _ => CallingConvention.StdCall,
         };
 
         // Map character set
@@ -82,7 +80,7 @@ public sealed class MethodExtractor
         {
             MethodImportAttributes.CharSetAnsi => StringEncoding.Ansi,
             MethodImportAttributes.CharSetUnicode => StringEncoding.Unicode,
-            _ => StringEncoding.None
+            _ => StringEncoding.None,
         };
 
         bool setsLastError = import.Attributes.HasFlag(MethodImportAttributes.SetLastError);
@@ -94,21 +92,25 @@ public sealed class MethodExtractor
         ApiDetails? apiDetails = _docs.GetApiDetails(reader, methodDef);
 
         // Extract parameters
-        List<ParameterMember> parameters = _paramExtractor.ExtractParameters(
-            reader, methodDef, apiDetails);
+        List<ParameterMember> parameters = _paramExtractor.ExtractParameters(reader, methodDef, apiDetails);
 
         // Compute output parameter
         ParameterMember? outputParameter = GetOutputParameter(
-            parameters, methodAttrs.PreserveSig, methodAttrs.CanReturnErrorsAsSuccess);
+            parameters,
+            methodAttrs.PreserveSig,
+            methodAttrs.CanReturnErrorsAsSuccess
+        );
 
         // Compute ShouldThrowOnHResult
         bool shouldThrow = ShouldThrowOnHResult(
-            parameters, methodAttrs.PreserveSigValue,
-            methodAttrs.CanReturnErrorsAsSuccess, methodAttrs.CanReturnMultipleSuccessValues);
+            parameters,
+            methodAttrs.PreserveSigValue,
+            methodAttrs.CanReturnErrorsAsSuccess,
+            methodAttrs.CanReturnMultipleSuccessValues
+        );
 
         // Collect referenced types/functions
-        ImportCollection imports = CollectImports(
-            parameters, entryPoint, outputParameter);
+        ImportCollection imports = CollectImports(parameters, entryPoint, outputParameter);
 
         MethodMember result = new()
         {
@@ -132,11 +134,16 @@ public sealed class MethodExtractor
             DeprecationMessage = methodAttrs.DeprecationMessage,
             ReturnValueDoc = apiDetails?.ReturnValue,
             SupportedOSPlatform = methodAttrs.SupportedOSPlatform,
-            Imports = imports
+            Imports = imports,
         };
 
-        _logger.LogTrace("Extracted method {Namespace}.{Method} ({ParamCount} params, dll={Dll})",
-            declaringNamespace, methodName, parameters.Count - 1, dllName);
+        _logger.LogTrace(
+            "Extracted method {Namespace}.{Method} ({ParamCount} params, dll={Dll})",
+            declaringNamespace,
+            methodName,
+            parameters.Count - 1,
+            dllName
+        );
 
         return result;
     }
@@ -164,9 +171,8 @@ public sealed class MethodExtractor
                 {
                     preserveSig = true;
                     CustomAttributeValue<string> decoded = attr.DecodeValue(new CaTypeProvider());
-                    preserveSigValue = decoded.FixedArguments.Length > 0
-                        ? decoded.FixedArguments[0].Value as bool? ?? true
-                        : true;
+                    preserveSigValue =
+                        decoded.FixedArguments.Length > 0 ? decoded.FixedArguments[0].Value as bool? ?? true : true;
                     break;
                 }
 
@@ -181,9 +187,8 @@ public sealed class MethodExtractor
                 case "ObsoleteAttribute":
                 {
                     CustomAttributeValue<string> decoded = attr.DecodeValue(new CaTypeProvider());
-                    deprecationMessage = decoded.FixedArguments.Length > 0
-                        ? decoded.FixedArguments[0].Value as string
-                        : null;
+                    deprecationMessage =
+                        decoded.FixedArguments.Length > 0 ? decoded.FixedArguments[0].Value as string : null;
                     break;
                 }
 
@@ -196,8 +201,14 @@ public sealed class MethodExtractor
             }
         }
 
-        return new MethodAttrs(preserveSig, preserveSigValue, canReturnErrorsAsSuccess,
-            canReturnMultipleSuccessValues, deprecationMessage, supportedOSPlatform);
+        return new MethodAttrs(
+            preserveSig,
+            preserveSigValue,
+            canReturnErrorsAsSuccess,
+            canReturnMultipleSuccessValues,
+            deprecationMessage,
+            supportedOSPlatform
+        );
     }
 
     /// <summary>
@@ -205,7 +216,10 @@ public sealed class MethodExtractor
     /// Port of AhkMethod.GetOutputParameter.
     /// </summary>
     internal static ParameterMember? GetOutputParameter(
-        List<ParameterMember> parameters, bool preserveSig, bool canReturnErrorsAsSuccess)
+        List<ParameterMember> parameters,
+        bool preserveSig,
+        bool canReturnErrorsAsSuccess
+    )
     {
         // If we have PreserveSig OR CanReturnErrorsAsSuccess OR the function doesn't return HRESULT,
         // don't collapse [out] parameters
@@ -229,8 +243,11 @@ public sealed class MethodExtractor
     /// Port of AhkMethod.ShouldThrowForReturnValue.
     /// </summary>
     private static bool ShouldThrowOnHResult(
-        List<ParameterMember> parameters, bool? preserveSigValue,
-        bool canReturnErrorsAsSuccess, bool canReturnMultipleSuccessValues)
+        List<ParameterMember> parameters,
+        bool? preserveSigValue,
+        bool canReturnErrorsAsSuccess,
+        bool canReturnMultipleSuccessValues
+    )
     {
         // Must return HRESULT
         if (parameters.Count == 0 || parameters[0].Type is not HResultType)
@@ -253,8 +270,10 @@ public sealed class MethodExtractor
     /// Port of AhkMethod.GetReferencedTypes.
     /// </summary>
     private static ImportCollection CollectImports(
-        List<ParameterMember> parameters, string entryPoint,
-        ParameterMember? outputParameter)
+        List<ParameterMember> parameters,
+        string entryPoint,
+        ParameterMember? outputParameter
+    )
     {
         var imports = new ImportCollection();
 
@@ -262,8 +281,7 @@ public sealed class MethodExtractor
         if (entryPoint.StartsWith('#'))
         {
             imports.AddFunction("Windows.Win32.Foundation.Apis", "FreeLibrary");
-            imports.AddFunctions("Windows.Win32.System.LibraryLoader.Apis", 
-                ["LoadLibraryW", "GetProcAddress"]);
+            imports.AddFunctions("Windows.Win32.System.LibraryLoader.Apis", ["LoadLibraryW", "GetProcAddress"]);
         }
 
         // Import every named type referenced anywhere in the signature (return + params).
@@ -296,5 +314,6 @@ public sealed class MethodExtractor
         bool CanReturnErrorsAsSuccess,
         bool CanReturnMultipleSuccessValues,
         string? DeprecationMessage,
-        string? SupportedOSPlatform);
+        string? SupportedOSPlatform
+    );
 }

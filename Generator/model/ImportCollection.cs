@@ -27,8 +27,7 @@ public sealed class ImportCollection
         return fns.Add(fnName);
     }
 
-    public int AddFunctions(string apisFqn, IEnumerable<string> fns) =>
-        fns.Count(fn => AddFunction(apisFqn, fn));
+    public int AddFunctions(string apisFqn, IEnumerable<string> fns) => fns.Count(fn => AddFunction(apisFqn, fn));
 
     public IEnumerable<string> GetFunctionNamespaces() => _functions.Keys;
 

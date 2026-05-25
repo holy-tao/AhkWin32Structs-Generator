@@ -43,8 +43,7 @@ public sealed class OverrideApplier
                 int removed = registry.Remove(ov.FQN);
                 if (removed > 0)
                 {
-                    _logger.LogDebug("Removed type {FQN} ({Count} variant(s)) via skip override",
-                        ov.FQN, removed);
+                    _logger.LogDebug("Removed type {FQN} ({Count} variant(s)) via skip override", ov.FQN, removed);
                     skipped += removed;
                 }
                 else
@@ -75,9 +74,12 @@ public sealed class OverrideApplier
             applied++;
         }
 
-        _logger.LogInformation("Applied {Applied} override(s), skipped {Skipped} type(s){Unmatched}",
-            applied, skipped,
-            unmatched > 0 ? $", {unmatched} unmatched" : "");
+        _logger.LogInformation(
+            "Applied {Applied} override(s), skipped {Skipped} type(s){Unmatched}",
+            applied,
+            skipped,
+            unmatched > 0 ? $", {unmatched} unmatched" : ""
+        );
     }
 
     private void ApplyTypeOverride(Win32Type type, TypeOverride ov)
@@ -88,13 +90,15 @@ public sealed class OverrideApplier
             if (type is StructType structType)
             {
                 structType.StructSizeFieldName = ov.StructSizeField;
-                _logger.LogDebug("Set StructSizeFieldName={Field} on {FQN}",
-                    ov.StructSizeField, ov.FQN);
+                _logger.LogDebug("Set StructSizeFieldName={Field} on {FQN}", ov.StructSizeField, ov.FQN);
             }
             else
             {
-                _logger.LogWarning("struct-size-field override on non-struct type {FQN} ({Kind})",
-                    ov.FQN, type.GetType().Name);
+                _logger.LogWarning(
+                    "struct-size-field override on non-struct type {FQN} ({Kind})",
+                    ov.FQN,
+                    type.GetType().Name
+                );
             }
         }
 
@@ -111,47 +115,51 @@ public sealed class OverrideApplier
         }
     }
 
-    private void ApplyFieldOverrides(StructType structType,
-        IReadOnlyDictionary<string, FieldOverride> fieldOverrides, string typeFqn)
+    private void ApplyFieldOverrides(
+        StructType structType,
+        IReadOnlyDictionary<string, FieldOverride> fieldOverrides,
+        string typeFqn
+    )
     {
         foreach (var (fieldName, fieldOv) in fieldOverrides)
         {
-            var field = structType.Members.FirstOrDefault(f =>
-                f.Name.Equals(fieldName, StringComparison.Ordinal));
+            var field = structType.Members.FirstOrDefault(f => f.Name.Equals(fieldName, StringComparison.Ordinal));
 
             if (field is null)
             {
-                _logger.LogWarning("Field override targets non-existent field {Type}.{Field}",
-                    typeFqn, fieldName);
+                _logger.LogWarning("Field override targets non-existent field {Type}.{Field}", typeFqn, fieldName);
                 continue;
             }
 
             if (fieldOv.AddAttributes != MemberFlags.None)
             {
                 field.Flags |= fieldOv.AddAttributes;
-                _logger.LogDebug("Added {Flags} to {Type}.{Field}",
-                    fieldOv.AddAttributes, typeFqn, fieldName);
+                _logger.LogDebug("Added {Flags} to {Type}.{Field}", fieldOv.AddAttributes, typeFqn, fieldName);
             }
         }
     }
 
-    private void ApplyMethodOverrides(ApiType apiType,
-        IReadOnlyDictionary<string, MethodOverride> methodOverrides, string typeFqn)
+    private void ApplyMethodOverrides(
+        ApiType apiType,
+        IReadOnlyDictionary<string, MethodOverride> methodOverrides,
+        string typeFqn
+    )
     {
         foreach (var (methodName, methodOv) in methodOverrides)
         {
             // Skip method: remove from the method list
             if (methodOv.Skip)
             {
-                int removed = apiType.Methods.RemoveAll(m =>
-                    m.Name.Equals(methodName, StringComparison.Ordinal));
+                int removed = apiType.Methods.RemoveAll(m => m.Name.Equals(methodName, StringComparison.Ordinal));
 
                 if (removed > 0)
-                    _logger.LogDebug("Removed method {Type}.{Method} via skip override",
-                        typeFqn, methodName);
+                    _logger.LogDebug("Removed method {Type}.{Method} via skip override", typeFqn, methodName);
                 else
-                    _logger.LogWarning("Method skip override targets non-existent method {Type}.{Method}",
-                        typeFqn, methodName);
+                    _logger.LogWarning(
+                        "Method skip override targets non-existent method {Type}.{Method}",
+                        typeFqn,
+                        methodName
+                    );
                 continue;
             }
 
@@ -159,13 +167,11 @@ public sealed class OverrideApplier
             if (methodOv.Parameters is not { Count: > 0 })
                 continue;
 
-            var method = apiType.Methods.FirstOrDefault(m =>
-                m.Name.Equals(methodName, StringComparison.Ordinal));
+            var method = apiType.Methods.FirstOrDefault(m => m.Name.Equals(methodName, StringComparison.Ordinal));
 
             if (method is null)
             {
-                _logger.LogWarning("Method override targets non-existent method {Type}.{Method}",
-                    typeFqn, methodName);
+                _logger.LogWarning("Method override targets non-existent method {Type}.{Method}", typeFqn, methodName);
                 continue;
             }
 
@@ -173,27 +179,38 @@ public sealed class OverrideApplier
         }
     }
 
-    private void ApplyParameterOverrides(MethodMember method,
+    private void ApplyParameterOverrides(
+        MethodMember method,
         IReadOnlyDictionary<string, ParameterOverride> paramOverrides,
-        string typeFqn, string methodName)
+        string typeFqn,
+        string methodName
+    )
     {
         foreach (var (paramName, paramOv) in paramOverrides)
         {
-            var param = method.Parameters.FirstOrDefault(p =>
-                p.Name.Equals(paramName, StringComparison.Ordinal));
+            var param = method.Parameters.FirstOrDefault(p => p.Name.Equals(paramName, StringComparison.Ordinal));
 
             if (param is null)
             {
-                _logger.LogWarning("Parameter override targets non-existent parameter {Type}.{Method}.{Param}",
-                    typeFqn, methodName, paramName);
+                _logger.LogWarning(
+                    "Parameter override targets non-existent parameter {Type}.{Method}.{Param}",
+                    typeFqn,
+                    methodName,
+                    paramName
+                );
                 continue;
             }
 
             if (paramOv.AddAttributes != ParameterFlags.None)
             {
                 param.Attributes |= paramOv.AddAttributes;
-                _logger.LogDebug("Added {Flags} to {Type}.{Method}.{Param}",
-                    paramOv.AddAttributes, typeFqn, methodName, paramName);
+                _logger.LogDebug(
+                    "Added {Flags} to {Type}.{Method}.{Param}",
+                    paramOv.AddAttributes,
+                    typeFqn,
+                    methodName,
+                    paramName
+                );
             }
         }
     }
@@ -224,12 +241,16 @@ public sealed class OverrideApplier
             }
 
             var sourceMethod = sourceApi.Methods.FirstOrDefault(m =>
-                m.Name.Equals(addRef.MethodName, StringComparison.Ordinal));
+                m.Name.Equals(addRef.MethodName, StringComparison.Ordinal)
+            );
 
             if (sourceMethod is null)
             {
-                _logger.LogWarning("add-methods: method {Method} not found in {SourceFQN}",
-                    addRef.MethodName, addRef.SourceFQN);
+                _logger.LogWarning(
+                    "add-methods: method {Method} not found in {SourceFQN}",
+                    addRef.MethodName,
+                    addRef.SourceFQN
+                );
                 continue;
             }
 
@@ -245,8 +266,11 @@ public sealed class OverrideApplier
                 // Check if method already exists in target
                 if (targetApi.Methods.Any(m => m.Name.Equals(addRef.MethodName, StringComparison.Ordinal)))
                 {
-                    _logger.LogDebug("Method {Method} already exists in {FQN} — skipping add-methods",
-                        addRef.MethodName, ov.FQN);
+                    _logger.LogDebug(
+                        "Method {Method} already exists in {FQN} — skipping add-methods",
+                        addRef.MethodName,
+                        ov.FQN
+                    );
                     continue;
                 }
 
@@ -257,8 +281,12 @@ public sealed class OverrideApplier
                 // Add imports from the cloned method
                 targetApi.Imports.MergeFrom(cloned.Imports);
 
-                _logger.LogDebug("Cloned method {Method} from {Source} to {Target}",
-                    addRef.MethodName, addRef.SourceFQN, ov.FQN);
+                _logger.LogDebug(
+                    "Cloned method {Method} from {Source} to {Target}",
+                    addRef.MethodName,
+                    addRef.SourceFQN,
+                    ov.FQN
+                );
             }
         }
     }
@@ -289,7 +317,7 @@ public sealed class OverrideApplier
             ReturnValueDoc = source.ReturnValueDoc,
             SupportedOSPlatform = source.SupportedOSPlatform,
             ShouldThrowOnHResult = source.ShouldThrowOnHResult,
-            Imports = source.Imports
+            Imports = source.Imports,
         };
     }
 }

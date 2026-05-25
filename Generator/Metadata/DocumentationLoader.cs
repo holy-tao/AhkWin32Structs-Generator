@@ -40,8 +40,7 @@ public sealed class DocumentationLoader
         }
 
         watch.Stop();
-        _logger.LogInformation("Loaded {Count} ApiDetails records in {Elapsed}ms",
-            count, watch.ElapsedMilliseconds);
+        _logger.LogInformation("Loaded {Count} ApiDetails records in {Elapsed}ms", count, watch.ElapsedMilliseconds);
     }
 
     /// <summary>
@@ -51,7 +50,10 @@ public sealed class DocumentationLoader
     public ApiDetails? GetApiDetails(MetadataReader reader, TypeDefinition typeDef)
     {
         CustomAttribute? docAttr = AttributeReader.FindAttribute(
-            reader, typeDef.GetCustomAttributes(), "DocumentationAttribute");
+            reader,
+            typeDef.GetCustomAttributes(),
+            "DocumentationAttribute"
+        );
 
         string fqn = $"{reader.GetString(typeDef.Namespace)}.{reader.GetString(typeDef.Name)}";
 
@@ -69,7 +71,10 @@ public sealed class DocumentationLoader
     {
         string methodName = reader.GetString(def.Name);
         CustomAttribute? docAttr = AttributeReader.FindAttribute(
-            reader, def.GetCustomAttributes(), "DocumentationAttribute");
+            reader,
+            def.GetCustomAttributes(),
+            "DocumentationAttribute"
+        );
         ApiDetails? details = null;
 
         // Check parent type for qualified lookup
@@ -107,8 +112,9 @@ public sealed class DocumentationLoader
         if (details.HelpLink == null && documentationAttr != null)
         {
             var decoded = documentationAttr.Value.DecodeValue(s_attrProvider);
-            string uriString = (string)(decoded.FixedArguments[0].Value
-                ?? throw new NullReferenceException("Null DocumentationAttribute URI"));
+            string uriString = (string)(
+                decoded.FixedArguments[0].Value ?? throw new NullReferenceException("Null DocumentationAttribute URI")
+            );
             details.HelpLink = new Uri(uriString);
         }
 

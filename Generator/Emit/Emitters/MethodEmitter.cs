@@ -41,12 +41,19 @@ public static class MethodEmitter
         }
     }
 
-    private static void EmitDllImportMethodBody(AhkWriter w, MethodMember method, TypeRegistry registry, bool unqualifyApis)
+    private static void EmitDllImportMethodBody(
+        AhkWriter w,
+        MethodMember method,
+        TypeRegistry registry,
+        bool unqualifyApis
+    )
     {
         // AutoHotkey doesn't support the thiscall calling convention
         if (method.CallingConvention == CallingConvention.ThisCall)
         {
-            w.Line("throw MethodError(\"Not supported: AutoHotkey does not support the thiscall calling convention\", , A_ThisFunc)");
+            w.Line(
+                "throw MethodError(\"Not supported: AutoHotkey does not support the thiscall calling convention\", , A_ThisFunc)"
+            );
             return;
         }
 
@@ -89,8 +96,8 @@ public static class MethodEmitter
     /// </summary>
     private static string BuildArgumentList(MethodMember method)
     {
-        var names = method.Parameters
-            .Skip(1) // Skip param 0 (return value)
+        var names = method
+            .Parameters.Skip(1) // Skip param 0 (return value)
             .Where(p => !p.IsReserved && p != method.OutputParameter)
             .Select(p => p.Name)
             .ToList();
@@ -106,15 +113,23 @@ public static class MethodEmitter
     private static void EmitReservedParams(AhkWriter w, MethodMember method)
     {
         var reserved = method.Parameters.Skip(1).Where(p => p.IsReserved).ToList();
-        if (reserved.Count == 0) return;
+        if (reserved.Count == 0)
+            return;
 
-        w.Line($"static {string.Join(", ", reserved.Select(p => $"{p.Name} := 0"))} ;Reserved parameters must always be NULL");
+        w.Line(
+            $"static {string.Join(", ", reserved.Select(p => $"{p.Name} := 0"))} ;Reserved parameters must always be NULL"
+        );
         w.BlankLine();
     }
 
     // --- Parameter conversions (String→StrPtr, Handle→NumGet) ---
 
-    private static void EmitParameterConversions(AhkWriter w, MethodMember method, bool isComMethod, bool unqualifyApis = false)
+    private static void EmitParameterConversions(
+        AhkWriter w,
+        MethodMember method,
+        bool isComMethod,
+        bool unqualifyApis = false
+    )
     {
         int startLen = w.Length;
 
@@ -175,7 +190,8 @@ public static class MethodEmitter
 
     private static void EmitOutputParamMarshalling(AhkWriter w, MethodMember method)
     {
-        if (method.OutputParameter is not { } outParam) return;
+        if (method.OutputParameter is not { } outParam)
+            return;
 
         if (outParam.IsSizedBuffer)
         {
@@ -223,9 +239,7 @@ public static class MethodEmitter
 
         if (method.HasReturnValue)
         {
-            sb.Append(method.ShouldThrowOnHResult
-                ? "HRESULT"
-                : method.Parameters[0].Type.DllCallType);
+            sb.Append(method.ShouldThrowOnHResult ? "HRESULT" : method.Parameters[0].Type.DllCallType);
         }
 
         return sb.ToString().Trim();
@@ -239,9 +253,7 @@ public static class MethodEmitter
             sb.Append("result := ");
 
         // Entry point
-        string entry = method.IsOrdinal
-            ? "procAddr"
-            : $"\"{method.DllName}\\{method.EntryPoint}\"";
+        string entry = method.IsOrdinal ? "procAddr" : $"\"{method.DllName}\\{method.EntryPoint}\"";
 
         sb.Append($"DllCall({entry}");
 
@@ -279,9 +291,7 @@ public static class MethodEmitter
         {
             var param = method.Parameters[i];
 
-            bool useMarshalVar = param.IsPtrToPrimitive
-                && !param.IsReserved
-                && param != method.OutputParameter;
+            bool useMarshalVar = param.IsPtrToPrimitive && !param.IsReserved && param != method.OutputParameter;
 
             string marshalAs;
             if (useMarshalVar)
@@ -298,11 +308,8 @@ public static class MethodEmitter
             }
 
             // Value string
-            bool isVarRefOutput = param == method.OutputParameter
-                && (param.IsPtrToPrimitive || param.IsPtrToCom);
-            string passAs = isVarRefOutput
-                ? $"&{param.Name} := 0"
-                : param.Name;
+            bool isVarRefOutput = param == method.OutputParameter && (param.IsPtrToPrimitive || param.IsPtrToCom);
+            string passAs = isVarRefOutput ? $"&{param.Name} := 0" : param.Name;
 
             sb.Append(marshalAs);
             sb.Append(", ");
@@ -345,7 +352,8 @@ public static class MethodEmitter
             errCodeSources.Add("A_LastError");
         }
 
-        if (conditions.Count == 0) return;
+        if (conditions.Count == 0)
+            return;
 
         w.Line($"if({string.Join(" && ", conditions)}) {{");
 
@@ -364,7 +372,12 @@ public static class MethodEmitter
 
     // --- Return statement ---
 
-    private static void EmitReturnStatement(AhkWriter w, MethodMember method, TypeRegistry registry, bool unqualifyApis = false)
+    private static void EmitReturnStatement(
+        AhkWriter w,
+        MethodMember method,
+        TypeRegistry registry,
+        bool unqualifyApis = false
+    )
     {
         if (!method.HasReturnValue && method.OutputParameter == null)
             return;
@@ -390,10 +403,16 @@ public static class MethodEmitter
         w.Line($"return {fnRetVal.Name}");
     }
 
-    private static void EmitHandleReturn(AhkWriter w, ParameterMember fnRetVal, TypeRegistry registry, bool unqualifyApis = false)
+    private static void EmitHandleReturn(
+        AhkWriter w,
+        ParameterMember fnRetVal,
+        TypeRegistry registry,
+        bool unqualifyApis = false
+    )
     {
         // Get handle info from the type
-        string handleName, handleFqn;
+        string handleName,
+            handleFqn;
         if (fnRetVal.Type is HandleRef hr)
         {
             handleName = hr.Name;
@@ -453,12 +472,13 @@ public static class MethodEmitter
     /// Get the DllCall type for a parameter, using typed pointer forms (e.g., "int*").
     /// Matches legacy GetDllCallType(useNakedPointer: false) behavior.
     /// </summary>
-    private static string GetParamDllCallType(ResolvedType type) => type switch
-    {
-        PointerType p => p.TypedDllCallType,
-        NativeTypedefRef n => GetParamDllCallType(n.Underlying),
-        _ => type.DllCallType
-    };
+    private static string GetParamDllCallType(ResolvedType type) =>
+        type switch
+        {
+            PointerType p => p.TypedDllCallType,
+            NativeTypedefRef n => GetParamDllCallType(n.Underlying),
+            _ => type.DllCallType,
+        };
 
     /// <summary>
     /// Render the DllCall type token for a parameter - the exact text to paste into
@@ -473,31 +493,32 @@ public static class MethodEmitter
 
         return type switch
         {
-            HandleRef h                                  => h.Name,
-            NativeTypedefRef n                           => n.Name,
-            StructRef s                                  => s.Name,
-            EnumRef e                                    => e.Name,
-            NtStatusType                                 => "NTSTATUS",
-            PointerType { Pointee: StructRef s }         => $"{s.Name}.Ptr",
-            PointerType { Pointee: HandleRef h }         => $"{h.Name}.Ptr",
-            PointerType { Pointee: ComRef c }            => $"{c.Name}.Ptr",
-            PointerType { Pointee: NativeTypedefRef n }  => $"{n.Name}.Ptr",
+            HandleRef h => h.Name,
+            NativeTypedefRef n => n.Name,
+            StructRef s => s.Name,
+            EnumRef e => e.Name,
+            NtStatusType => "NTSTATUS",
+            PointerType { Pointee: StructRef s } => $"{s.Name}.Ptr",
+            PointerType { Pointee: HandleRef h } => $"{h.Name}.Ptr",
+            PointerType { Pointee: ComRef c } => $"{c.Name}.Ptr",
+            PointerType { Pointee: NativeTypedefRef n } => $"{n.Name}.Ptr",
             // Fallback: pointer-to-primitive (typed star), void*, function ptr, enum, HRESULT, etc.
-            _                                            => $"\"{GetParamDllCallType(type)}\""
+            _ => $"\"{GetParamDllCallType(type)}\"",
         };
     }
 
     /// <summary>
     /// Get the display name of a pointer's pointee (for struct/handle/COM output params).
     /// </summary>
-    private static string GetPointeeName(ResolvedType type) => type switch
-    {
-        PointerType { Pointee: StructRef s } => s.Name,
-        PointerType { Pointee: HandleRef h } => h.Name,
-        PointerType { Pointee: ComRef c } => c.Name,
-        PointerType { Pointee: { } p } => p.DisplayName,
-        _ => type.DisplayName
-    };
+    private static string GetPointeeName(ResolvedType type) =>
+        type switch
+        {
+            PointerType { Pointee: StructRef s } => s.Name,
+            PointerType { Pointee: HandleRef h } => h.Name,
+            PointerType { Pointee: ComRef c } => c.Name,
+            PointerType { Pointee: { } p } => p.DisplayName,
+            _ => type.DisplayName,
+        };
 
     /// <summary>
     /// Look up a handle type's first field name from the registry.
@@ -513,7 +534,12 @@ public static class MethodEmitter
     /// Emit a complete COM method (documentation + signature + body).
     /// Port of legacy AhkComMethod.ToAhk().
     /// </summary>
-    public static void EmitComMethod(AhkWriter w, ComMethodMember method, TypeRegistry registry, AhkVersion version = AhkVersion.v20)
+    public static void EmitComMethod(
+        AhkWriter w,
+        ComMethodMember method,
+        TypeRegistry registry,
+        AhkVersion version = AhkVersion.v20
+    )
     {
         DocCommentWriter.WriteMethodDoc(w, method);
         bool unqualifyApis = version is AhkVersion.v21;

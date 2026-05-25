@@ -78,7 +78,7 @@ public sealed class ComInterfaceEmitter(TypeRegistry registry, AhkVersion versio
             w.Include($"{pathToBase}Win32ComInterface.ahk");
             w.Include($"{pathToBase}Guid.ahk");
         }
-        
+
         EmitImports(w, comType);
     }
 

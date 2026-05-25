@@ -57,12 +57,17 @@ public sealed class StructEmitter : ITypeEmitter
     /// Emit the body of a struct: nested class definitions, member properties, extensions, __New.
     /// Shared by StructEmitter and HandleEmitter.
     /// </summary>
-    internal static void EmitBody(AhkWriter w, StructType structType, int embeddingOffset,
-        List<EmittedField> emittedMembers, string parentClassName)
+    internal static void EmitBody(
+        AhkWriter w,
+        StructType structType,
+        int embeddingOffset,
+        List<EmittedField> emittedMembers,
+        string parentClassName
+    )
     {
         // 1. Nested class definitions (non-anonymous, non-Reserved named nested types)
-        var nestedClassDefs = structType.Members
-            .Where(m => m.IsNested && !m.IsAnonymous && m.Name is not "Reserved")
+        var nestedClassDefs = structType
+            .Members.Where(m => m.IsNested && !m.IsAnonymous && m.Name is not "Reserved")
             .Where(m => m.EmbeddedStruct is not null)
             .Select(m => m.EmbeddedStruct!)
             .DistinctBy(s => s.Name);
@@ -90,10 +95,10 @@ public sealed class StructEmitter : ITypeEmitter
             {
                 if (field.EmbeddedStruct is null)
                     throw new InvalidOperationException(
-                        $"{structType.Name}.{field.Name} is anonymous but has no EmbeddedStruct");
+                        $"{structType.Name}.{field.Name} is anonymous but has no EmbeddedStruct"
+                    );
 
-                EmitBody(w, field.EmbeddedStruct, field.Offset + embeddingOffset,
-                    emittedMembers, parentClassName);
+                EmitBody(w, field.EmbeddedStruct, field.Offset + embeddingOffset, emittedMembers, parentClassName);
                 continue;
             }
 
@@ -103,8 +108,7 @@ public sealed class StructEmitter : ITypeEmitter
 
             // Name deconfliction
             int suffix = 0;
-            while (emittedMembers.Any(e =>
-                e.Name.Equals(field.Name, StringComparison.OrdinalIgnoreCase)))
+            while (emittedMembers.Any(e => e.Name.Equals(field.Name, StringComparison.OrdinalIgnoreCase)))
             {
                 field.Name += ++suffix;
             }
@@ -133,8 +137,12 @@ public sealed class StructEmitter : ITypeEmitter
         switch (field.Type)
         {
             case StructRef when field.EmbeddedStruct is not null:
-                EmitEmbeddedTypeMember(w, field, offset,
-                    field.IsNested ? $"{parentClassName}.{field.EmbeddedStruct.Name}" : field.EmbeddedStruct.Name);
+                EmitEmbeddedTypeMember(
+                    w,
+                    field,
+                    offset,
+                    field.IsNested ? $"{parentClassName}.{field.EmbeddedStruct.Name}" : field.EmbeddedStruct.Name
+                );
                 break;
             case HandleRef handleRef:
                 // Handle-typed fields use lazy-init pattern (handles are struct types in metadata).
@@ -193,13 +201,14 @@ public sealed class StructEmitter : ITypeEmitter
             using (w.InstanceProperty(bf.Name))
             {
                 w.Line($"get => (this.{field.Name} >> {bf.Offset}) & 0x{mask:X}");
-                w.Line($"set => this.{field.Name} := ((value & 0x{mask:X}) << {bf.Offset}) | (this.{field.Name} & ~(0x{mask:X} << {bf.Offset}))");
+                w.Line(
+                    $"set => this.{field.Name} := ((value & 0x{mask:X}) << {bf.Offset}) | (this.{field.Name} & ~(0x{mask:X} << {bf.Offset}))"
+                );
             }
         }
     }
 
-    private static void EmitEmbeddedTypeMember(AhkWriter w, FieldMember field, int offset,
-        string qualifiedName)
+    private static void EmitEmbeddedTypeMember(AhkWriter w, FieldMember field, int offset, string qualifiedName)
     {
         DocCommentWriter.WriteFieldDoc(w, field);
 
@@ -214,8 +223,7 @@ public sealed class StructEmitter : ITypeEmitter
         }
     }
 
-    private static void EmitArrayMember(AhkWriter w, FieldMember field, int offset,
-        string parentClassName)
+    private static void EmitArrayMember(AhkWriter w, FieldMember field, int offset, string parentClassName)
     {
         var arrayType = (ArrayType)field.Type;
         ResolvedType elementType = arrayType.ElementType;
@@ -228,9 +236,7 @@ public sealed class StructEmitter : ITypeEmitter
         {
             case StructRef structRef:
                 dllCallType = "";
-                ahkElementType = field.IsNested
-                    ? $"{parentClassName}.{structRef.Name}"
-                    : structRef.Name;
+                ahkElementType = field.IsNested ? $"{parentClassName}.{structRef.Name}" : structRef.Name;
                 break;
             case NativeTypedefRef nativeTypedef:
                 ahkElementType = "Primitive";
@@ -254,7 +260,9 @@ public sealed class StructEmitter : ITypeEmitter
             using (w.GetBlock())
             {
                 w.Line($"if(!this.HasProp(\"__{field.Name}ProxyArray\"))");
-                w.Line($"    this.__{field.Name}ProxyArray := Win32FixedArray(this.ptr + {offset}, {arrayType.Length}, {ahkElementType}, \"{dllCallType}\")");
+                w.Line(
+                    $"    this.__{field.Name}ProxyArray := Win32FixedArray(this.ptr + {offset}, {arrayType.Length}, {ahkElementType}, \"{dllCallType}\")"
+                );
                 w.Line($"return this.__{field.Name}ProxyArray");
             }
         }
@@ -277,8 +285,7 @@ public sealed class StructEmitter : ITypeEmitter
     internal void EmitImports(AhkWriter w, Win32Type type)
     {
         // Restrict to targets available in the registry to filter out nested types
-        IEnumerable<string> imports = type.Imports.GetIncludeTargets()
-            .Where(_registry.Contains);
+        IEnumerable<string> imports = type.Imports.GetIncludeTargets().Where(_registry.Contains);
 
         foreach (string import in imports)
         {
@@ -288,12 +295,14 @@ public sealed class StructEmitter : ITypeEmitter
 
     internal static void EmitExtensions(AhkWriter w, Win32Type type)
     {
-        if (type.Extensions.Count == 0) return;
+        if (type.Extensions.Count == 0)
+            return;
 
         foreach (var ext in type.Extensions)
         {
             // Replace tokens
-            string code = ext.Code.Replace("$Class", type.Name)
+            string code = ext
+                .Code.Replace("$Class", type.Name)
                 .Replace("$Namespace", type.Namespace)
                 .Replace("$Arch", type.Arch.ToString());
             if (type is ComInterfaceType iface)
@@ -323,8 +332,10 @@ public sealed class StructEmitter : ITypeEmitter
             else
             {
                 // Non-bitfield fields are duplicates if same offset + same name
-                if (field.Offset == existing.Offset &&
-                    field.Name.Equals(existing.Name, StringComparison.OrdinalIgnoreCase))
+                if (
+                    field.Offset == existing.Offset
+                    && field.Name.Equals(existing.Name, StringComparison.OrdinalIgnoreCase)
+                )
                     return true;
             }
         }
@@ -334,6 +345,5 @@ public sealed class StructEmitter : ITypeEmitter
     /// <summary>
     /// Tracks emitted fields for duplicate detection and name deconfliction.
     /// </summary>
-    internal record EmittedField(
-        string Name, int Offset, IReadOnlyList<BitfieldMember> Bitfields, bool IsBitField);
+    internal record EmittedField(string Name, int Offset, IReadOnlyList<BitfieldMember> Bitfields, bool IsBitField);
 }

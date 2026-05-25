@@ -38,43 +38,59 @@ public sealed class ExtensionReader
         var watch = Stopwatch.StartNew();
 
         // Sort files for deterministic output ordering
-        string[] files = [.. Directory.GetFiles(extensionDirectoryPath)
-            .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".yml" or ".yaml")
-            .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)];
+        string[] files =
+        [
+            .. Directory
+                .GetFiles(extensionDirectoryPath)
+                .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".yml" or ".yaml")
+                .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase),
+        ];
 
-        Parallel.ForEach(files, new ParallelOptions { MaxDegreeOfParallelism = _maxParallelism }, path =>
-        {
-            ExtensionDto dto;
-            try
+        Parallel.ForEach(
+            files,
+            new ParallelOptions { MaxDegreeOfParallelism = _maxParallelism },
+            path =>
             {
-                dto = deserializer.Deserialize<ExtensionDto>(File.ReadAllText(path));
-            }
-            catch (Exception ex) when (ex is YamlException or IOException)
-            {
-                _logger.LogError(ex, "Failed to deserialize extension \"{file}\"", Path.GetFileName(path));
-                return;
-            }
-
-            var extensionCode = new ExtensionCode(dto.Code, dto.Requires ?? []);
-
-            foreach (string fqn in dto.AddTo)
-            {
-                if (!extensions.TryGetValue(fqn, out List<ExtensionCode>? list))
+                ExtensionDto dto;
+                try
                 {
-                    list = [];
-                    extensions[fqn] = list;
+                    dto = deserializer.Deserialize<ExtensionDto>(File.ReadAllText(path));
+                }
+                catch (Exception ex) when (ex is YamlException or IOException)
+                {
+                    _logger.LogError(ex, "Failed to deserialize extension \"{file}\"", Path.GetFileName(path));
+                    return;
                 }
 
-                list.Add(extensionCode);
-            }
+                var extensionCode = new ExtensionCode(dto.Code, dto.Requires ?? []);
 
-            _logger.LogDebug("Loaded extension from {FileName}: {FqnCount} target(s), {ReqCount} requirement(s)",
-                Path.GetFileName(path), dto.AddTo.Count, dto.Requires?.Count ?? 0);
-        });
+                foreach (string fqn in dto.AddTo)
+                {
+                    if (!extensions.TryGetValue(fqn, out List<ExtensionCode>? list))
+                    {
+                        list = [];
+                        extensions[fqn] = list;
+                    }
+
+                    list.Add(extensionCode);
+                }
+
+                _logger.LogDebug(
+                    "Loaded extension from {FileName}: {FqnCount} target(s), {ReqCount} requirement(s)",
+                    Path.GetFileName(path),
+                    dto.AddTo.Count,
+                    dto.Requires?.Count ?? 0
+                );
+            }
+        );
 
         watch.Stop();
-        _logger.LogInformation("Loaded extensions for {fqns} types from {files} files in {time:F1}s", 
-            extensions.Count, files.Length, watch.Elapsed.TotalSeconds);
+        _logger.LogInformation(
+            "Loaded extensions for {fqns} types from {files} files in {time:F1}s",
+            extensions.Count,
+            files.Length,
+            watch.Elapsed.TotalSeconds
+        );
 
         return extensions.ToFrozenDictionary();
     }

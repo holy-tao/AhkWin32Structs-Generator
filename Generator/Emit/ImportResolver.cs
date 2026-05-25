@@ -12,9 +12,7 @@ public static class ImportResolver
     /// </summary>
     public static string GetPathToBase(string ns)
     {
-        return ns.Split('.')
-            .Select(_ => $"..{Path.DirectorySeparatorChar}")
-            .Aggregate((agg, cur) => agg + cur);
+        return ns.Split('.').Select(_ => $"..{Path.DirectorySeparatorChar}").Aggregate((agg, cur) => agg + cur);
     }
 
     /// <summary>

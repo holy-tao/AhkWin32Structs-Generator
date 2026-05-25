@@ -8,7 +8,9 @@ using System.Reflection.Metadata;
 internal sealed class CaTypeProvider : ICustomAttributeTypeProvider<string>
 {
     public string GetPrimitiveType(PrimitiveTypeCode typeCode) => typeCode.ToString();
+
     public string GetSystemType() => "System.Type";
+
     public string GetTypeFromSerializedName(string name) => name ?? "Unknown";
 
     public string GetTypeFromDefinition(MetadataReader r, TypeDefinitionHandle h, byte raw)
@@ -29,13 +31,13 @@ internal sealed class CaTypeProvider : ICustomAttributeTypeProvider<string>
 
     public string GetSZArrayType(string elementType) => $"{elementType}[]";
 
-    public string GetTypeFromSpecification(MetadataReader r, object? ctx, TypeSpecificationHandle h, byte raw)
-        => "TypeSpec";
+    public string GetTypeFromSpecification(MetadataReader r, object? ctx, TypeSpecificationHandle h, byte raw) =>
+        "TypeSpec";
 
     public bool IsSystemType(string type) => type == "System.Type";
 
-    PrimitiveTypeCode ICustomAttributeTypeProvider<string>.GetUnderlyingEnumType(string type)
-        => PrimitiveTypeCode.UInt32;
+    PrimitiveTypeCode ICustomAttributeTypeProvider<string>.GetUnderlyingEnumType(string type) =>
+        PrimitiveTypeCode.UInt32;
 
     public string GetUnderlyingEnumType(string type) => type;
 }
