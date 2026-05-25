@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 public sealed class MetadataLoader : IDisposable
 {
     private readonly ConcurrentDictionary<string, (PEReader PeReader, MetadataReader Reader)> _primaryAssemblies = [];
-    private readonly ConcurrentDictionary<string, (PEReader PeReader, MetadataReader Reader)> _externalAssemblies = [];
+    private readonly ConcurrentDictionary<string, Lazy<(PEReader PeReader, MetadataReader Reader)>> _externalAssemblies = [];
     private readonly Dictionary<string, string> _packageVersions = [];
     private readonly string _metadataDir;
     private readonly ILogger<MetadataLoader> _logger;
@@ -191,13 +191,22 @@ public sealed class MetadataLoader : IDisposable
     /// </summary>
     public MetadataReader ResolveExternalAssembly(string assemblyName)
     {
-        if (_externalAssemblies.TryGetValue(assemblyName, out var cached))
-            return cached.Reader;
+        // Check primary assemblies first
+        if (_primaryAssemblies.TryGetValue(assemblyName, out var primary))
+            return primary.Reader;
 
-        // Also check primary assemblies
-        if (_primaryAssemblies.TryGetValue(assemblyName, out cached))
-            return cached.Reader;
+        // Lazy ensures the load delegate runs exactly once per assembly name even
+        // under concurrent access; GetOrAdd's factory may run multiple times but
+        // only one Lazy.Value invocation will actually open the file.
+        var lazy = _externalAssemblies.GetOrAdd(assemblyName, name =>
+            new Lazy<(PEReader, MetadataReader)>(
+                () => LoadExternalAssembly(name),
+                LazyThreadSafetyMode.ExecutionAndPublication));
+        return lazy.Value.Reader;
+    }
 
+    private (PEReader PeReader, MetadataReader Reader) LoadExternalAssembly(string assemblyName)
+    {
         string runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
         string sdkRoot = Environment.GetEnvironmentVariable("WindowsSdkDir") ??
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
@@ -257,10 +266,9 @@ public sealed class MetadataLoader : IDisposable
 
             PEReader peReader = new(File.OpenRead(path));
             MetadataReader reader = peReader.GetMetadataReader();
-            _externalAssemblies[assemblyName] = (peReader, reader);
 
-            _logger.LogDebug("Loaded external assembly {AssemblyName} from {Path}", assemblyName, path);
-            return reader;
+            _logger.LogInformation("Loaded external assembly '{AssemblyName}' from '{Path}'", assemblyName, path);
+            return (peReader, reader);
         }
 
         throw new DllNotFoundException($"Failed to load external assembly '{assemblyName}'");
@@ -336,8 +344,11 @@ public sealed class MetadataLoader : IDisposable
         foreach (var (_, (peReader, _)) in _primaryAssemblies)
             peReader.Dispose();
 
-        foreach (var (_, (peReader, _)) in _externalAssemblies)
-            peReader.Dispose();
+        foreach (var (_, lazy) in _externalAssemblies)
+        {
+            if (lazy.IsValueCreated)
+                lazy.Value.PeReader.Dispose();
+        }
 
         _primaryAssemblies.Clear();
         _externalAssemblies.Clear();
