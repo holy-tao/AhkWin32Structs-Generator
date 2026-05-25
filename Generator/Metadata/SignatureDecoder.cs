@@ -291,14 +291,14 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
                 blob.ReadByte(); // field signature header
                 return blob.ReadCompressedInteger() switch
                 {
-                    0x04 => "SByte",
-                    0x05 => "Byte",
+                    0x04 => "Int8",
+                    0x05 => "UInt8",
                     0x06 => "Int16",
                     0x07 => "UInt16",
                     0x08 => "Int32",
                     0x09 => "UInt32",
                     0x0A => "Int64",
-                    0x0B => "UInt64",
+                    0x0B => "Int64", // Ahk has no explicit UInt64 type
                     var code => throw new NotSupportedException($"Unknown enum underlying type code: 0x{code:X2}"),
                 };
             }
