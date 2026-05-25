@@ -117,11 +117,15 @@ Extensions are defined in [YAML](https://yaml.org/) files. The generator will re
 
 | Name | Type | Description |
 | ---- | ---- | ----------- |
-| `add-to` | sequence | The fully qualified names of all types to which code must be added
-| `requires` | sequence | The fully qualified names of all types which must be included in generated files for the extension to work. This should include all types required by your extension, even if the types it extends already include them, as this may change in the future. The generator will not produce duplicate `#Include` statements. <br><br>To indicate that *nothing* needs to be imported, specify an empty sequence: `[]` or omit the key.
-| `code` | string | The actual code to add to the class. Oftentimes this can be written directly into the relevant file and copy/pasted into extension YAML without modification. This code is added to the end of the files specified in `add-to` without modification. <br><br> See [yaml multiline strings](https://yaml-multiline.info/) for details on the syntax, or just use the pipe (`\|`) and don't worry about it. 
+| `add-to` | sequence | The fully qualified names of all types to which code must be added.
+| `imports` | mapping | FQN-keyed map of types/functions the extension references. A `null` or empty value means "whole-file include" (the same effect as the old `requires:` list). A non-empty list of names means "import those specific functions from this `Apis` container"; in v2.1 this emits `#Import "..." { Name1, Name2 }` merged with whatever imports the type already needed, and in v2.0 it falls back to a whole-file include of the `Apis` file. Omit the key entirely if no extra imports are needed.
+| `code` | mapping | A map with required keys `v20` and `v21`. The value for each is either a string of AHK code or the literal `skip` to opt out for that target version. At least one version must be a real code block. <br><br> When v2.0 and v2.1 share the same body, use a YAML anchor: `v20: &shared \|\n  ...\nv21: *shared`. <br><br> See [yaml multiline strings](https://yaml-multiline.info/) for details on the syntax, or just use the pipe (`\|`) and don't worry about it.
 
 A single extension file can only include one extension definition, and said definition can apply to as many types as you want. Note it is not currently possible to extend existing methods like `__New`, though you can add such methods to types that don't already have them.
+
+##### Why per-version `code:`
+
+In v2.0 a free function from another namespace is reached through its `Apis` class — `Foundation.SysStringLen(this)`. In v2.1 the same function is `#Import`ed by name and called bare — `SysStringLen(this)`. Both emitters run against the same extension definition, so the body has to be supplied per target version. If the two bodies are textually identical (because the extension only touches the type's own members or builtins), the YAML anchor pattern lets you write the body once.
 
 <details>
 
@@ -130,20 +134,21 @@ A single extension file can only include one extension definition, and said defi
 ```yaml
 add-to:
   - Windows.Win32.Foundation.BSTR
-requires:
-  - Windows.Win32.Foundation.Apis
-code: |
+
+imports:
+  Windows.Win32.Foundation.Apis:
+    - SysStringLen
+    - SysStringByteLen
+    - SysAllocString
+    - SysReallocString
+
+code:
+  v20: |
     /**
      * @readonly The length of the allocated string in characters, not including the null terminator
      * @type {Integer}
      */
     length => Foundation.SysStringLen(this)
-
-    /**
-     * @readonly The length of the allocated string in bytes, not including the null terminator
-     * @type {Integer}
-     */
-    byteLength => Foundation.SysStringByteLen(this)
 
     /**
      * Creates a new BSTR from an existing AHK string
@@ -153,29 +158,58 @@ code: |
         return Foundation.SysAllocString(str)
     }
 
-    /**
-     * Changes the contents of the BSTR, resizing it if necessary
-     * @param {String} str the new contents of the BSTR
-     */
-    ReAlloc(str){
-        result := Foundation.SysReallocString(this, str)
-        if(result == 0)
-            throw MemoryError("Not enough memory to reallocate string")
+    ; ... etc.
+  v21: |
+    length => SysStringLen(this)
+
+    static Alloc(str){
+        return SysAllocString(str)
     }
 
-    /**
-     * Gets the value of the BSTR as a native AHK string
-     * @returns {String}
-     */
-    ToString(){
-        return StrGet(this.value, this.length, "UTF-16")
+    ; ... etc.
+```
+
+</details>
+
+<details>
+
+<summary><b>Example: shared body via YAML anchor (no cross-namespace calls)</b></summary>
+
+```yaml
+add-to:
+  - Windows.Win32.Foundation.POINT
+  - Windows.Win32.Foundation.POINTL
+
+code:
+  v20: &shared |
+    Value => NumGet(this, "uint64")
+
+    ToString() {
+        return Format("({1}, {2})", this.x, this.y)
     }
+  v21: *shared
+```
+
+</details>
+
+<details>
+
+<summary><b>Example: opting out of one version</b></summary>
+
+```yaml
+add-to:
+  - Windows.Win32.Some.Type
+
+code:
+  v20: |
+    ; ... v2.0-only helper
+  v21: skip
 ```
 
 </details>
 
 #### Aliases
-The generator suports the following aliases, using the `$Name` convention (like bash or PowerShell - this is because `%%` is valid AHK syntax and would make parsing a nightmare). All aliases are case-sensitive.
+The generator suports the following aliases, using the `$Name` convention (like bash or PowerShell - this is because `%name%` is valid AHK syntax and would make parsing a nightmare). All aliases are case-sensitive.
 
 
 Alias | Scope | Description
