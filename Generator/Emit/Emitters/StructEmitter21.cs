@@ -40,20 +40,11 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 
         DocCommentWriter.WriteTypeDoc(w, structType);
 
-        var deferred = new List<DeferredProp>();
         using (w.Struct(structType.Name))
         {
             w.Line($"#StructPack {structType.PackingSize}");
             w.BlankLine();
-            EmitBody(w, structType, structType.Name, deferred);
-        }
-
-        w.BlankLine();
-
-        // DefineProp calls for fields whose offsets diverge from natural layout
-        foreach (DeferredProp d in deferred)
-        {
-            w.Line($"DefineProp({d.QualifiedClass}.Prototype, '{d.Name}', {{type: {d.TypeExpr}, offset: {d.Offset}}})");
+            EmitBody(w, structType, structType.Name);
         }
     }
 
@@ -61,8 +52,15 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
     /// Emit the body of a struct: nested struct definitions, typed property fields,
     /// bit accessors, struct-size init, and extension blocks.
     /// </summary>
-    internal void EmitBody(AhkWriter w, StructType structType, string parentClassName, List<DeferredProp> deferred)
+    internal void EmitBody(AhkWriter w, StructType structType, string parentClassName)
     {
+        // Deferred DefineProp calls are scoped to *this* struct's class body and emitted
+        // inside a `static __New()` at the bottom — running them in the auto-execute
+        // thread (the v2.0 approach) causes "Cannot define typed property" errors for
+        // nested structs under v2.1-alpha, since the parent class isn't fully constructed
+        // when auto-execute runs.
+        var deferred = new List<DeferredProp>();
+
         // 1. Nested non-anonymous struct definitions (referenced by member fields below)
         var nestedClassDefs = structType
             .Members.Where(m => m.IsNested && !m.IsAnonymous && m.Name is not "Reserved")
@@ -75,7 +73,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
             w.BlankLine();
             using (w.Struct(nested.Name))
             {
-                EmitBody(w, nested, $"{parentClassName}.{nested.Name}", deferred);
+                EmitBody(w, nested, $"{parentClassName}.{nested.Name}");
             }
         }
 
@@ -96,6 +94,20 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 
         // 3. Extensions
         EmitExtensions(w, structType);
+
+        // 4. Deferred DefineProp calls inside static __New (self-deleting)
+        if (deferred.Count > 0)
+        {
+            w.BlankLine();
+            using (w.StaticMethod("__New", ""))
+            {
+                foreach (DeferredProp d in deferred)
+                {
+                    w.Line($"DefineProp(this.Prototype, '{d.Name}', {{ type: {d.TypeExpr}, offset: {d.Offset} }})");
+                }
+                w.Line("this.DeleteProp(\"__New\")");
+            }
+        }
 
         // Struct-size init is handled by the typed-property initializer (`:= this.Size`)
         // emitted at the size field above; no separate __New() needed.
@@ -174,7 +186,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
             }
             else
             {
-                deferred.Add(new DeferredProp(parentClassName, name, typeExpr, absOffset));
+                deferred.Add(new DeferredProp(name, typeExpr, absOffset));
             }
 
             emitted.Add(name);
@@ -322,7 +334,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 
     /// <summary>
     /// A typed-property field whose metadata offset doesn't match natural layout
-    /// and must be emitted as a DefineProp call after the struct body.
+    /// and must be emitted as a DefineProp call in the owning class's static __New.
     /// </summary>
-    internal record DeferredProp(string QualifiedClass, string Name, string TypeExpr, int Offset);
+    internal record DeferredProp(string Name, string TypeExpr, int Offset);
 }
