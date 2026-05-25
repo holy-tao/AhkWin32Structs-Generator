@@ -9,6 +9,28 @@ using Microsoft.VisualBasic;
 using Microsoft.Windows.SDK.Win32Docs;
 
 /// <summary>
+/// Reason an attempted method extraction did not produce a MethodMember.
+/// </summary>
+public enum MethodSkipReason
+{
+    /// <summary>Method's [SupportedArchitecture] excludes x64.</summary>
+    ArchFiltered,
+
+    /// <summary>Extraction threw — already logged at Error level.</summary>
+    Error,
+}
+
+/// <summary>
+/// Outcome of a single ExtractMethod call. Exactly one of Method / SkipReason is set.
+/// </summary>
+public readonly record struct MethodExtractionResult(MethodMember? Method, MethodSkipReason? SkipReason)
+{
+    public static MethodExtractionResult Success(MethodMember m) => new(m, null);
+
+    public static MethodExtractionResult Skipped(MethodSkipReason reason) => new(null, reason);
+}
+
+/// <summary>
 /// Extracts method definitions from metadata into MethodMember instances.
 /// Ports logic from AhkMethod constructor, GetOutputParameter, ShouldThrowForReturnValue,
 /// and GetReferencedTypes.
@@ -27,21 +49,43 @@ public sealed class MethodExtractor
     }
 
     /// <summary>
-    /// Extract a MethodMember from a MethodDefinition.
-    /// Returns null if extraction fails.
+    /// Extract a MethodMember from a MethodDefinition. The returned result distinguishes
+    /// successful extraction, architecture-filtered skips, and errors so callers can
+    /// report skip counts the same way TypeExtractor does for type-level filters.
     /// </summary>
-    public MethodMember? ExtractMethod(MetadataReader reader, MethodDefinition methodDef, string declaringNamespace)
+    public MethodExtractionResult ExtractMethod(
+        MetadataReader reader,
+        MethodDefinition methodDef,
+        string declaringNamespace
+    )
     {
         string methodName = reader.GetString(methodDef.Name);
 
         try
         {
-            return ExtractMethodCore(reader, methodDef, methodName, declaringNamespace);
+            // Decode method attributes first so we can architecture-filter before doing
+            // the rest of the work.
+            MethodAttrs methodAttrs = AttributeReader.DecodeMethodAttributes(reader, methodDef);
+
+            if (!methodAttrs.Architecture.HasFlag(Architecture.X64))
+            {
+                _logger.LogDebug(
+                    "Skipping method {Namespace}.{Method}: unsupported architecture {Arch}",
+                    declaringNamespace,
+                    methodName,
+                    methodAttrs.Architecture
+                );
+                return MethodExtractionResult.Skipped(MethodSkipReason.ArchFiltered);
+            }
+
+            return MethodExtractionResult.Success(
+                ExtractMethodCore(reader, methodDef, methodName, declaringNamespace, methodAttrs)
+            );
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to extract method {Namespace}.{Method}", declaringNamespace, methodName);
-            return null;
+            return MethodExtractionResult.Skipped(MethodSkipReason.Error);
         }
     }
 
@@ -49,7 +93,8 @@ public sealed class MethodExtractor
         MetadataReader reader,
         MethodDefinition methodDef,
         string methodName,
-        string declaringNamespace
+        string declaringNamespace,
+        MethodAttrs methodAttrs
     )
     {
         // Detect variadic methods (__arglist) via signature calling convention
@@ -84,9 +129,6 @@ public sealed class MethodExtractor
         };
 
         bool setsLastError = import.Attributes.HasFlag(MethodImportAttributes.SetLastError);
-
-        // Decode method-level custom attributes
-        var methodAttrs = DecodeMethodAttributes(reader, methodDef);
 
         // Load documentation
         ApiDetails? apiDetails = _docs.GetApiDetails(reader, methodDef);
@@ -135,6 +177,7 @@ public sealed class MethodExtractor
             ReturnValueDoc = apiDetails?.ReturnValue,
             SupportedOSPlatform = methodAttrs.SupportedOSPlatform,
             Imports = imports,
+            SupportedArchitecture = methodAttrs.Architecture,
         };
 
         _logger.LogTrace(
@@ -146,69 +189,6 @@ public sealed class MethodExtractor
         );
 
         return result;
-    }
-
-    /// <summary>
-    /// Decode method-level custom attributes in a single pass.
-    /// </summary>
-    private static MethodAttrs DecodeMethodAttributes(MetadataReader reader, MethodDefinition methodDef)
-    {
-        bool preserveSig = false;
-        bool? preserveSigValue = null;
-        bool canReturnErrorsAsSuccess = false;
-        bool canReturnMultipleSuccessValues = false;
-        string? deprecationMessage = null;
-        string? supportedOSPlatform = null;
-
-        foreach (CustomAttributeHandle attrHandle in methodDef.GetCustomAttributes())
-        {
-            CustomAttribute attr = reader.GetCustomAttribute(attrHandle);
-            (_, string attrName) = AttributeReader.GetAttributeTypeName(reader, attr);
-
-            switch (attrName)
-            {
-                case "PreserveSigAttribute":
-                {
-                    preserveSig = true;
-                    CustomAttributeValue<string> decoded = attr.DecodeValue(new CaTypeProvider());
-                    preserveSigValue =
-                        decoded.FixedArguments.Length > 0 ? decoded.FixedArguments[0].Value as bool? ?? true : true;
-                    break;
-                }
-
-                case "CanReturnErrorsAsSuccessAttribute":
-                    canReturnErrorsAsSuccess = true;
-                    break;
-
-                case "CanReturnMultipleSuccessValuesAttribute":
-                    canReturnMultipleSuccessValues = true;
-                    break;
-
-                case "ObsoleteAttribute":
-                {
-                    CustomAttributeValue<string> decoded = attr.DecodeValue(new CaTypeProvider());
-                    deprecationMessage =
-                        decoded.FixedArguments.Length > 0 ? decoded.FixedArguments[0].Value as string : null;
-                    break;
-                }
-
-                case "SupportedOSPlatformAttribute":
-                {
-                    CustomAttributeValue<string> decoded = attr.DecodeValue(new CaTypeProvider());
-                    supportedOSPlatform = (string?)decoded.FixedArguments[0].Value;
-                    break;
-                }
-            }
-        }
-
-        return new MethodAttrs(
-            preserveSig,
-            preserveSigValue,
-            canReturnErrorsAsSuccess,
-            canReturnMultipleSuccessValues,
-            deprecationMessage,
-            supportedOSPlatform
-        );
     }
 
     /// <summary>
@@ -304,16 +284,4 @@ public sealed class MethodExtractor
 
         return imports;
     }
-
-    /// <param name="PreserveSig">Whether [PreserveSig] attribute is present.</param>
-    /// <param name="PreserveSigValue">The boolean value of [PreserveSig], or true if present with no args.
-    /// Null if attribute is not present.</param>
-    private sealed record MethodAttrs(
-        bool PreserveSig,
-        bool? PreserveSigValue,
-        bool CanReturnErrorsAsSuccess,
-        bool CanReturnMultipleSuccessValues,
-        string? DeprecationMessage,
-        string? SupportedOSPlatform
-    );
 }

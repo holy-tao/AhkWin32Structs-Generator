@@ -86,11 +86,12 @@ public sealed class TypeExtractor
                 asmWatch.Elapsed.TotalSeconds
             );
             _logger.LogInformation(
-                "  Skipped: {Arch} arch-filtered, {Nested} nested, {Delegate} delegates, {Other} other, {Errors} errors",
+                "  Skipped: {Arch} arch-filtered, {Nested} nested, {Delegate} delegates, {Other} other, {MethodArch} arch-filtered methods, {Errors} errors",
                 counts.SkippedArch,
                 counts.SkippedNested,
                 counts.SkippedDelegate,
                 counts.SkippedOther,
+                counts.SkippedMethodsArch,
                 counts.Errors
             );
 
@@ -99,6 +100,14 @@ public sealed class TypeExtractor
                 _logger.LogWarning(
                     "Skipped {Count} types due to unsupported architecture (use --log-level Debug for details)",
                     counts.SkippedArch
+                );
+            }
+
+            if (counts.SkippedMethodsArch > 0)
+            {
+                _logger.LogWarning(
+                    "Skipped {Count} methods due to unsupported architecture (use --log-level Debug for details)",
+                    counts.SkippedMethodsArch
                 );
             }
         }
@@ -127,6 +136,7 @@ public sealed class TypeExtractor
         int SkippedNested,
         int SkippedDelegate,
         int SkippedOther,
+        int SkippedMethodsArch,
         int Errors
     );
 
@@ -150,6 +160,7 @@ public sealed class TypeExtractor
             nestedSkipCount = 0,
             delegateSkipCount = 0,
             otherSkipCount = 0;
+        int archMethodSkipCount = 0;
         int errorCount = 0;
 
         reader
@@ -209,22 +220,48 @@ public sealed class TypeExtractor
                         return;
                     }
 
-                    Win32Type? extracted = kind.Value switch
+                    Win32Type? extracted;
+                    int methodArchSkips = 0;
+                    switch (kind.Value)
                     {
-                        TypeKind.Handle => ExtractHandle(reader, typeDef, assemblyName, version, attrs),
-                        TypeKind.NativeTypedef => ExtractNativeTypedef(reader, typeDef, assemblyName, version, attrs),
-                        TypeKind.Struct => ExtractStruct(reader, typeDef, assemblyName, version, attrs),
-                        TypeKind.Enum => ExtractEnum(reader, typeDef, assemblyName, version, attrs),
-                        TypeKind.ComInterface => _comExtractor.ExtractComInterface(
-                            reader,
-                            typeDef,
-                            assemblyName,
-                            version,
-                            attrs
-                        ),
-                        TypeKind.ApiType => ExtractApiType(reader, typeDef, assemblyName, version, attrs),
-                        _ => null,
-                    };
+                        case TypeKind.Handle:
+                            extracted = ExtractHandle(reader, typeDef, assemblyName, version, attrs);
+                            break;
+                        case TypeKind.NativeTypedef:
+                            extracted = ExtractNativeTypedef(reader, typeDef, assemblyName, version, attrs);
+                            break;
+                        case TypeKind.Struct:
+                            extracted = ExtractStruct(reader, typeDef, assemblyName, version, attrs);
+                            break;
+                        case TypeKind.Enum:
+                            extracted = ExtractEnum(reader, typeDef, assemblyName, version, attrs);
+                            break;
+                        case TypeKind.ComInterface:
+                            extracted = _comExtractor.ExtractComInterface(
+                                reader,
+                                typeDef,
+                                assemblyName,
+                                version,
+                                attrs,
+                                out methodArchSkips
+                            );
+                            break;
+                        case TypeKind.ApiType:
+                            extracted = ExtractApiType(
+                                reader,
+                                typeDef,
+                                assemblyName,
+                                version,
+                                attrs,
+                                out methodArchSkips
+                            );
+                            break;
+                        default:
+                            extracted = null;
+                            break;
+                    }
+                    if (methodArchSkips > 0)
+                        Interlocked.Add(ref archMethodSkipCount, methodArchSkips);
 
                     if (extracted != null)
                     {
@@ -271,6 +308,7 @@ public sealed class TypeExtractor
             nestedSkipCount,
             delegateSkipCount,
             otherSkipCount,
+            archMethodSkipCount,
             errorCount
         );
     }
@@ -670,7 +708,8 @@ public sealed class TypeExtractor
         TypeDefinition typeDef,
         string assemblyName,
         string version,
-        TypeAttrs attrs
+        TypeAttrs attrs,
+        out int archMethodSkips
     )
     {
         string typeName = reader.GetString(typeDef.Name);
@@ -693,16 +732,23 @@ public sealed class TypeExtractor
                 .OfType<ConstantMember>(),
         ];
 
-        // Extract methods, deduplicating by name (matching legacy AhkApiType behavior)
-        List<MethodMember> methods =
-        [
-            .. typeDef
+        // Extract methods, deduplicating by name (matching legacy AhkApiType behavior).
+        // Track arch-filtered skips so the caller can surface a count to the user.
+        List<MethodMember> methods = [];
+        archMethodSkips = 0;
+        foreach (
+            MethodDefinition methodDef in typeDef
                 .GetMethods()
                 .Select(reader.GetMethodDefinition)
                 .DistinctBy(methodDef => reader.GetString(methodDef.Name))
-                .Select(methodDef => _methodExtractor.ExtractMethod(reader, methodDef, typeNamespace))
-                .OfType<MethodMember>(),
-        ];
+        )
+        {
+            MethodExtractionResult methodResult = _methodExtractor.ExtractMethod(reader, methodDef, typeNamespace);
+            if (methodResult.Method != null)
+                methods.Add(methodResult.Method);
+            else if (methodResult.SkipReason == MethodSkipReason.ArchFiltered)
+                archMethodSkips++;
+        }
 
         // Collect imports from both constants and methods
         ImportCollection imports = new();

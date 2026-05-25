@@ -94,6 +94,8 @@ public class MethodMember
     /// </summary>
     public ParameterMember? OutputParameter { get; init; }
 
+    public Architecture SupportedArchitecture { get; init; }
+
     // --- Inline documentation ---
 
     /// <summary>Summary description text.</summary>

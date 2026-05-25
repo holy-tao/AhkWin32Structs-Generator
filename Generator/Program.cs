@@ -195,9 +195,7 @@ public class Program
                 AhkVersion.v21 => new ApiTypeEmitter21(registry),
                 _ => throw new NotImplementedException($"Unknown AHK version \"{ahkVersion}\""),
             },
-            ahkVersion is AhkVersion.v21
-                ? new ComInterfaceEmitter21(registry)
-                : new ComInterfaceEmitter(registry),
+            ahkVersion is AhkVersion.v21 ? new ComInterfaceEmitter21(registry) : new ComInterfaceEmitter(registry),
         ];
         if (ahkVersion is AhkVersion.v21)
             emitters = [.. emitters, new ApiConstantsEmitter21(), new NativeTypedefEmitter21()];

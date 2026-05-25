@@ -40,7 +40,8 @@ public sealed class ComInterfaceExtractor
         TypeDefinition typeDef,
         string assemblyName,
         string version,
-        TypeAttrs attrs
+        TypeAttrs attrs,
+        out int methodArchSkips
     )
     {
         string typeName = reader.GetString(typeDef.Name);
@@ -49,11 +50,22 @@ public sealed class ComInterfaceExtractor
 
         try
         {
-            return ExtractComInterfaceCore(reader, typeDef, typeName, typeNamespace, fqn, assemblyName, version, attrs);
+            return ExtractComInterfaceCore(
+                reader,
+                typeDef,
+                typeName,
+                typeNamespace,
+                fqn,
+                assemblyName,
+                version,
+                attrs,
+                out methodArchSkips
+            );
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to extract COM interface {FQN}", fqn);
+            methodArchSkips = 0;
             return null;
         }
     }
@@ -66,7 +78,8 @@ public sealed class ComInterfaceExtractor
         string fqn,
         string assemblyName,
         string version,
-        TypeAttrs attrs
+        TypeAttrs attrs,
+        out int methodArchSkips
     )
     {
         // Extract IID
@@ -85,7 +98,14 @@ public sealed class ComInterfaceExtractor
         ApiDetails? apiDetails = _docs.GetApiDetails(reader, typeDef);
 
         // Extract methods
-        List<ComMethodMember> methods = ExtractComMethods(reader, typeDef, typeNamespace, vTableOffset, apiDetails);
+        List<ComMethodMember> methods = ExtractComMethods(
+            reader,
+            typeDef,
+            typeNamespace,
+            vTableOffset,
+            apiDetails,
+            out methodArchSkips
+        );
 
         // Group properties from special-name get_/put_ methods
         List<ComPropertyMember> properties = GroupProperties(methods, apiDetails);
@@ -261,11 +281,13 @@ public sealed class ComInterfaceExtractor
         TypeDefinition typeDef,
         string typeNamespace,
         int vTableOffset,
-        ApiDetails? apiDetails
+        ApiDetails? apiDetails,
+        out int archSkips
     )
     {
         List<ComMethodMember> methods = [];
         int methodIndex = 0;
+        archSkips = 0;
 
         foreach (MethodDefinitionHandle hMethod in typeDef.GetMethods())
         {
@@ -281,11 +303,14 @@ public sealed class ComInterfaceExtractor
                     methodName,
                     typeNamespace,
                     vTableIndex,
-                    methods
+                    methods,
+                    out bool methodArchSkipped
                 );
 
                 if (comMethod != null)
                     methods.Add(comMethod);
+                else if (methodArchSkipped)
+                    archSkips++;
             }
             catch (Exception ex)
             {
@@ -307,11 +332,14 @@ public sealed class ComInterfaceExtractor
         string methodName,
         string typeNamespace,
         int vTableIndex,
-        List<ComMethodMember> previousMethods
+        List<ComMethodMember> previousMethods,
+        out bool archSkipped
     )
     {
         // Use MethodExtractor for base method data
-        MethodMember? baseMember = _methodExtractor.ExtractMethod(reader, methodDef, typeNamespace);
+        MethodExtractionResult baseResult = _methodExtractor.ExtractMethod(reader, methodDef, typeNamespace);
+        archSkipped = baseResult.SkipReason == MethodSkipReason.ArchFiltered;
+        MethodMember? baseMember = baseResult.Method;
 
         if (baseMember == null)
             return null;

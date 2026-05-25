@@ -48,6 +48,19 @@ public sealed record ParameterAttrs(
     string? FreeWithFuncName
 );
 
+/// <param name="PreserveSig">Whether [PreserveSig] attribute is present.</param>
+/// <param name="PreserveSigValue">The boolean value of [PreserveSig], or true if present with no args.
+/// Null if attribute is not present.</param>
+public sealed record MethodAttrs(
+    bool PreserveSig,
+    bool? PreserveSigValue,
+    bool CanReturnErrorsAsSuccess,
+    bool CanReturnMultipleSuccessValues,
+    string? DeprecationMessage,
+    string? SupportedOSPlatform,
+    Architecture Architecture
+);
+
 /// <summary>
 /// Cached attribute decoding utilities. Decodes attributes in a single pass
 /// and returns result records for reuse.
@@ -373,6 +386,71 @@ public static class AttributeReader
         }
 
         return new ParameterAttrs(flags, sizedBufferBytesParamIndex, ignoreIfReturnValues, raiiFreeFunc, freeWithFunc);
+    }
+
+    /// <summary>
+    /// Decode method-level custom attributes in a single pass.
+    /// </summary>
+    public static MethodAttrs DecodeMethodAttributes(MetadataReader reader, MethodDefinition methodDef)
+    {
+        bool preserveSig = false;
+        bool? preserveSigValue = null;
+        bool canReturnErrorsAsSuccess = false;
+        bool canReturnMultipleSuccessValues = false;
+        string? deprecationMessage = null;
+        string? supportedOSPlatform = null;
+        Architecture supportedArchitecture = Architecture.All;
+
+        foreach (CustomAttributeHandle attrHandle in methodDef.GetCustomAttributes())
+        {
+            CustomAttribute attr = reader.GetCustomAttribute(attrHandle);
+            (_, string attrName) = GetAttributeTypeName(reader, attr);
+            CustomAttributeValue<string> decoded = attr.DecodeValue(s_caProvider);
+
+            switch (attrName)
+            {
+                case "PreserveSigAttribute":
+                    preserveSig = true;
+                    preserveSigValue =
+                        decoded.FixedArguments.Length <= 0 || (decoded.FixedArguments[0].Value as bool? ?? true);
+                    break;
+
+                case "CanReturnErrorsAsSuccessAttribute":
+                    canReturnErrorsAsSuccess = true;
+                    break;
+
+                case "CanReturnMultipleSuccessValuesAttribute":
+                    canReturnMultipleSuccessValues = true;
+                    break;
+
+                case "ObsoleteAttribute":
+                    deprecationMessage =
+                        decoded.FixedArguments.Length > 0 ? decoded.FixedArguments[0].Value as string : null;
+                    break;
+
+                case "SupportedOSPlatformAttribute":
+                    supportedOSPlatform = (string?)decoded.FixedArguments[0].Value;
+                    break;
+
+                case "SupportedArchitectureAttribute":
+                    supportedArchitecture = (Architecture)
+                        (uint)(
+                            decoded.FixedArguments[0].Value
+                            ?? throw new InvalidOperationException("Null SupportedArchitectureAttribute value")
+                        );
+                    break;
+            }
+        }
+
+        return new MethodAttrs(
+            preserveSig,
+            preserveSigValue,
+            canReturnErrorsAsSuccess,
+            canReturnMultipleSuccessValues,
+            deprecationMessage,
+            supportedOSPlatform,
+            supportedArchitecture
+        );
     }
 
     /// <summary>
