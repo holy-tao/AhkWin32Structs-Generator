@@ -89,6 +89,15 @@ public static class DocCommentWriter
     /// </summary>
     public static void WriteFieldDoc(AhkWriter w, FieldMember field, AhkVersion version = AhkVersion.v20)
     {
+        // Don't add the /** */ if we wouldn't emit anything between them
+        if (
+            string.IsNullOrWhiteSpace(field.Description)
+            && !field.IsBitField
+            && !field.IsDeprecated
+            && version is AhkVersion.v21
+        )
+            return;
+
         w.Line("/**");
 
         if (!string.IsNullOrWhiteSpace(field.Description))
