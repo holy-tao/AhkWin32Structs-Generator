@@ -24,15 +24,9 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
     private readonly TypeDefinition? _resolutionContext;
 
     /// <summary>
-    /// WinRT namespaces that are external to Win32 — treated as pointers.
+    /// List of Win32 namespaces that we will generate
     /// </summary>
-    private static readonly string[] s_excludeNamespaces =
-    [
-        "Windows.UI",
-        "Windows.Foundation",
-        "Windows.Graphics",
-        "Windows.Storage",
-    ];
+    private static readonly string[] s_includeNamespaces = ["Windows.Win32", "Windows.Wdk"];
 
     private static readonly string[] s_handleAttrNames =
     [
@@ -188,15 +182,20 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         string rawName = reader.GetString(td.Name);
         string typeNamespace = reader.GetString(td.Namespace);
         string fqn = $"{typeNamespace}.{rawName}";
-        // *Ref.Name carries the display name â€” strip the generator-injected
+        // *Ref.Name carries the display name - strip the generator-injected
         // _e__Struct / _e__Union suffixes so it matches DeconflictName on the
         // referent. FQN stays as the metadata-form for registry lookups.
         string typeName = StripGeneratedSuffix(rawName);
 
-        // Exclude WinRT namespaces — treat as pointer
-        if (s_excludeNamespaces.Any(typeNamespace.StartsWith))
+        // Exclude non-Win32 / Wdk namespaces - treat these as opaque pointers.
+        // These are mostly WinRT types, but include a handful of System types.
+        if (
+            !string.IsNullOrWhiteSpace(typeNamespace) // Anonymous types don't have namespaces, and should be included
+            && !s_includeNamespaces.Any(typeNamespace.StartsWith)
+            && !typeName.Equals("Guid") // Special case System.Guid
+        )
         {
-            _logger.LogWarning("Treating external type {Namespace}.{TypeName} as pointer", typeNamespace, typeName);
+            _logger.LogWarning("Treating external type '{Namespace}.{TypeName}' as pointer", typeNamespace, typeName);
             return new PointerType(null);
         }
 
