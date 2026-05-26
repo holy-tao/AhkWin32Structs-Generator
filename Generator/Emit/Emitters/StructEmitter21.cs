@@ -61,12 +61,11 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
         // when auto-execute runs.
         var deferred = new List<DeferredProp>();
 
-        // 1. Nested non-anonymous struct definitions (referenced by member fields below)
-        var nestedClassDefs = structType
-            .Members.Where(m => m.IsNested && !m.IsAnonymous && m.Name is not "Reserved")
-            .Where(m => m.EmbeddedStruct is not null)
-            .Select(m => m.EmbeddedStruct!)
-            .DistinctBy(s => s.Name);
+        // 1. Nested non-anonymous struct definitions (referenced by member fields below).
+        // Walk through anonymous-union/struct members too — when those get flattened in
+        // step 2, any non-anonymous nested structs they contained still need their class
+        // definitions hoisted into this enclosing class.
+        var nestedClassDefs = CollectNestedClassDefs(structType).DistinctBy(s => s.Name);
 
         foreach (StructType nested in nestedClassDefs)
         {
@@ -76,6 +75,9 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
                 EmitBody(w, nested, $"{parentClassName}.{nested.Name}");
             }
         }
+
+        if (nestedClassDefs.Any())
+            w.BlankLine();
 
         // 2. Field properties - track the natural-layout cursor to detect overlaps.
         int cursor = 0;
@@ -98,7 +100,6 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
         // 4. Deferred DefineProp calls inside static __New (self-deleting)
         if (deferred.Count > 0)
         {
-            w.BlankLine();
             using (w.StaticMethod("__New", ""))
             {
                 foreach (DeferredProp d in deferred)
@@ -111,6 +112,31 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
 
         // Struct-size init is handled by the typed-property initializer (`:= this.Size`)
         // emitted at the size field above; no separate __New() needed.
+    }
+
+    /// <summary>
+    /// Collect non-anonymous nested struct definitions reachable from a struct's members,
+    /// descending through anonymous nested structs/unions. Mirrors the field-flattening
+    /// done by <see cref="EmitFields"/> so that nested classes referenced after flattening
+    /// still get their definitions emitted in the enclosing class.
+    /// </summary>
+    private static IEnumerable<StructType> CollectNestedClassDefs(StructType structType)
+    {
+        foreach (FieldMember m in structType.Members)
+        {
+            if (m.EmbeddedStruct is null || m.Name == "Reserved")
+                continue;
+
+            if (m.IsNested && m.IsAnonymous)
+            {
+                foreach (StructType s in CollectNestedClassDefs(m.EmbeddedStruct))
+                    yield return s;
+            }
+            else if (m.IsNested)
+            {
+                yield return m.EmbeddedStruct;
+            }
+        }
     }
 
     /// <summary>
