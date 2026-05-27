@@ -217,13 +217,15 @@ code:
      */
     HitTest(ptOrXCoord, yCoord?){
         if(IsSet(yCoord)){
-            pt := POINT({x: Integer(ptOrXCoord), y: Integer(yCoord)})
+            pt := POINT()
+            pt.x := Integer(ptOrXCoord)
+            pt.y := Integer(yCoord)
         }
         else{
             pt := ptOrXCoord
         }
 
-        return PtInRect(this, pt.Value)
+        return PtInRect(this, pt)
     }
 
     ToString(){
