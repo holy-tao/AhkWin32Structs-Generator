@@ -292,6 +292,7 @@ public static class MethodEmitter
             var param = method.Parameters[i];
 
             bool useMarshalVar = param.IsPtrToPrimitive && !param.IsReserved && param != method.OutputParameter;
+            bool isComOutput = param == method.OutputParameter && param.IsPtrToCom;
 
             string marshalAs;
             if (useMarshalVar)
@@ -301,6 +302,14 @@ public static class MethodEmitter
             else if (param.TypeDefName is "PWSTR" or "PSTR")
             {
                 marshalAs = "\"ptr\"";
+            }
+            else if (isComOutput)
+            {
+                // COM out-params need IUri** — pass a raw ptr slot, then wrap the returned
+                // pointer on the way out. A typed `IUri.Ptr` marshal passes the struct buffer
+                // directly, collapsing a level of indirection (the API writes the object
+                // pointer into the struct's vtable slot, breaking subsequent ComCalls).
+                marshalAs = "\"ptr*\"";
             }
             else
             {
@@ -391,7 +400,7 @@ public static class MethodEmitter
             return;
         }
 
-        // COM return (ptr-to-COM output param)
+        // COM return (ptr-to-COM output param): wrap the raw IUri* the API wrote
         if (fnRetVal.IsPtrToCom)
         {
             string comName = GetPointeeName(fnRetVal.Type);
