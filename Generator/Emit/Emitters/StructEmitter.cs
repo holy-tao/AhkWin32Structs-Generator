@@ -145,6 +145,10 @@ public sealed class StructEmitter : ITypeEmitter
                     field.IsNested ? $"{parentClassName}.{field.EmbeddedStruct.Name}" : field.EmbeddedStruct.Name
                 );
                 break;
+            case StructRef { FQN: "System.Guid" }:
+                // System.Guid has no embedded StructType; it maps to the Guid.ahk fixture.
+                EmitEmbeddedTypeMember(w, field, offset, "Guid");
+                break;
             case HandleRef handleRef:
                 // Handle-typed fields use lazy-init pattern (handles are struct types in metadata).
                 // Handles are always top-level types, so no parent qualification needed.
@@ -285,8 +289,12 @@ public sealed class StructEmitter : ITypeEmitter
 
     internal void EmitImports(AhkWriter w, Win32Type type)
     {
-        // Restrict to targets available in the registry to filter out nested types
-        IEnumerable<string> imports = type.Imports.GetIncludeTargets().Where(_registry.Contains);
+        // Restrict to targets available in the registry to filter out nested types.
+        // System.Guid isn't in the registry (it's the Guid.ahk fixture at the projection
+        // root) but resolves to a valid include path — let it through.
+        IEnumerable<string> imports = type
+            .Imports.GetIncludeTargets()
+            .Where(fqn => fqn == "System.Guid" || _registry.Contains(fqn));
 
         foreach (string import in imports)
         {

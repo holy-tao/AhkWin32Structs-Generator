@@ -209,6 +209,14 @@ public sealed class FieldExtractor
         bool isAnsi
     )
     {
+        // System.Guid is the one external type we don't treat as opaque — it maps to the
+        // hand-written Guid.ahk fixture at the projection root. It has no TypeDefinition in
+        // the Win32 metadata, so skip the lookup below (which would fail and fall back to a
+        // pointer) and keep the StructRef. Size/alignment are handled in ComputeFieldSize /
+        // ComputeLogicalFieldSize; the emitters render it as the embedded `Guid` type.
+        if (structRef.FQN == "System.Guid")
+            return (structRef, null, false);
+
         // We need to find the actual TypeDefinition to check if it's nested and get its namespace
         // The StructRef.FQN gives us the namespace.name but we need the TypeDefinition for nested check
         // Pass parentTypeDef so nested types (e.g. _Anonymous_e__Struct) are resolved within
@@ -298,6 +306,8 @@ public sealed class FieldExtractor
         return type switch
         {
             StructRef when embeddedStruct != null => embeddedStruct.Size,
+            // System.Guid has no embedded StructType (it's the Guid.ahk fixture) — 16 bytes.
+            StructRef { FQN: "System.Guid" } => 16,
             ArrayType a when embeddedStruct != null => a.Length * embeddedStruct.Size,
             ArrayType a => a.Width,
             StringType s => s.Width,
@@ -327,6 +337,10 @@ public sealed class FieldExtractor
 
             // Embedded struct = packing size of the embedded struct
             StructRef when embeddedStruct != null => embeddedStruct.PackingSize,
+
+            // System.Guid aligns to 4 (its largest member is the 4-byte Data1), matching
+            // the real Win32 GUID and the Guid.ahk fixture.
+            StructRef { FQN: "System.Guid" } => 4,
 
             // Everything else = field size
             _ => fieldSize,
