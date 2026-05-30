@@ -29,15 +29,22 @@ public static class MethodEmitter
     /// Emit a complete DllImport function (documentation + signature + body). Used in v2.1. Identical to
     /// methods except not static and exported by default. Calls into other Apis files are unqualified
     /// (free functions) since v2.1 Apis modules export functions, not class methods.
+    /// <paramref name="names"/> resolves imported type/function references to their local (possibly
+    /// aliased) identifier, deconflicting imports that collide with this module's exported functions.
     /// </summary>
-    public static void EmitDllImportFunction(AhkWriter w, MethodMember method, TypeRegistry registry)
+    public static void EmitDllImportFunction(
+        AhkWriter w,
+        MethodMember method,
+        TypeRegistry registry,
+        ModuleNameResolver names
+    )
     {
         DocCommentWriter.WriteMethodDoc(w, method);
 
         string argList = BuildArgumentList(method);
         using (w.Function(method.Name, argList))
         {
-            EmitDllImportMethodBody(w, method, registry, unqualifyApis: true);
+            EmitDllImportMethodBody(w, method, registry, unqualifyApis: true, names);
         }
     }
 
@@ -45,7 +52,8 @@ public static class MethodEmitter
         AhkWriter w,
         MethodMember method,
         TypeRegistry registry,
-        bool unqualifyApis
+        bool unqualifyApis,
+        ModuleNameResolver? names = null
     )
     {
         // AutoHotkey doesn't support the thiscall calling convention
@@ -68,24 +76,27 @@ public static class MethodEmitter
         }
 
         if (method.IsOrdinal)
-            EmitOrdinalLoading(w, method, unqualifyApis);
+            EmitOrdinalLoading(w, method, unqualifyApis, names);
 
-        EmitOutputParamMarshalling(w, method);
+        EmitOutputParamMarshalling(w, method, names);
 
         if (method.IsVariadic)
             EmitVariadicMarshalling(w, method);
 
-        w.Line(BuildDllCallExpression(method, unqualifyApis));
+        w.Line(BuildDllCallExpression(method, unqualifyApis, names));
 
         if (method.IsOrdinal)
         {
             w.BlankLine();
-            w.Line(unqualifyApis ? "FreeLibrary(hModule)" : "Foundation.FreeLibrary(hModule)");
+            string freeLib = unqualifyApis
+                ? FunctionRef(names, "Windows.Win32.Foundation.Apis", "FreeLibrary")
+                : "Foundation.FreeLibrary";
+            w.Line($"{freeLib}(hModule)");
             w.BlankLine();
         }
 
-        EmitErrorCheck(w, method, unqualifyApis);
-        EmitReturnStatement(w, method, registry, unqualifyApis);
+        EmitErrorCheck(w, method, unqualifyApis, names);
+        EmitReturnStatement(w, method, registry, unqualifyApis, names);
     }
 
     // --- Argument list ---
@@ -175,10 +186,28 @@ public static class MethodEmitter
 
     // --- Ordinal entry point loading ---
 
-    private static void EmitOrdinalLoading(AhkWriter w, MethodMember method, bool unqualifyApis)
+    /// <summary>Local identifier for an imported free function (alias-aware in v2.1, bare name otherwise).</summary>
+    private static string FunctionRef(ModuleNameResolver? names, string apisFqn, string name) =>
+        names is null ? name : names.ForFunction(apisFqn, name);
+
+    /// <summary>Local identifier for an imported named type (alias-aware in v2.1, fallback name otherwise).</summary>
+    private static string TypeRef(ModuleNameResolver? names, string fqn, string fallbackName) =>
+        names is null ? fallbackName : names.ForType(fqn);
+
+    private static void EmitOrdinalLoading(
+        AhkWriter w,
+        MethodMember method,
+        bool unqualifyApis,
+        ModuleNameResolver? names
+    )
     {
-        string loadLib = unqualifyApis ? "LoadLibraryW" : "LibraryLoader.LoadLibraryW";
-        string getProc = unqualifyApis ? "GetProcAddress" : "LibraryLoader.GetProcAddress";
+        const string libLoaderApis = "Windows.Win32.System.LibraryLoader.Apis";
+        string loadLib = unqualifyApis
+            ? FunctionRef(names, libLoaderApis, "LoadLibraryW")
+            : "LibraryLoader.LoadLibraryW";
+        string getProc = unqualifyApis
+            ? FunctionRef(names, libLoaderApis, "GetProcAddress")
+            : "LibraryLoader.GetProcAddress";
 
         w.Line("; This method's EntryPoint is an ordinal, so we need to load the dll manually");
         w.Line($"hModule := {loadLib}(\"{method.DllName}\")");
@@ -188,7 +217,7 @@ public static class MethodEmitter
 
     // --- Output parameter marshalling ---
 
-    private static void EmitOutputParamMarshalling(AhkWriter w, MethodMember method)
+    private static void EmitOutputParamMarshalling(AhkWriter w, MethodMember method, ModuleNameResolver? names = null)
     {
         if (method.OutputParameter is not { } outParam)
             return;
@@ -201,7 +230,7 @@ public static class MethodEmitter
         }
         else if (outParam.IsPtrToStruct || outParam.IsPtrToHandle)
         {
-            string pointeeName = GetPointeeName(outParam.Type);
+            string pointeeName = GetPointeeName(outParam.Type, names);
             w.Line($"{outParam.Name} := {pointeeName}()");
         }
     }
@@ -245,7 +274,11 @@ public static class MethodEmitter
         return sb.ToString().Trim();
     }
 
-    private static string BuildDllCallExpression(MethodMember method, bool unqualifyApis = false)
+    private static string BuildDllCallExpression(
+        MethodMember method,
+        bool unqualifyApis = false,
+        ModuleNameResolver? names = null
+    )
     {
         var sb = new System.Text.StringBuilder();
 
@@ -261,7 +294,7 @@ public static class MethodEmitter
         if (method.Parameters.Count > 1)
         {
             sb.Append(", ");
-            sb.Append(BuildDllCallArguments(method, unqualifyApis));
+            sb.Append(BuildDllCallArguments(method, unqualifyApis, names));
         }
 
         // Variadic: append varArgs* (convention string is already in the array)
@@ -283,7 +316,11 @@ public static class MethodEmitter
         return sb.ToString();
     }
 
-    private static string BuildDllCallArguments(MethodMember method, bool unqualifyApis = false)
+    private static string BuildDllCallArguments(
+        MethodMember method,
+        bool unqualifyApis = false,
+        ModuleNameResolver? names = null
+    )
     {
         var sb = new System.Text.StringBuilder();
 
@@ -313,7 +350,7 @@ public static class MethodEmitter
             }
             else
             {
-                marshalAs = GetParamDllCallTypeToken(param.Type, unqualifyApis);
+                marshalAs = GetParamDllCallTypeToken(param.Type, unqualifyApis, names);
             }
 
             // Value string
@@ -333,7 +370,12 @@ public static class MethodEmitter
 
     // --- Error checking ---
 
-    private static void EmitErrorCheck(AhkWriter w, MethodMember method, bool unqualifyApis = false)
+    private static void EmitErrorCheck(
+        AhkWriter w,
+        MethodMember method,
+        bool unqualifyApis = false,
+        ModuleNameResolver? names = null
+    )
     {
         // NTSTATUS: special case — no SetsLastError interaction
         if (method.Parameters[0].Type is NtStatusType)
@@ -370,7 +412,9 @@ public static class MethodEmitter
         foreach (var param in freeWithParams)
         {
             FreeFuncRef freeWith = param.FreeWith!;
-            string callee = unqualifyApis ? freeWith.Name : $"{freeWith.DeclarerName}.{freeWith.Name}";
+            string callee = unqualifyApis
+                ? FunctionRef(names, freeWith.ApisFQN, freeWith.Name)
+                : $"{freeWith.DeclarerName}.{freeWith.Name}";
             w.Line($"    {callee}({param.Name})");
         }
 
@@ -385,7 +429,8 @@ public static class MethodEmitter
         AhkWriter w,
         MethodMember method,
         TypeRegistry registry,
-        bool unqualifyApis = false
+        bool unqualifyApis = false,
+        ModuleNameResolver? names = null
     )
     {
         if (!method.HasReturnValue && method.OutputParameter == null)
@@ -396,14 +441,14 @@ public static class MethodEmitter
         // Handle return (direct HandleRef only — ptr-to-handle output params return raw values)
         if (fnRetVal.IsHandle)
         {
-            EmitHandleReturn(w, fnRetVal, registry, unqualifyApis);
+            EmitHandleReturn(w, fnRetVal, registry, unqualifyApis, names);
             return;
         }
 
         // COM return (ptr-to-COM output param): wrap the raw IUri* the API wrote
         if (fnRetVal.IsPtrToCom)
         {
-            string comName = GetPointeeName(fnRetVal.Type);
+            string comName = GetPointeeName(fnRetVal.Type, names);
             w.Line($"return {comName}({fnRetVal.Name})");
             return;
         }
@@ -416,7 +461,8 @@ public static class MethodEmitter
         AhkWriter w,
         ParameterMember fnRetVal,
         TypeRegistry registry,
-        bool unqualifyApis = false
+        bool unqualifyApis = false,
+        ModuleNameResolver? names = null
     )
     {
         // Get handle info from the type
@@ -456,7 +502,7 @@ public static class MethodEmitter
         {
             // v2.1 handle: `__New(value := default) { this.value := value }`. Pass the raw value.
             // TODO: handle ownership
-            w.Line($"resultHandle := {handleName}({fnRetVal.Name})");
+            w.Line($"resultHandle := {TypeRef(names, handleFqn, handleName)}({fnRetVal.Name})");
         }
         else
         {
@@ -468,7 +514,9 @@ public static class MethodEmitter
         // RAIIFree per-instance override (callable as .Free(); not auto-invoked in v2.1)
         if (fnRetVal.RAIIFree is { } raiiFree)
         {
-            string callee = unqualifyApis ? raiiFree.Name : $"{raiiFree.DeclarerName}.{raiiFree.Name}";
+            string callee = unqualifyApis
+                ? FunctionRef(names, raiiFree.ApisFQN, raiiFree.Name)
+                : $"{raiiFree.DeclarerName}.{raiiFree.Name}";
             w.Line($"resultHandle.DefineProp(\"Free\", {{ Call: (self) => {callee}(self.{fieldName}) }})");
         }
 
@@ -495,22 +543,26 @@ public static class MethodEmitter
     /// (<paramref name="unqualifyApis"/> = true) named types render as unquoted class
     /// references (HWND, RECT.Ptr, BOOL, ...) so DllCall uses the type class directly.
     /// </summary>
-    private static string GetParamDllCallTypeToken(ResolvedType type, bool unqualifyApis)
+    private static string GetParamDllCallTypeToken(
+        ResolvedType type,
+        bool unqualifyApis,
+        ModuleNameResolver? names = null
+    )
     {
         if (!unqualifyApis)
             return $"\"{GetParamDllCallType(type)}\"";
 
         return type switch
         {
-            HandleRef h => h.Name,
-            NativeTypedefRef n => n.Name,
-            StructRef s => s.Name,
-            EnumRef e => e.Name,
+            HandleRef h => TypeRef(names, h.FQN, h.Name),
+            NativeTypedefRef n => TypeRef(names, n.FQN, n.Name),
+            StructRef s => TypeRef(names, s.FQN, s.Name),
+            EnumRef e => TypeRef(names, e.FQN, e.Name),
             NtStatusType => "NTSTATUS",
-            PointerType { Pointee: StructRef s } => $"{s.Name}.Ptr",
-            PointerType { Pointee: HandleRef h } => $"{h.Name}.Ptr",
-            PointerType { Pointee: ComRef c } => $"{c.Name}.Ptr",
-            PointerType { Pointee: NativeTypedefRef n } => $"{n.Name}.Ptr",
+            PointerType { Pointee: StructRef s } => $"{TypeRef(names, s.FQN, s.Name)}.Ptr",
+            PointerType { Pointee: HandleRef h } => $"{TypeRef(names, h.FQN, h.Name)}.Ptr",
+            PointerType { Pointee: ComRef c } => $"{TypeRef(names, c.FQN, c.Name)}.Ptr",
+            PointerType { Pointee: NativeTypedefRef n } => $"{TypeRef(names, n.FQN, n.Name)}.Ptr",
             // Fallback: pointer-to-primitive (typed star), void*, function ptr, enum, HRESULT, etc.
             _ => $"\"{GetParamDllCallType(type)}\"",
         };
@@ -519,12 +571,12 @@ public static class MethodEmitter
     /// <summary>
     /// Get the display name of a pointer's pointee (for struct/handle/COM output params).
     /// </summary>
-    private static string GetPointeeName(ResolvedType type) =>
+    private static string GetPointeeName(ResolvedType type, ModuleNameResolver? names = null) =>
         type switch
         {
-            PointerType { Pointee: StructRef s } => s.Name,
-            PointerType { Pointee: HandleRef h } => h.Name,
-            PointerType { Pointee: ComRef c } => c.Name,
+            PointerType { Pointee: StructRef s } => TypeRef(names, s.FQN, s.Name),
+            PointerType { Pointee: HandleRef h } => TypeRef(names, h.FQN, h.Name),
+            PointerType { Pointee: ComRef c } => TypeRef(names, c.FQN, c.Name),
             PointerType { Pointee: { } p } => p.DisplayName,
             _ => type.DisplayName,
         };

@@ -43,9 +43,11 @@ public static class ConstantEmitter
     }
 
     /// <summary>
-    /// Emit a single constant (doc comment + value) into the writer in an AHK v2.1-compatible way
+    /// Emit a single constant (doc comment + value) into the writer in an AHK v2.1-compatible way.
+    /// <paramref name="names"/> resolves referenced type names to their local (possibly aliased)
+    /// identifier so struct/handle constants keep working when their type was deconflicted.
     /// </summary>
-    public static void EmitConstant21(AhkWriter w, ConstantMember constant)
+    public static void EmitConstant21(AhkWriter w, ConstantMember constant, ModuleNameResolver names)
     {
         DocCommentWriter.WriteConstantDoc(w, constant);
 
@@ -60,11 +62,13 @@ public static class ConstantEmitter
                 break;
 
             case StructConstantValue { IsHandle: true } sv:
-                w.Variable(constant.Name, sv.AsAhk);
+                // Reconstruct the handle wrapper using the resolved (possibly aliased) type name
+                // rather than the pre-baked AsAhk string, which embeds the raw StructName.
+                w.Variable(constant.Name, $"{names.ForType(sv.StructFQN)}({{Value: {sv.HandleValue}}}, false)");
                 break;
 
             case StructConstantValue { IsHandle: false } sv:
-                EmitStructConstantFunction(w, constant.Name, sv);
+                EmitStructConstantFunction(w, constant.Name, sv, names);
                 break;
 
             default:
@@ -88,22 +92,31 @@ public static class ConstantEmitter
     /// <summary>
     /// Emit a struct constant as a function that returns the struct. For v2.1
     /// </summary>
-    private static void EmitStructConstantFunction(AhkWriter w, string name, StructConstantValue sv)
+    private static void EmitStructConstantFunction(
+        AhkWriter w,
+        string name,
+        StructConstantValue sv,
+        ModuleNameResolver names
+    )
     {
         using (w.Function(name))
         {
-            EmitStructConstantInitializers(w, sv);
+            EmitStructConstantInitializers(w, sv, names);
         }
     }
 
     /// <summary>
     /// Emit struct fill code for a given struct constant
     /// </summary>
-    private static void EmitStructConstantInitializers(AhkWriter w, StructConstantValue sv)
+    private static void EmitStructConstantInitializers(
+        AhkWriter w,
+        StructConstantValue sv,
+        ModuleNameResolver? names = null
+    )
     {
         using (w.GetBlock())
         {
-            w.Line($"value := {sv.StructName}()");
+            w.Line($"value := {names?.ForType(sv.StructFQN) ?? sv.StructName}()");
 
             foreach (StructFieldInit init in sv.FieldInits ?? [])
             {

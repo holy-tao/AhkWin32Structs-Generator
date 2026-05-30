@@ -3,6 +3,7 @@ namespace AhkWin32.Generator.Emit.Emitters;
 using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Types;
+using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Emits a v2.1 ApiType's constants as a separate Constants.ahk file alongside Apis.ahk.
@@ -10,8 +11,11 @@ using AhkWin32.Generator.Model.Types;
 /// imported, so constants are split out and users opt in by importing Constants.ahk
 /// explicitly.
 /// </summary>
-public sealed class ApiConstantsEmitter21 : ITypeEmitter
+public sealed class ApiConstantsEmitter21(TypeRegistry registry, ILogger? logger = null) : ITypeEmitter
 {
+    private readonly TypeRegistry _registry = registry;
+    private readonly ILogger? _logger = logger;
+
     public bool CanEmit(Win32Type type) => type is ApiType { Constants.Count: > 0 };
 
     public EmitResult Emit(Win32Type type, string outputRoot)
@@ -25,18 +29,32 @@ public sealed class ApiConstantsEmitter21 : ITypeEmitter
         return new EmitResult(w.ToString(), filePath);
     }
 
-    private static void EmitConstantsFile(AhkWriter w, ApiType apiType)
+    private void EmitConstantsFile(AhkWriter w, ApiType apiType)
     {
         string pathToBase = ImportResolver.GetPathToBase(apiType.Namespace);
+        bool hasHandleConstant = HasHandleConstant(apiType);
+
+        // Build a name resolver so imported type names that collide (case-insensitively) with this
+        // module's exported constant names are aliased. The base types Win32Handle/Guid are emitted
+        // with fixed names below, so register them as anchors to keep other imports off those names.
+        List<string> anchors = [.. apiType.Constants.Select(c => c.Name)];
+        if (hasHandleConstant)
+            anchors.Add("Win32Handle");
+        if (apiType.NeedsGuid)
+            anchors.Add("Guid");
+
+        IEnumerable<string> typeFqns = apiType.Constants.SelectMany(c => c.Imports.GetTypes()).Distinct();
+        var names = new ModuleNameResolver(anchors, typeFqns, [], _registry, _logger, $"{apiType.Namespace}.Constants");
+
         w.Require("AutoHotkey >= v2.1-alpha.24+ 64-bit");
 
-        if (HasHandleConstant(apiType))
+        if (hasHandleConstant)
             w.Import($"{pathToBase}Win32Handle.ahk", ["Win32Handle"]);
 
         if (apiType.NeedsGuid)
             w.Import($"{pathToBase}Guid.ahk", ["Guid"]);
 
-        EmitImports(w, apiType);
+        EmitImports(w, apiType, names);
 
         w.BlankLine();
         DocCommentWriter.WriteTypeDoc(w, apiType);
@@ -46,12 +64,12 @@ public sealed class ApiConstantsEmitter21 : ITypeEmitter
         foreach (var constant in apiType.Constants)
         {
             w.BlankLine();
-            ConstantEmitter.EmitConstant21(w, constant);
+            ConstantEmitter.EmitConstant21(w, constant, names);
         }
         w.RawLine(";@endregion Constants");
     }
 
-    private static void EmitImports(AhkWriter w, ApiType apiType)
+    private static void EmitImports(AhkWriter w, ApiType apiType, ModuleNameResolver names)
     {
         var seen = new HashSet<string>();
         foreach (string fqn in apiType.Constants.SelectMany(c => c.Imports.GetTypes()))
@@ -59,7 +77,7 @@ public sealed class ApiConstantsEmitter21 : ITypeEmitter
             if (!seen.Add(fqn))
                 continue;
             string path = ImportResolver.GetIncludePath(apiType.Namespace, fqn);
-            w.Import(path, [ImportResolver.GetImportName(fqn)]);
+            w.Import(path, [names.TypeImportToken(fqn)]);
         }
     }
 

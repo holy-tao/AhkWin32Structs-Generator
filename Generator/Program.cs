@@ -192,13 +192,18 @@ public class Program
             ahkVersion switch
             {
                 AhkVersion.v20 => new ApiTypeEmitter(registry),
-                AhkVersion.v21 => new ApiTypeEmitter21(registry),
+                AhkVersion.v21 => new ApiTypeEmitter21(registry, loggerFactory.CreateLogger<ApiTypeEmitter21>()),
                 _ => throw new NotImplementedException($"Unknown AHK version \"{ahkVersion}\""),
             },
             ahkVersion is AhkVersion.v21 ? new ComInterfaceEmitter21(registry) : new ComInterfaceEmitter(registry),
         ];
         if (ahkVersion is AhkVersion.v21)
-            emitters = [.. emitters, new ApiConstantsEmitter21(), new NativeTypedefEmitter21()];
+            emitters =
+            [
+                .. emitters,
+                new ApiConstantsEmitter21(registry, loggerFactory.CreateLogger<ApiConstantsEmitter21>()),
+                new NativeTypedefEmitter21(),
+            ];
         var pipeline = new TypeEmissionPipeline(
             emitters,
             loggerFactory.CreateLogger<TypeEmissionPipeline>(),

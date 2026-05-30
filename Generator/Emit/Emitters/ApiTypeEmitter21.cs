@@ -3,15 +3,17 @@ namespace AhkWin32.Generator.Emit.Emitters;
 using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Types;
+using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Emits a v2.1 ApiType's free functions as a complete .ahk file.
 /// Constants are emitted separately by <see cref="ApiConstantsEmitter21"/> so users
 /// can opt in to loading them (v2.1 module-scope globals are not lazy).
 /// </summary>
-public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
+public sealed class ApiTypeEmitter21(TypeRegistry registry, ILogger? logger = null) : ITypeEmitter
 {
     private readonly TypeRegistry _registry = registry;
+    private readonly ILogger? _logger = logger;
 
     public bool CanEmit(Win32Type type) => type is ApiType { Methods.Count: > 0 };
 
@@ -29,13 +31,16 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
     private void EmitApiType(AhkWriter w, ApiType apiType)
     {
         // Directives
-        string pathToBase = ImportResolver.GetPathToBase(apiType.Namespace);
         w.Require("AutoHotkey >= v2.1-alpha.24+ 64-bit");
         w.BlankLine();
 
+        // Build a per-file name resolver so imported type/function names that collide
+        // (case-insensitively) with this module's exported function names are aliased.
+        ModuleNameResolver names = BuildResolver(apiType);
+
         // Referenced type imports needed by methods (and any extension imports not consumed
         // exclusively by constants).
-        EmitImports(w, apiType);
+        EmitImports(w, apiType, names);
 
         w.BlankLine();
 
@@ -45,10 +50,29 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
         w.BlankLine();
 
         // Functions region
-        EmitFunctions(w, apiType);
+        EmitFunctions(w, apiType, names);
     }
 
-    private static void EmitImports(AhkWriter w, ApiType apiType)
+    private ModuleNameResolver BuildResolver(ApiType apiType)
+    {
+        var constantOnlyTypes = new HashSet<string>(GetConstantOnlyTypeImports(apiType));
+        IEnumerable<string> typeFqns = apiType.Imports.GetTypes().Where(fqn => !constantOnlyTypes.Contains(fqn));
+
+        var functionImports = apiType
+            .Imports.GetFunctionNamespaces()
+            .Select(apisFqn => (apisFqn, apiType.Imports.GetFunctionsForNamespace(apisFqn)));
+
+        return new ModuleNameResolver(
+            apiType.Methods.Select(m => m.Name),
+            typeFqns,
+            functionImports,
+            _registry,
+            _logger,
+            $"{apiType.Namespace}.Apis"
+        );
+    }
+
+    private static void EmitImports(AhkWriter w, ApiType apiType, ModuleNameResolver names)
     {
         // Strip imports that are only referenced by constants (those go in Constants.ahk).
         var constantOnlyTypes = new HashSet<string>(GetConstantOnlyTypeImports(apiType));
@@ -58,13 +82,16 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
             if (constantOnlyTypes.Contains(fqn))
                 continue;
             string path = ImportResolver.GetIncludePath(apiType.Namespace, fqn);
-            w.Import(path, [ImportResolver.GetImportName(fqn)]);
+            w.Import(path, [names.TypeImportToken(fqn)]);
         }
 
         foreach (string apisFqn in apiType.Imports.GetFunctionNamespaces())
         {
             string path = ImportResolver.GetIncludePath(apiType.Namespace, apisFqn);
-            w.Import(path, apiType.Imports.GetFunctionsForNamespace(apisFqn));
+            var tokens = apiType
+                .Imports.GetFunctionsForNamespace(apisFqn)
+                .Select(fn => names.FunctionImportToken(apisFqn, fn));
+            w.Import(path, tokens);
         }
     }
 
@@ -79,13 +106,13 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry) : ITypeEmitter
         return apiType.Constants.SelectMany(c => c.Imports.GetTypes()).Where(t => !methodTypes.Contains(t)).Distinct();
     }
 
-    private void EmitFunctions(AhkWriter w, ApiType apiType)
+    private void EmitFunctions(AhkWriter w, ApiType apiType, ModuleNameResolver names)
     {
         w.RawLine(";@region Functions");
 
         foreach (var method in apiType.Methods)
         {
-            MethodEmitter.EmitDllImportFunction(w, method, _registry);
+            MethodEmitter.EmitDllImportFunction(w, method, _registry, names);
             w.BlankLine();
         }
 
