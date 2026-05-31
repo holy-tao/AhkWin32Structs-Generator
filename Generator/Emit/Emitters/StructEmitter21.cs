@@ -189,6 +189,14 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
                 name = field.Name + ++suffix;
             field.Name = name;
 
+            // Cyclic pointer-to-struct field: emit a backing IntPtr (for layout) plus a dynamic
+            // accessor that resolves the pointee only at call time, breaking the import cycle.
+            if (field.EmitAsLazyPointer)
+            {
+                EmitLazyPointer(w, field, name, deferred, ref cursor, emitted, absOffset);
+                continue;
+            }
+
             string typeExpr = GetTypeExpression(field, parentClassName);
 
             // Forward fields (offset >= cursor) become typed properties in the body;
@@ -221,6 +229,69 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
             if (field.IsBitField)
                 EmitBitfieldAccessors(w, field);
         }
+    }
+
+    /// <summary>
+    /// Emit a cyclic pointer-to-struct field as a backing <c>IntPtr</c> (which drives layout)
+    /// plus a dynamic accessor that boxes/unboxes the pointee only at call time. This breaks the
+    /// load-time import cycle that a plain <c>Pointee.Ptr</c> typed property would create.
+    /// <para>
+    /// No script-side reference to an assigned boxed struct is retained: a v2.1 struct can only
+    /// hold typed (memory-backed) properties, so there is nowhere to stash an object reference.
+    /// As with raw pointers in v2.0, the caller must keep the pointee alive while it is referenced
+    /// — reading a pointer filled in by external code (the common interop case) is unaffected.
+    /// </para>
+    /// </summary>
+    private static void EmitLazyPointer(
+        AhkWriter w,
+        FieldMember field,
+        string name,
+        List<DeferredProp> deferred,
+        ref int cursor,
+        HashSet<string> emitted,
+        int absOffset
+    )
+    {
+        if (field.Type is not PointerType { Pointee: StructRef pointee })
+            throw new InvalidOperationException(
+                $"Field '{name}' is marked EmitAsLazyPointer but is not a pointer-to-struct ({field.Type.DisplayName})"
+            );
+
+        // Deconflict the synthetic backing property name against everything emitted so far.
+        string backing = Deconflict($"__{name}_ptr", emitted);
+        emitted.Add(backing);
+
+        // Backing storage: forward fields become a typed property in the body (auto-layout drives
+        // the offset); overlap fields become a deferred DefineProp at the explicit offset.
+        if (absOffset >= cursor)
+        {
+            w.Line($"{backing} : IntPtr");
+            cursor = absOffset + field.Size;
+        }
+        else
+        {
+            deferred.Add(new DeferredProp(backing, "IntPtr", absOffset));
+        }
+
+        // Dynamic accessor (occupies no layout). Doc goes on the public property.
+        DocCommentWriter.WriteFieldDoc(w, field, AhkVersion.v21);
+        using (w.InstanceProperty(name))
+        {
+            w.Line($"get => (addr := this.{backing}) ? {pointee.Name}.At(addr) : unset");
+            w.Line($"set => this.{backing} := (IsSet(value) && value) ? value.Ptr : 0");
+        }
+
+        emitted.Add(name);
+        w.BlankLine();
+    }
+
+    private static string Deconflict(string desired, HashSet<string> emitted)
+    {
+        string name = desired;
+        int suffix = 0;
+        while (emitted.Contains(name))
+            name = desired + ++suffix;
+        return name;
     }
 
     /// <summary>

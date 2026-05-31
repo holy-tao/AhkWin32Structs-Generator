@@ -59,8 +59,11 @@ Applies modifications to the IR before code generation. Transforms run in order:
 
 1. **Overrides** — YAML-driven one-off corrections (skip types, mark parameters as reserved, set struct-size fields, clone methods between API types). See [Overrides](#overrides).
 2. **Extensions** — YAML-driven code injection (add helper methods, properties, or custom constructors to generated types). See [Extensions](#extensions).
+3. **Cyclic Reference Breaking** - the generator builds the load-time struct dependency graph (value-embed = hard edges, pointer-to-struct = soft edges), runs iterative [Tarjan SCC], and marks every pointer field whose pointee sits in the same non-trivial cluster. We use this graph to break cyclic references during emission which would otherwise prevent the interpreter from loading affected modules.
 
-Both are configured via files in the metadata directory and are applied by mutating the `TypeRegistry` in place. This is the integration point for any manual configuration. Note that reserved name deconfliction happens during *extraction*.
+Overrides and Extensions are configured via files in the metadata directory and are applied by mutating the `TypeRegistry` in place. This is the integration point for any manual configuration. Note that reserved name deconfliction happens during *extraction*.
+
+[Tarjan SCC]: https://en.wikipedia.org/wiki/Tarjan%27s_strongly_connected_components_algorithm
 
 #### Emit
 Walks the `TypeRegistry` and generates `.ahk` files. Each type kind has a dedicated emitter (`EnumEmitter`, `StructEmitter`, `HandleEmitter`, `ApiTypeEmitter`, `ComInterfaceEmitter`). Emission is split into two sub-phases for performance: first, all types are emitted to in-memory strings in parallel; then, files are written to disk with parallel I/O. A `version.ini` file is also written with assembly and package version information, in case consumers want it.
