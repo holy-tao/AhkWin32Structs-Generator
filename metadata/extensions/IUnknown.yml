@@ -49,19 +49,13 @@ code:
     Implement(implObj, flags := "") {
         super.Implement(implObj, flags)
 
-        qi := implObj.HasMethod("QueryInterface", 3) ?
-            GetMethod(implObj, "QueryInterface") :
-            ObjBindMethod(this, "_DefaultQueryInterface")
+        qi := GetMethod(implObj, "QueryInterface") ?? ObjBindMethod(this, "_DefaultQueryInterface")
         this.vtbl.QueryInterface := CallbackCreate(qi, flags, 3)
-
-        addRef := implObj.HasMethod("AddRef", 1) ?
-            GetMethod(implObj, "AddRef") :
-            ObjBindMethod(this, "_DefaultAddRef")
+    
+        addRef := GetMethod(implObj, "AddRef") ?? ObjBindMethod(this, "_DefaultAddRef")            
         this.vtbl.AddRef := CallbackCreate(addRef, flags, 1)
-
-        release := implObj.HasMethod("Release", 1) ?
-            GetMethod(implObj, "Release") :
-            ObjBindMethod(this, "_DefaultRelease")
+    
+        release := GetMethod(implObj, "Release") ?? ObjBindMethod(this, "_DefaultRelease")
         this.vtbl.Release := CallbackCreate(release, flags, 1)
     }
 
