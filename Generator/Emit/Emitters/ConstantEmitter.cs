@@ -65,7 +65,7 @@ public static class ConstantEmitter
             case StructConstantValue { IsHandle: true } sv:
                 // Reconstruct the handle wrapper using the resolved (possibly aliased) type name
                 // rather than the pre-baked AsAhk string, which embeds the raw StructName.
-                w.Variable(constant.Name, $"{names.ForType(sv.StructFQN)}({{Value: {sv.HandleValue}}}, false)");
+                w.Variable(constant.Name, $"{names.ForType(sv.StructFQN)}({sv.HandleValue})");
                 break;
 
             case StructConstantValue { IsHandle: false } sv:
