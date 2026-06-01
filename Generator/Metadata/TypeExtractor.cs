@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Metadata;
 
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
@@ -935,7 +936,7 @@ public sealed class TypeExtractor
         (MetadataReader structReader, TypeDefinitionHandle structHandle) = ResolveStructType(reader, fieldDef);
 
         TypeDefinition structTypeDef = structReader.GetTypeDefinition(structHandle);
-        List<StructFieldInit> fieldInits = BuildStructFieldInits(structReader, structTypeDef, values, "value");
+        List<StructFieldInit> fieldInits = BuildStructFieldInits(structReader, structTypeDef, values, []); // TODO don't hardcode 'value' as base
 
         bool needsGuid = fieldInits.Any(f => f.Kind == StructFieldInitKind.GuidPointer);
 
@@ -982,7 +983,7 @@ public sealed class TypeExtractor
         MetadataReader reader,
         TypeDefinition typeDef,
         Queue<string> values,
-        string pathPrefix
+        IEnumerable<string> pathPrefix
     )
     {
         List<StructFieldInit> inits = [];
@@ -992,7 +993,7 @@ public sealed class TypeExtractor
         {
             FieldDefinition fd = reader.GetFieldDefinition(hField);
             string memberName = reader.GetString(fd.Name);
-            string fieldPath = $"{pathPrefix}.{memberName}";
+            string[] fieldPath = [.. pathPrefix, memberName];
             ResolvedType memberType = fd.DecodeSignature(sigDecoder, new SignatureGenericContext());
 
             switch (memberType)
@@ -1006,7 +1007,7 @@ public sealed class TypeExtractor
                         new StructFieldInit(
                             fieldPath,
                             $"{memberName}_guid.ptr",
-                            StructFieldInitKind.GuidPointer,
+                            memberType is StructRef ? StructFieldInitKind.Guid : StructFieldInitKind.GuidPointer,
                             GuidValue: guidValue
                         )
                     );

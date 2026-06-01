@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
 
@@ -68,7 +69,7 @@ public static class ConstantEmitter
                 break;
 
             case StructConstantValue { IsHandle: false } sv:
-                EmitStructConstantFunction(w, constant.Name, sv, names);
+                EmitStructConstantVariable(w, constant.Name, sv, names);
                 break;
 
             default:
@@ -90,18 +91,19 @@ public static class ConstantEmitter
     }
 
     /// <summary>
-    /// Emit a struct constant as a function that returns the struct. For v2.1
+    /// Emit a struct constant as a global (auto-execute) varable. For v2.1
     /// </summary>
-    private static void EmitStructConstantFunction(
+    private static void EmitStructConstantVariable(
         AhkWriter w,
         string name,
         StructConstantValue sv,
         ModuleNameResolver names
     )
     {
-        using (w.Function(name))
+        w.Line($"export global {name} := {names?.ForType(sv.StructFQN) ?? sv.StructName}()");
+        foreach (StructFieldInit init in sv.FieldInits ?? [])
         {
-            EmitStructConstantInitializers(w, sv, names);
+            EmitFieldInit(w, init, AhkVersion.v21, name);
         }
     }
 
@@ -120,7 +122,7 @@ public static class ConstantEmitter
 
             foreach (StructFieldInit init in sv.FieldInits ?? [])
             {
-                EmitFieldInit(w, init);
+                EmitFieldInit(w, init, AhkVersion.v20, "value");
             }
 
             w.Line("return value");
@@ -130,25 +132,52 @@ public static class ConstantEmitter
     /// <summary>
     /// Emit a single field initialization line based on its kind.
     /// </summary>
-    private static void EmitFieldInit(AhkWriter w, StructFieldInit init)
+    private static void EmitFieldInit(AhkWriter w, StructFieldInit init, AhkVersion version, string prefix)
     {
+        string fieldPath = $"{prefix}.{string.Join(".", init.FieldPath)}";
+
         switch (init.Kind)
         {
             case StructFieldInitKind.Direct:
-                w.Line($"{init.FieldPath} := {init.Value}");
+                w.Line($"{fieldPath} := {init.Value}");
                 break;
 
             case StructFieldInitKind.ArrayElement:
-                w.Line($"{init.FieldPath}[{init.ArrayIndex}] := {init.Value}");
+                w.Line($"{fieldPath}[{init.ArrayIndex}] := {init.Value}");
+                break;
+
+            case StructFieldInitKind.Guid:
+                // We can't straightforwardly assign a struct to another struct's embedded struct, we need to copy the
+                // data between pointers. In v2 we have a helper method but in v2.1 we scrapped the custom base class
+                // so we don't have that same utility. They're both RtlCopyMemory under the hood though
+                string copyCode = version switch
+                {
+                    AhkVersion.v20 => $"Guid(\"{{{init.GuidValue:D}}}\").CopyTo({fieldPath}.ptr)",
+                    // TODO this is kind of hacky - probably better to reimplement CopyTo?
+                    // Can't use a projected method because RtoCopyMemory isn't in the projection
+                    // https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-rtlcopymemory
+                    AhkVersion.v21 => $"DllCall(\"NtDll.dll\\RtlCopyMemory\",{Environment.NewLine}"
+                        + $"    IntPtr, ObjGetDataPtr({fieldPath}),{Environment.NewLine}"
+                        + $"    Guid.Ptr, Guid(\"{{{init.GuidValue:D}}}\"),{Environment.NewLine}"
+                        + "    UInt32, 16)",
+                    _ => throw new NotSupportedException("Unreachable: " + version.ToString()),
+                };
+                w.Line(copyCode);
                 break;
 
             case StructFieldInitKind.GuidPointer:
                 // Extract field name from the path for the static variable name
-                string fieldName = init.FieldPath.Contains('.')
-                    ? init.FieldPath[(init.FieldPath.LastIndexOf('.') + 1)..]
-                    : init.FieldPath;
-                w.Line($"static {fieldName}_guid := Guid(\"{{{init.GuidValue:D}}}\")");
-                w.Line($"{init.FieldPath} := {fieldName}_guid.ptr");
+                string fieldName = init.FieldPath[init.FieldPath.Count - 1];
+
+                // Pin a Guid struct to either the method (v2.0) or the module (v2.1)
+                string pinCode = version switch
+                {
+                    AhkVersion.v20 => $"static {fieldName}_guid := Guid(\"{{{init.GuidValue:D}}}\")",
+                    AhkVersion.v21 => $"{fieldName}_guid := Guid(\"{{{init.GuidValue:D}}}\")",
+                    _ => throw new NotSupportedException("Unreachable " + version.ToString()),
+                };
+                w.Line(pinCode);
+                w.Line($"{fieldPath} := {fieldName}_guid.ptr");
                 break;
 
             default:
