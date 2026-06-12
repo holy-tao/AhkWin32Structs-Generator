@@ -118,7 +118,9 @@ public sealed class ComInterfaceEmitter21(TypeRegistry registry) : ITypeEmitter
         w.BlankLine();
         using (w.InstanceMethod("__New", "implObj := 0, flags := \"\""))
         {
-            using (w.If("NumGet(this, 0, \"ptr\") == 0"))
+            // Read offset 0 via the intrinsic backing address: `this` marshals as the
+            // overridden `Ptr` (comPtr), which is still 0 this early in construction.
+            using (w.If("NumGet(ObjGetDataPtr(this), 0, \"ptr\") == 0"))
             {
                 w.Line($"this.vtbl := {comType.Name}.Vtbl()");
             }
