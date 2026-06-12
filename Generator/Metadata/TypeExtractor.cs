@@ -807,7 +807,7 @@ public sealed class TypeExtractor
         {
             return new ConstantMember
             {
-                Name = fieldName,
+                Name = DeconflictName(fieldName),
                 Value = new GuidConstantValue(guid.Value),
                 Type = new PrimitiveType("Guid"),
                 Description = description,
@@ -840,7 +840,7 @@ public sealed class TypeExtractor
 
         return new ConstantMember
         {
-            Name = fieldName,
+            Name = DeconflictName(fieldName),
             Value = new PrimitiveConstantValue(formattedValue, ahkTypeName),
             Type = new PrimitiveType(constant.TypeCode.ToString()),
             Description = description,

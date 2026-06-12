@@ -38,8 +38,6 @@ public sealed class ApiConstantsEmitter21(TypeRegistry registry, ILogger? logger
         // module's exported constant names are aliased. The base types Win32Handle/Guid are emitted
         // with fixed names below, so register them as anchors to keep other imports off those names.
         List<string> anchors = [.. apiType.Constants.Select(c => c.Name)];
-        if (hasHandleConstant)
-            anchors.Add("Win32Handle");
         if (apiType.NeedsGuid)
             anchors.Add("Guid");
 
