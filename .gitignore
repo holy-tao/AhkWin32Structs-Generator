@@ -1,3 +1,7 @@
 Generator/bin/*
 Generator/obj/Debug/*
 Generator/obj/*
+
+Generator.Tests/bin/*
+Generator.Tests/obj/*
+Generator.Tests/TestResults/*
