@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using System.CommandLine;
 using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
@@ -95,7 +96,7 @@ public static class MethodEmitter
             w.BlankLine();
         }
 
-        EmitErrorCheck(w, method, unqualifyApis, names);
+        EmitErrorCheck(w, method, registry, unqualifyApis, names);
         EmitReturnStatement(w, method, registry, unqualifyApis, names);
     }
 
@@ -373,6 +374,7 @@ public static class MethodEmitter
     private static void EmitErrorCheck(
         AhkWriter w,
         MethodMember method,
+        TypeRegistry registry,
         bool unqualifyApis = false,
         ModuleNameResolver? names = null
     )
@@ -415,7 +417,33 @@ public static class MethodEmitter
             string callee = unqualifyApis
                 ? FunctionRef(names, freeWith.ApisFQN, freeWith.Name)
                 : $"{freeWith.DeclarerName}.{freeWith.Name}";
-            w.Line($"    {callee}({param.Name})");
+
+            // Extracting the underlying primitive value guarantees that the call works even when free function
+            // takes an untyped pointer (e.g. CoTaskMemFree takes void*)
+            // TODO we could be stricter - check free function arg type, cast if possible, otherwise use the
+            // primitive escape hatch
+            string paramName = param.Name;
+            switch (param.Type)
+            {
+                case HandleRef handleRef:
+                    string handleMember =
+                        registry.Resolve<HandleType>(handleRef.FQN, Architecture.All)?.Members.Single().Name
+                        ?? throw new NullReferenceException();
+                    paramName = $"{paramName}.{handleMember}";
+                    break;
+                case PointerType pt when pt.Pointee is HandleRef handleRef:
+                    string ptHandleMember =
+                        registry.Resolve<HandleType>(handleRef.FQN, Architecture.All)?.Members.Single().Name
+                        ?? throw new NullReferenceException();
+                    paramName = $"{paramName}.{ptHandleMember}";
+                    break;
+                case NativeTypedefRef:
+                case PointerType pt when pt.Pointee is NativeTypedefRef:
+                    paramName = $"{paramName}.value";
+                    break;
+            }
+
+            w.Line($"    {callee}({paramName})");
         }
 
         w.Line($"    throw OSError({string.Join(" || ", errCodeSources)})");
@@ -621,7 +649,7 @@ public static class MethodEmitter
             EmitOutputParamMarshalling(w, method);
             w.Line(BuildComCallExpression(method, unqualifyApis));
 
-            EmitErrorCheck(w, method, unqualifyApis);
+            EmitErrorCheck(w, method, registry, unqualifyApis);
             EmitReturnStatement(w, method, registry, unqualifyApis);
         }
     }

@@ -208,6 +208,16 @@ public sealed class AhkWriter(AhkVersion version = AhkVersion.v20)
     }
 
     /// <summary>
+    /// Open a setter block: "set {".
+    /// </summary>
+    public IndentScope SetBlock()
+    {
+        _sb.AppendLine($"{Indent}set {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
     /// Open an if statement - these always use braces: "if (condition) {"
     /// </summary>
     /// <param name="condition">AHK code for the condition to evaluate</param>

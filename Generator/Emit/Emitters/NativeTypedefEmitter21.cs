@@ -51,8 +51,17 @@ public sealed class NativeTypedefEmitter21 : ITypeEmitter
             w.BlankLine();
             using (w.InstanceProperty("__value"))
             {
-                w.Line("get => this.value");
-                w.Line("set => this.value := value");
+                using (w.SetBlock())
+                {
+                    using (w.If($"value is {typedef.Name}"))
+                    {
+                        w.Line($"this.value := value.value");
+                    }
+                    using (w.Else())
+                    {
+                        w.Line($"this.value := value");
+                    }
+                }
             }
 
             w.BlankLine();

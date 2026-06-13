@@ -48,8 +48,18 @@ public sealed class HandleEmitter21 : ITypeEmitter
             w.BlankLine();
             using (w.InstanceProperty("__value"))
             {
-                w.Line($"get => this.{valueField.Name}");
-                w.Line($"set => this.{valueField.Name} := value");
+                using (w.SetBlock())
+                {
+                    // TODO accept values from AlsoUsableFor attribute (need to decode too)
+                    using (w.If($"value is {handleType.Name}"))
+                    {
+                        w.Line($"this.{valueField.Name} := value.{valueField.Name}");
+                    }
+                    using (w.Else())
+                    {
+                        w.Line($"this.{valueField.Name} := value");
+                    }
+                }
             }
 
             w.BlankLine();
