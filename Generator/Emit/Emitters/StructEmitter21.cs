@@ -413,6 +413,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
         if (type.Extensions.Count == 0)
             return;
 
+        w.BlankLine();
         foreach (var ext in type.Extensions)
         {
             if (!ext.CodeByVersion.TryGetValue(AhkVersion.v21, out string? rawCode))

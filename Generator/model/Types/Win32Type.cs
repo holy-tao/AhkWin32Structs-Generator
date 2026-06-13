@@ -70,4 +70,15 @@ public abstract class Win32Type
     public bool IsAnsi => Flags.HasFlag(MemberFlags.Ansi);
     public bool IsUnicode => Flags.HasFlag(MemberFlags.Unicode);
     public bool IsAnonymous => Flags.HasFlag(MemberFlags.Anonymous);
+
+    /// <summary>
+    /// List of the names of the types that this type can be converted to implicitly.
+    /// The type is guaranteed to be in the same namespace as this type.
+    /// </summary>
+    public IReadOnlyList<string>? AlsoUsableFor { get; init; }
+
+    /// <summary>
+    /// List of resolved types which can be implicitly converted to this type.
+    /// </summary>
+    public IList<Win32Type>? ConvertibleFrom { get; set; }
 }

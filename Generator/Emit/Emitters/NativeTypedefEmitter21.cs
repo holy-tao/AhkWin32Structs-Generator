@@ -38,7 +38,7 @@ public sealed class NativeTypedefEmitter21 : ITypeEmitter
     {
         w.Require("AutoHotkey v2.1-alpha.26+ 64-bit");
 
-        EmitImports(w, typedef);
+        SingleFieldEmitter.EmitImports(w, typedef);
 
         w.BlankLine();
 
@@ -49,20 +49,7 @@ public sealed class NativeTypedefEmitter21 : ITypeEmitter
             w.Line($"value : {typedef.Underlying.TypeSpecifier}");
 
             w.BlankLine();
-            using (w.InstanceProperty("__value"))
-            {
-                using (w.SetBlock())
-                {
-                    using (w.If($"value is {typedef.Name}"))
-                    {
-                        w.Line($"this.value := value.value");
-                    }
-                    using (w.Else())
-                    {
-                        w.Line($"this.value := value");
-                    }
-                }
-            }
+            SingleFieldEmitter.EmitValueSetter(w, typedef, "value");
 
             w.BlankLine();
             using (w.InstanceMethod("__New", "value := 0"))
@@ -72,21 +59,6 @@ public sealed class NativeTypedefEmitter21 : ITypeEmitter
 
             // Extension code blocks (e.g. NTSTATUS helper methods)
             StructEmitter21.EmitExtensions(w, typedef);
-        }
-    }
-
-    private static void EmitImports(AhkWriter w, NativeTypedefType type)
-    {
-        foreach (string fqn in type.Imports.GetTypes().Where(fqn => fqn != type.FQN))
-        {
-            string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
-            w.Import(path, [ImportResolver.GetImportName(fqn)]);
-        }
-
-        foreach (string apisFqn in type.Imports.GetFunctionNamespaces())
-        {
-            string path = ImportResolver.GetIncludePath(type.Namespace, apisFqn);
-            w.Import(path, type.Imports.GetFunctionsForNamespace(apisFqn));
         }
     }
 }

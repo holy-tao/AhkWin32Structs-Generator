@@ -451,6 +451,11 @@ public sealed class TypeExtractor
         // Name deconfliction
         string displayName = DeconflictName(typeName);
 
+        // NOTE: [AlsoUsableFor] is deliberately NOT copied onto plain structs. The
+        // implicit-conversion mechanism is the scalar `__value` setter, which only
+        // single-field value types (HandleType/NativeTypedefType) emit. The lone
+        // struct->struct pair (DEVPROPKEY->PROPERTYKEY) has no `__value` to convert
+        // through, so carrying the attribute here would only produce a dead relationship.
         StructType result = new()
         {
             Identity = identity,
@@ -552,6 +557,7 @@ public sealed class TypeExtractor
             SupportedOSPlatform = attrs.SupportedOSPlatform,
             Imports = imports,
             IsNested = typeDef.IsNested,
+            AlsoUsableFor = attrs.AlsoUsableFor.Count > 0 ? attrs.AlsoUsableFor : null,
         };
 
         _logger.LogDebug(
@@ -615,6 +621,7 @@ public sealed class TypeExtractor
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
             SupportedOSPlatform = attrs.SupportedOSPlatform,
+            AlsoUsableFor = attrs.AlsoUsableFor.Count > 0 ? attrs.AlsoUsableFor : null,
             Imports = imports,
         };
 

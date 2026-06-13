@@ -48,6 +48,9 @@ public class TypeRegistry
         return null;
     }
 
+    /// <summary>
+    /// Resolve a type of the given type <c>T</c> by FQN for a target architecture.
+    /// </summary>
     public T? Resolve<T>(string fqn, Architecture target)
         where T : Win32Type
     {

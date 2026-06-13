@@ -3,7 +3,6 @@ namespace AhkWin32.Generator.Emit.Emitters;
 using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model.Members;
 using AhkWin32.Generator.Model.Types;
-using YamlDotNet.Core.Tokens;
 
 /// <summary>
 /// Emits a HandleType as a v2.1 native `struct` block. Handles are emitted as a
@@ -32,7 +31,7 @@ public sealed class HandleEmitter21 : ITypeEmitter
     {
         w.Require("AutoHotkey v2.1-alpha.26+ 64-bit");
 
-        EmitImports(w, handleType);
+        SingleFieldEmitter.EmitImports(w, handleType);
 
         w.BlankLine();
 
@@ -46,21 +45,7 @@ public sealed class HandleEmitter21 : ITypeEmitter
             w.Line($"{valueField.Name} : {valueField.Type.TypeSpecifier}");
 
             w.BlankLine();
-            using (w.InstanceProperty("__value"))
-            {
-                using (w.SetBlock())
-                {
-                    // TODO accept values from AlsoUsableFor attribute (need to decode too)
-                    using (w.If($"value is {handleType.Name}"))
-                    {
-                        w.Line($"this.{valueField.Name} := value.{valueField.Name}");
-                    }
-                    using (w.Else())
-                    {
-                        w.Line($"this.{valueField.Name} := value");
-                    }
-                }
-            }
+            SingleFieldEmitter.EmitValueSetter(w, handleType, valueField.Name);
 
             w.BlankLine();
             w.Line("/**");
@@ -87,21 +72,6 @@ public sealed class HandleEmitter21 : ITypeEmitter
                 w.Line($"    this.{valueField.Name} := {firstInvalid}");
                 w.Line("}");
             }
-        }
-    }
-
-    private static void EmitImports(AhkWriter w, Win32Type type)
-    {
-        foreach (string fqn in type.Imports.GetTypes().Where(fqn => fqn != type.FQN))
-        {
-            string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
-            w.Import(path, [ImportResolver.GetImportName(fqn)]);
-        }
-
-        foreach (string apisFqn in type.Imports.GetFunctionNamespaces())
-        {
-            string path = ImportResolver.GetIncludePath(type.Namespace, apisFqn);
-            w.Import(path, type.Imports.GetFunctionsForNamespace(apisFqn));
         }
     }
 }

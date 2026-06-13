@@ -191,6 +191,9 @@ public class Program
         );
         extensionApplier.Apply(registry, Path.Join(metadataPath, "extensions"));
 
+        var alsoUsableForResolver = new AlsoUsableForResolver(loggerFactory.CreateLogger<AlsoUsableForResolver>());
+        alsoUsableForResolver.Apply(registry);
+
         // Break struct import cycles (v2.1): mark pointer-to-struct fields on a cycle so the
         // emitter renders them as lazy accessors instead of eager X.Ptr typed properties.
         var cycleBreaker = new CyclicPointerBreaker(loggerFactory.CreateLogger<CyclicPointerBreaker>());
