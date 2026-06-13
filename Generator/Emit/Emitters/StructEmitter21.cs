@@ -302,9 +302,10 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
         return field.Type switch
         {
             // String fields - IR collapses fixed-size character arrays into StringType.
-            // ANSI uses the CHAR NativeTypedef from Foundation; Unicode strings come from
-            // CLR char[] which has no metadata typedef, so render as raw UInt16 elements.
-            StringType s => $"{(s.Encoding == StringEncoding.Ansi ? "CHAR" : "UInt16")}[{s.Length}]",
+            // ANSI uses the CHAR NativeTypedef from Foundation; Unicode uses the synthetic
+            // WCHAR typedef (CLR char[] has no metadata typedef). Both carry .Array string
+            // magic via their extensions, restoring v2.0's string-assignment ergonomics.
+            StringType s => $"{(s.Encoding == StringEncoding.Ansi ? "CHAR" : "WCHAR")}[{s.Length}]",
 
             // Array of nested-defined struct: qualify the element name
             ArrayType { ElementType: StructRef es } a when field.IsNested => $"{parentClassName}.{es.Name}[{a.Length}]",
@@ -361,10 +362,14 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
     {
         foreach (FieldMember field in structType.Members)
         {
-            // Only ANSI StringType needs an import (the CHAR NativeTypedef from Foundation).
-            // Unicode StringType renders as raw UInt16[N] which needs no import.
-            if (field.Type is StringType { Encoding: StringEncoding.Ansi })
-                extras.Add("Windows.Win32.Foundation.CHAR");
+            // ANSI StringType imports the CHAR NativeTypedef; Unicode imports the synthetic
+            // WCHAR typedef. Both render as fixed arrays of the imported element type.
+            if (field.Type is StringType s)
+                extras.Add(
+                    s.Encoding == StringEncoding.Ansi
+                        ? "Windows.Win32.Foundation.CHAR"
+                        : "Windows.Win32.Foundation.WCHAR"
+                );
 
             if (field.EmbeddedStruct is not null)
                 CollectExtraImports(field.EmbeddedStruct, extras);

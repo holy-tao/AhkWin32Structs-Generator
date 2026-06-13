@@ -170,6 +170,14 @@ public class Program
         var extractor = new TypeExtractor(loader, docs, loggerFactory, reservedNames, maxParallelism);
         TypeRegistry registry = extractor.ExtractAll();
 
+        // Inject synthetic types (e.g. WCHAR) before transforms so extensions can attach.
+        // v2.1 only — the v2.0 emitter handles fixed char arrays via StringType/StrGet/StrPut.
+        if (ahkVersion is AhkVersion.v21)
+        {
+            var syntheticProvider = new SyntheticTypeProvider(loggerFactory.CreateLogger<SyntheticTypeProvider>());
+            syntheticProvider.Apply(registry);
+        }
+
         // Transforms
         var overrideApplier = new OverrideApplier(
             new OverrideReader(loggerFactory.CreateLogger<OverrideReader>(), maxParallelism),
