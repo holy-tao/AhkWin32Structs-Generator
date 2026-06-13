@@ -35,8 +35,7 @@ public sealed class ApiConstantsEmitter21(TypeRegistry registry, ILogger? logger
         bool hasHandleConstant = HasHandleConstant(apiType);
 
         // Build a name resolver so imported type names that collide (case-insensitively) with this
-        // module's exported constant names are aliased. The base types Win32Handle/Guid are emitted
-        // with fixed names below, so register them as anchors to keep other imports off those names.
+        // module's exported constant names are aliased.
         List<string> anchors = [.. apiType.Constants.Select(c => c.Name)];
         if (apiType.NeedsGuid)
             anchors.Add("Guid");
@@ -45,9 +44,6 @@ public sealed class ApiConstantsEmitter21(TypeRegistry registry, ILogger? logger
         var names = new ModuleNameResolver(anchors, typeFqns, [], _registry, _logger, $"{apiType.Namespace}.Constants");
 
         w.Require("AutoHotkey >= v2.1-alpha.24+ 64-bit");
-
-        if (hasHandleConstant)
-            w.Import($"{pathToBase}Win32Handle.ahk", ["Win32Handle"]);
 
         if (apiType.NeedsGuid)
             w.Import($"{pathToBase}Guid.ahk", ["Guid"]);
