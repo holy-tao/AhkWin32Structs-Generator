@@ -4,8 +4,14 @@ add-to:
 code:
   v20: &shared |
     /**
+     * Extracts the String pointed at by this `PSTR` to an AutoHotkey string
+     * @returns {String}
+     */
+    ToString() => StrGet(this.value, "UTF-8")
+
+    /**
      * Creates and returns a `Buffer` containing a copy of `str` in ANSI encoding which can be passed
-     * as an argument to functins requiring `PSTR`s.
+     * as an argument to functions requiring `PSTR`s.
      * @param {String} str the string to encode
      * @param {Integer} buffLen the length of the buffer to encode the string in. If unset, the returned
      *      buffer is exactly the number of bytes required to fit `str`. This can be used if the function
