@@ -45,7 +45,13 @@ public sealed class HandleEmitter21 : ITypeEmitter
             w.Line($"{valueField.Name} : {valueField.Type.TypeSpecifier}");
 
             w.BlankLine();
-            SingleFieldEmitter.EmitValueSetter(w, handleType, valueField.Name);
+            SingleFieldEmitter.EmitValueSetter(
+                w,
+                handleType,
+                valueField.Name,
+                handleType.ValueGetterExpr,
+                handleType.ValueSetterCoerceExpr
+            );
 
             w.BlankLine();
             w.Line("/**");

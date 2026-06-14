@@ -13,4 +13,19 @@ public sealed class NativeTypedefType : Win32Type
 {
     /// <summary>The underlying primitive/pointer type backing this typedef.</summary>
     public required ResolvedType Underlying { get; init; }
+
+    /// <summary>
+    /// Optional AHK expression for a restored <c>__value</c> getter (e.g. BOOL <c>!!$field</c>),
+    /// where <c>$field</c> resolves to <c>this.value</c>. Null = no getter (default; preserves
+    /// type identity). Set in Transform from a <c>value-accessor</c> override.
+    /// </summary>
+    public string? ValueGetterExpr { get; set; }
+
+    /// <summary>
+    /// Optional AHK expression that transforms a raw incoming value in the <c>__value</c> setter's
+    /// else branch (e.g. BOOL <c>!!$value</c>), where <c>$value</c> resolves to the setter's
+    /// <c>value</c>. Null = store the value unchanged. Set in Transform from a
+    /// <c>value-accessor</c> override.
+    /// </summary>
+    public string? ValueSetterCoerceExpr { get; set; }
 }

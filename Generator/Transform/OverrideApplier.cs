@@ -113,6 +113,41 @@ public sealed class OverrideApplier
         {
             ApplyMethodOverrides(apiType, ov.Methods, ov.FQN);
         }
+
+        // value-accessor (native typedefs and handles only — they share the v2.1 __value emitter)
+        if (ov.ValueAccessor is { } va)
+        {
+            ApplyValueAccessor(type, va, ov.FQN);
+        }
+    }
+
+    private void ApplyValueAccessor(Win32Type type, ValueAccessorOverride va, string typeFqn)
+    {
+        switch (type)
+        {
+            case NativeTypedefType typedef:
+                typedef.ValueGetterExpr = va.Getter;
+                typedef.ValueSetterCoerceExpr = va.SetterCoerce;
+                break;
+            case HandleType handle:
+                handle.ValueGetterExpr = va.Getter;
+                handle.ValueSetterCoerceExpr = va.SetterCoerce;
+                break;
+            default:
+                _logger.LogWarning(
+                    "value-accessor override on unsupported type {FQN} ({Kind}) — only native typedefs and handles are supported",
+                    typeFqn,
+                    type.GetType().Name
+                );
+                return;
+        }
+
+        _logger.LogDebug(
+            "Set value-accessor (getter={HasGetter}, setter-coerce={HasCoerce}) on {FQN}",
+            va.Getter is not null,
+            va.SetterCoerce is not null,
+            typeFqn
+        );
     }
 
     private void ApplyFieldOverrides(

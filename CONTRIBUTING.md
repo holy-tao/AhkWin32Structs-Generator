@@ -236,6 +236,7 @@ Each file is a YAML list of type-scoped entries. The `type` key is always requir
 | `methods.<name>.skip` | method | `true` to remove a single method from an `Apis` type. |
 | `methods.<name>.parameters.<name>.add-attributes` | parameter | List of `ParameterFlags` to add (e.g., `Reserved`). |
 | `add-methods` | type (Apis) | List of `{from, name}` entries that clone a method from another `Apis` type into this one. Useful when a function logically belongs in multiple namespaces. |
+| `value-accessor` | type (native typedef or handle) | Customizes the generated `__value` accessor. `getter` is an AHK expression that restores a `__value` getter (omit to keep the default no-getter behavior that preserves type identity); `setter-coerce` is an AHK expression applied to a raw incoming value in the setter's else branch. Aliases: `$field` -> `this.<backingField>`, `$value` -> the setter's `value`. The instance-unwrap branch and `[AlsoUsableFor]` checks are emitted unchanged. **v2.1 emission only** (native typedefs are v2.1-only; v2.0 handles are class-based with no `__value`, so the keys are inert there). |
 
 <details>
 
@@ -277,6 +278,39 @@ Each file is a YAML list of type-scoped entries. The `type` key is always requir
 - type: Windows.Win32.UI.WindowsAndMessaging.SOME_STRUCT
   struct-size-field: lStructSize
 ```
+
+</details>
+
+<details>
+
+<summary><b>Example: make BOOL read and write like a boolean</b></summary>
+
+```yaml
+# BOOL is a 4-byte integer; normalize it to 0/1 on read and write.
+- type: Windows.Win32.Foundation.BOOL
+  value-accessor:
+    getter: "!!$field"            # get => !!this.value
+    setter-coerce: "!!$value"     # else branch: this.value := !!value
+```
+
+This emits:
+
+```ahk
+__value {
+    get => !!this.value
+    set {
+        if (value is BOOL)
+            this.value := value.value
+        else
+            this.value := !!value
+    }
+}
+```
+
+A `getter` that changes the read *type* (e.g. a scalar `CHAR` with `Chr($field)` would read back a
+string) also changes what DllCall marshals when the instance is passed by value — so prefer
+`setter-coerce` alone for character types and reserve `getter` for integer-valued types like `BOOL`
+and `VARIANT_BOOL`.
 
 </details>
 

@@ -36,8 +36,17 @@ public sealed record TypeOverride(
     string? StructSizeField,
     IReadOnlyDictionary<string, FieldOverride>? Fields,
     IReadOnlyDictionary<string, MethodOverride>? Methods,
-    IReadOnlyList<AddMethodRef>? AddMethods
+    IReadOnlyList<AddMethodRef>? AddMethods,
+    ValueAccessorOverride? ValueAccessor
 );
+
+/// <summary>
+/// Customization of the generated <c>__value</c> accessor for a single-field type (native typedef
+/// or handle). <see cref="Getter"/> restores a <c>__value</c> getter (<c>$field</c> alias);
+/// <see cref="SetterCoerce"/> transforms the raw-value else branch of the setter (<c>$value</c>
+/// alias). Either may be null. v2.1 emission only.
+/// </summary>
+public sealed record ValueAccessorOverride(string? Getter, string? SetterCoerce);
 
 /// <summary>
 /// Override for a struct/type field — adds attribute flags.

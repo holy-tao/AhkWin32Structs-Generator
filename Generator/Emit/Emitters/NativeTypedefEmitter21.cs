@@ -5,16 +5,23 @@ using AhkWin32.Generator.Model.Types;
 
 /// <summary>
 /// Emits a NativeTypedefType as a v2.1 native `struct` block. Typedefs are emitted
-/// as a single-field struct with `__value` get/set so the instance is transparently
-/// usable as the underlying value in DllCall and assignment.
+/// as a single-field struct with a `__value` setter that unwraps a typed instance or
+/// stores the raw value, so the instance is transparently assignable. By default no
+/// getter is emitted (the wrapped instance keeps its identity); a `value-accessor`
+/// override may restore a getter and/or customize the setter's raw-value coercion.
 ///
-/// Mirrors the docs example:
+/// Example output (BOOL, with a value-accessor override):
 /// <code>
 /// struct BOOL {
 ///     value : Int32
 ///     __value {
-///         get => this.value
-///         set => this.value := value
+///         get => !!this.value
+///         set {
+///             if (value is BOOL)
+///                 this.value := value.value
+///             else
+///                 this.value := !!value
+///         }
 ///     }
 /// }
 /// </code>
@@ -49,7 +56,13 @@ public sealed class NativeTypedefEmitter21 : ITypeEmitter
             w.Line($"value : {typedef.Underlying.TypeSpecifier}");
 
             w.BlankLine();
-            SingleFieldEmitter.EmitValueSetter(w, typedef, "value");
+            SingleFieldEmitter.EmitValueSetter(
+                w,
+                typedef,
+                "value",
+                typedef.ValueGetterExpr,
+                typedef.ValueSetterCoerceExpr
+            );
 
             w.BlankLine();
             using (w.InstanceMethod("__New", "value := 0"))

@@ -171,13 +171,19 @@ public sealed class OverrideReader
             }
         }
 
+        // Parse value-accessor
+        ValueAccessorOverride? valueAccessor = null;
+        if (entry.ValueAccessor is { } va && (va.Getter is not null || va.SetterCoerce is not null))
+            valueAccessor = new ValueAccessorOverride(va.Getter, va.SetterCoerce);
+
         return new TypeOverride(
             FQN: entry.Type!,
             Skip: entry.Skip ?? false,
             StructSizeField: entry.StructSizeField,
             Fields: fields,
             Methods: methods,
-            AddMethods: addMethods
+            AddMethods: addMethods,
+            ValueAccessor: valueAccessor
         );
     }
 
@@ -258,6 +264,18 @@ public sealed class OverrideReader
 
         [YamlMember(Alias = "add-methods", ApplyNamingConventions = false)]
         public List<AddMethodDto>? AddMethods { get; set; }
+
+        [YamlMember(Alias = "value-accessor", ApplyNamingConventions = false)]
+        public ValueAccessorDto? ValueAccessor { get; set; }
+    }
+
+    private class ValueAccessorDto
+    {
+        [YamlMember(Alias = "getter", ApplyNamingConventions = false)]
+        public string? Getter { get; set; }
+
+        [YamlMember(Alias = "setter-coerce", ApplyNamingConventions = false)]
+        public string? SetterCoerce { get; set; }
     }
 
     private class FieldOverrideDto

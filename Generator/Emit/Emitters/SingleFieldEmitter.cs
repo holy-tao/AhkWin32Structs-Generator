@@ -45,29 +45,49 @@ internal static class SingleFieldEmitter
     /// raw value. Source and target are assumed to share the backing field name, which
     /// holds because convertibility only links types of the same kind (handle->handle,
     /// typedef->typedef).
+    ///
+    /// A <c>value-accessor</c> override may supply <paramref name="getterExpr"/> (restores a
+    /// <c>__value</c> getter; <c>$field</c> -> <c>this.&lt;field&gt;</c>) and/or
+    /// <paramref name="coerceExpr"/> (transforms the raw-value else branch; <c>$value</c> ->
+    /// the setter's <c>value</c>). The instance-unwrap branch is unaffected.
     /// </summary>
-    public static void EmitValueSetter(AhkWriter w, Win32Type type, string field)
+    public static void EmitValueSetter(
+        AhkWriter w,
+        Win32Type type,
+        string field,
+        string? getterExpr = null,
+        string? coerceExpr = null
+    )
     {
         using (w.InstanceProperty("__value"))
-        using (w.SetBlock())
         {
-            string typeCheck = $"value is {type.Name}";
-            if (type.ConvertibleFrom is { Count: > 0 })
+            if (getterExpr is not null)
             {
-                IEnumerable<string> sources = type
-                    .ConvertibleFrom.Append(type)
-                    .Select(t => t.Name)
-                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase); // Stable order for source control
-                typeCheck = string.Join(" || ", sources.Select(n => $"(value is {n})"));
+                w.Line($"get => {getterExpr.Replace("$field", $"this.{field}")}");
             }
 
-            using (w.If(typeCheck))
+            using (w.SetBlock())
             {
-                w.Line($"this.{field} := value.{field}");
-            }
-            using (w.Else())
-            {
-                w.Line($"this.{field} := value");
+                string typeCheck = $"value is {type.Name}";
+                if (type.ConvertibleFrom is { Count: > 0 })
+                {
+                    IEnumerable<string> sources = type
+                        .ConvertibleFrom.Append(type)
+                        .Select(t => t.Name)
+                        .OrderBy(n => n, StringComparer.OrdinalIgnoreCase); // Stable order for source control
+                    typeCheck = string.Join(" || ", sources.Select(n => $"(value is {n})"));
+                }
+
+                string stored = coerceExpr is null ? "value" : coerceExpr.Replace("$value", "value");
+
+                using (w.If(typeCheck))
+                {
+                    w.Line($"this.{field} := value.{field}");
+                }
+                using (w.Else())
+                {
+                    w.Line($"this.{field} := {stored}");
+                }
             }
         }
     }
