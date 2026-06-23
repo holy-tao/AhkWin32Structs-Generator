@@ -82,7 +82,7 @@ public static class MethodEmitter
         EmitOutputParamMarshalling(w, method, names);
 
         if (method.IsVariadic)
-            EmitVariadicMarshalling(w, method);
+            EmitVariadicMarshalling(w, method, unqualifyApis, names);
 
         w.Line(BuildDllCallExpression(method, unqualifyApis, names));
 
@@ -240,16 +240,22 @@ public static class MethodEmitter
 
     /// <summary>
     /// Emit the varArgs array construction for variadic methods.
-    /// Spreads caller's type/value pairs into an array and appends the calling convention string.
+    /// Spreads caller's type/value pairs into an array and appends the return-type token
+    /// (v2.0: a quoted calling-convention + return-type string; v2.1: a class-ref token).
     /// </summary>
-    private static void EmitVariadicMarshalling(AhkWriter w, MethodMember method)
+    private static void EmitVariadicMarshalling(
+        AhkWriter w,
+        MethodMember method,
+        bool unqualifyApis,
+        ModuleNameResolver? names
+    )
     {
-        string convString = BuildCallingConventionString(method);
         string varArgName = method.VariadicParamName;
-
         w.Line($"varArgs := [{varArgName}*]");
-        if (!string.IsNullOrWhiteSpace(convString))
-            w.Line($"varArgs.Push(\"{convString}\")");
+
+        string retToken = unqualifyApis ? BuildReturnTypeToken(method, names) : QuotedConvString(method);
+        if (!string.IsNullOrWhiteSpace(retToken))
+            w.Line($"varArgs.Push({retToken})");
 
         w.BlankLine();
     }
@@ -257,7 +263,7 @@ public static class MethodEmitter
     // --- DllCall expression ---
 
     /// <summary>
-    /// Build the DllCall calling convention + return type string.
+    /// Build the v2.0 DllCall calling convention + return type string.
     /// Returns e.g. "CDecl", "CDecl int", "int", "HRESULT", or "" (empty).
     /// </summary>
     private static string BuildCallingConventionString(MethodMember method)
@@ -274,6 +280,64 @@ public static class MethodEmitter
 
         return sb.ToString().Trim();
     }
+
+    /// <summary>v2.0 return-type token: the calling-convention string, quoted, or "" when empty.</summary>
+    private static string QuotedConvString(MethodMember method)
+    {
+        string conv = BuildCallingConventionString(method);
+        return string.IsNullOrWhiteSpace(conv) ? "" : $"\"{conv}\"";
+    }
+
+    /// <summary>
+    /// Build the v2.1 DllCall/ComCall return-type token. v2.1 has no CDecl (it's obsolete) and
+    /// uses type classes directly instead of quoted type strings, so named numeric/struct classes
+    /// are emitted unquoted (alias-resolved). Exceptions:
+    /// <list type="bullet">
+    ///     <item>HRESULT renders as the quoted <c>"HRESULT"</c> string so the runtime auto-throws an
+    ///     OSError on failure codes - unless this HRESULT is not flagged to throw, in which case it is
+    ///     returned as a raw <c>Int32</c>.</item>
+    ///     <item>Handle returns render as <c>IntPtr</c> (a raw pointer); <see cref="EmitHandleReturn"/>
+    ///     boxes the value into its handle wrapper afterwards.</item>
+    /// </list>
+    /// Returns "" when the method has no return value to specify.
+    /// </summary>
+    private static string BuildReturnTypeToken(MethodMember method, ModuleNameResolver? names)
+    {
+        if (!method.HasReturnValue)
+            return "";
+
+        ResolvedType retType = method.Parameters[0].Type;
+
+        if (retType is HResultType)
+            return method.ShouldThrowOnHResult ? "\"HRESULT\"" : "Int32";
+
+        return ReturnTypeClassRef(retType, names);
+    }
+
+    /// <summary>
+    /// The v2.1 type-class reference used to convert a return value, alias-resolved for the local
+    /// module. Mirrors <see cref="ResolvedType.TypeSpecifier"/> but routes named types through the
+    /// <see cref="ModuleNameResolver"/>. Pointer-to-named-type returns use the dereferencing
+    /// <c>X.Ptr</c> form; void/opaque/primitive pointers return the raw pointer (<c>IntPtr</c>).
+    /// </summary>
+    private static string ReturnTypeClassRef(ResolvedType type, ModuleNameResolver? names) =>
+        type switch
+        {
+            NativeTypedefRef n => TypeRef(names, n.FQN, n.Name),
+            StructRef s => TypeRef(names, s.FQN, s.Name),
+            EnumRef e => TypeRef(names, e.FQN, e.Name),
+            ComRef c => TypeRef(names, c.FQN, c.Name),
+            NtStatusType => "NTSTATUS",
+            PointerType { Pointee: StructRef s } => $"{TypeRef(names, s.FQN, s.Name)}.Ptr",
+            PointerType { Pointee: HandleRef h } => $"{TypeRef(names, h.FQN, h.Name)}.Ptr",
+            PointerType { Pointee: ComRef c } => $"{TypeRef(names, c.FQN, c.Name)}.Ptr",
+            PointerType { Pointee: NativeTypedefRef n } => $"{TypeRef(names, n.FQN, n.Name)}.Ptr",
+            PointerType { Pointee: EnumRef e } => $"{TypeRef(names, e.FQN, e.Name)}.Ptr",
+            // void*, ptr-to-primitive, function ptr -> return the raw pointer
+            PointerType => "IntPtr",
+            // Primitives: Int32, IntPtr, Float32, ...
+            _ => type.TypeSpecifier,
+        };
 
     private static string BuildDllCallExpression(
         MethodMember method,
@@ -305,11 +369,12 @@ public static class MethodEmitter
         }
         else
         {
-            // Calling convention + return type (inline)
-            string convString = BuildCallingConventionString(method);
-            if (!string.IsNullOrWhiteSpace(convString))
+            // Return type token (inline). v2.1 uses unquoted type-class refs; v2.0 a quoted
+            // calling-convention + return-type string.
+            string retToken = unqualifyApis ? BuildReturnTypeToken(method, names) : QuotedConvString(method);
+            if (!string.IsNullOrWhiteSpace(retToken))
             {
-                sb.Append($", \"{convString}\"");
+                sb.Append($", {retToken}");
             }
         }
 
@@ -467,7 +532,8 @@ public static class MethodEmitter
         ParameterMember fnRetVal = method.OutputParameter ?? method.Parameters[0];
 
         // Handle return (direct HandleRef only — ptr-to-handle output params return raw values)
-        if (fnRetVal.IsHandle)
+        // In 2.1 we don't need to manually box this, we can specify the class itself as the return value
+        if (fnRetVal.IsHandle && !unqualifyApis)
         {
             EmitHandleReturn(w, fnRetVal, registry, unqualifyApis, names);
             return;
@@ -674,11 +740,12 @@ public static class MethodEmitter
             sb.Append(BuildDllCallArguments(method, unqualifyApis));
         }
 
-        // Calling convention + return type
-        string convString = BuildCallingConventionString(method);
-        if (!string.IsNullOrWhiteSpace(convString))
+        // Return type token. v2.1 uses unquoted type-class refs (ComCall defaults to HRESULT when
+        // omitted); v2.0 a quoted calling-convention + return-type string.
+        string retToken = unqualifyApis ? BuildReturnTypeToken(method, null) : QuotedConvString(method);
+        if (!string.IsNullOrWhiteSpace(retToken))
         {
-            sb.Append($", \"{convString}\"");
+            sb.Append($", {retToken}");
         }
 
         sb.Append(')');
