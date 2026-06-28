@@ -79,12 +79,12 @@ public static class MethodEmitter
         if (method.IsOrdinal)
             EmitOrdinalLoading(w, method, unqualifyApis, names);
 
-        EmitOutputParamMarshalling(w, method, names);
+        EmitOutputParamMarshalling(w, method, registry, names);
 
         if (method.IsVariadic)
-            EmitVariadicMarshalling(w, method, unqualifyApis, names);
+            EmitVariadicMarshalling(w, method, registry, unqualifyApis, names);
 
-        w.Line(BuildDllCallExpression(method, unqualifyApis, names));
+        w.Line(BuildDllCallExpression(method, registry, unqualifyApis, names));
 
         if (method.IsOrdinal)
         {
@@ -218,7 +218,12 @@ public static class MethodEmitter
 
     // --- Output parameter marshalling ---
 
-    private static void EmitOutputParamMarshalling(AhkWriter w, MethodMember method, ModuleNameResolver? names = null)
+    private static void EmitOutputParamMarshalling(
+        AhkWriter w,
+        MethodMember method,
+        TypeRegistry registry,
+        ModuleNameResolver? names = null
+    )
     {
         if (method.OutputParameter is not { } outParam)
             return;
@@ -232,7 +237,14 @@ public static class MethodEmitter
         else if (outParam.IsPtrToStruct || outParam.IsPtrToHandle)
         {
             string pointeeName = GetPointeeName(outParam.Type, names);
-            w.Line($"{outParam.Name} := {pointeeName}()");
+            // An owned [Out] handle is boxed as its `.Owned`/`.OwnedWith(...)` subclass so __Delete
+            // frees it. The API writes the handle value into this instance's storage via its `.Ptr`.
+            string ctor =
+                outParam.Type is PointerType { Pointee: HandleRef ph }
+                && OwnedHandleClass(pointeeName, outParam, ph.FQN, registry, names) is { } owned
+                    ? owned
+                    : pointeeName;
+            w.Line($"{outParam.Name} := {ctor}()");
         }
     }
 
@@ -246,6 +258,7 @@ public static class MethodEmitter
     private static void EmitVariadicMarshalling(
         AhkWriter w,
         MethodMember method,
+        TypeRegistry registry,
         bool unqualifyApis,
         ModuleNameResolver? names
     )
@@ -253,7 +266,7 @@ public static class MethodEmitter
         string varArgName = method.VariadicParamName;
         w.Line($"varArgs := [{varArgName}*]");
 
-        string retToken = unqualifyApis ? BuildReturnTypeToken(method, names) : QuotedConvString(method);
+        string retToken = unqualifyApis ? BuildReturnTypeToken(method, registry, names) : QuotedConvString(method);
         if (!string.IsNullOrWhiteSpace(retToken))
             w.Line($"varArgs.Push({retToken})");
 
@@ -301,18 +314,57 @@ public static class MethodEmitter
     /// </list>
     /// Returns "" when the method has no return value to specify.
     /// </summary>
-    private static string BuildReturnTypeToken(MethodMember method, ModuleNameResolver? names)
+    private static string BuildReturnTypeToken(MethodMember method, TypeRegistry registry, ModuleNameResolver? names)
     {
         if (!method.HasReturnValue)
             return "";
 
-        ResolvedType retType = method.Parameters[0].Type;
+        ParameterMember fnRetVal = method.Parameters[0];
+        ResolvedType retType = fnRetVal.Type;
 
         if (retType is HResultType)
             return method.ShouldThrowOnHResult ? "\"HRESULT\"" : "Int32";
 
-        return ReturnTypeClassRef(retType, names);
+        string token = ReturnTypeClassRef(retType, names);
+
+        // Ownership: a directly-returned handle that the script owns (not [DoNotRelease]) is boxed
+        // as its `.Owned` (or `.OwnedWith(...)`) subclass so __Delete frees it when it leaves scope.
+        if (retType is HandleRef hr && OwnedHandleClass(token, fnRetVal, hr.FQN, registry, names) is { } owned)
+            token = owned;
+
+        return token;
     }
+
+    /// <summary>
+    /// The class expression to box an owned returned/output handle, or <c>null</c> if it's borrowed.
+    /// Returns <c><paramref name="baseClass"/>.Owned</c> for the handle's default free function, or
+    /// <c>.OwnedWith(freeFunc)</c> when the call-site <c>RAIIFree</c> diverges from that default (e.g.
+    /// a HANDLE closed with FindClose rather than CloseHandle). Borrowed (null) when the param is
+    /// <c>[DoNotRelease]</c> or the handle type has no free function at all.
+    /// </summary>
+    private static string? OwnedHandleClass(
+        string baseClass,
+        ParameterMember param,
+        string handleFqn,
+        TypeRegistry registry,
+        ModuleNameResolver? names
+    )
+    {
+        if (!param.ScriptOwned)
+            return null;
+        if (registry.Resolve(handleFqn, Architecture.All) is not HandleType ht || ht.FreeFunc is null)
+            return null;
+        if (DivergentRAIIFree(param, ht) is { } raii)
+            return $"{baseClass}.OwnedWith({FunctionRef(names, raii.ApisFQN, raii.Name)})";
+        return $"{baseClass}.Owned";
+    }
+
+    /// <summary>
+    /// The call-site <c>RAIIFree</c> function for an owned handle param that differs from the handle
+    /// type's default free function (and so requires an <c>OwnedWith</c> factory), or <c>null</c>.
+    /// </summary>
+    private static FreeFuncRef? DivergentRAIIFree(ParameterMember param, HandleType ht) =>
+        ht.FreeFunc is not null && param.RAIIFree is { } raii && raii != ht.FreeFunc ? raii : null;
 
     /// <summary>
     /// The v2.1 type-class reference used to convert a return value, alias-resolved for the local
@@ -341,6 +393,7 @@ public static class MethodEmitter
 
     private static string BuildDllCallExpression(
         MethodMember method,
+        TypeRegistry registry,
         bool unqualifyApis = false,
         ModuleNameResolver? names = null
     )
@@ -371,7 +424,7 @@ public static class MethodEmitter
         {
             // Return type token (inline). v2.1 uses unquoted type-class refs; v2.0 a quoted
             // calling-convention + return-type string.
-            string retToken = unqualifyApis ? BuildReturnTypeToken(method, names) : QuotedConvString(method);
+            string retToken = unqualifyApis ? BuildReturnTypeToken(method, registry, names) : QuotedConvString(method);
             if (!string.IsNullOrWhiteSpace(retToken))
             {
                 sb.Append($", {retToken}");
@@ -712,8 +765,8 @@ public static class MethodEmitter
                 w.BlankLine();
             }
 
-            EmitOutputParamMarshalling(w, method);
-            w.Line(BuildComCallExpression(method, unqualifyApis));
+            EmitOutputParamMarshalling(w, method, registry);
+            w.Line(BuildComCallExpression(method, registry, unqualifyApis));
 
             EmitErrorCheck(w, method, registry, unqualifyApis);
             EmitReturnStatement(w, method, registry, unqualifyApis);
@@ -724,7 +777,11 @@ public static class MethodEmitter
     /// Build a ComCall expression: [result := ] ComCall(VTableIndex, this[, args][, "conv retType"])
     /// Port of legacy AhkComMethod.BuildDllCallCall.
     /// </summary>
-    private static string BuildComCallExpression(ComMethodMember method, bool unqualifyApis = false)
+    private static string BuildComCallExpression(
+        ComMethodMember method,
+        TypeRegistry registry,
+        bool unqualifyApis = false
+    )
     {
         var sb = new System.Text.StringBuilder();
 
@@ -742,7 +799,7 @@ public static class MethodEmitter
 
         // Return type token. v2.1 uses unquoted type-class refs (ComCall defaults to HRESULT when
         // omitted); v2.0 a quoted calling-convention + return-type string.
-        string retToken = unqualifyApis ? BuildReturnTypeToken(method, null) : QuotedConvString(method);
+        string retToken = unqualifyApis ? BuildReturnTypeToken(method, registry, null) : QuotedConvString(method);
         if (!string.IsNullOrWhiteSpace(retToken))
         {
             sb.Append($", {retToken}");

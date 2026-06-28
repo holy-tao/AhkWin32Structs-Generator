@@ -199,6 +199,14 @@ public class Program
         var cycleBreaker = new CyclicPointerBreaker(loggerFactory.CreateLogger<CyclicPointerBreaker>());
         cycleBreaker.Apply(registry);
 
+        // Mark handle types that need an `OwnedWith(...)` factory (returned/output with a context-
+        // specific RAIIFree that differs from their default). v2.1 emission concern only.
+        if (ahkVersion is AhkVersion.v21)
+        {
+            var ownedHandleResolver = new OwnedHandleResolver(loggerFactory.CreateLogger<OwnedHandleResolver>());
+            ownedHandleResolver.Apply(registry);
+        }
+
         // Emit
         ITypeEmitter[] emitters =
         [

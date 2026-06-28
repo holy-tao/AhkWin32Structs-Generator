@@ -152,7 +152,12 @@ public sealed class MethodExtractor
         );
 
         // Collect referenced types/functions
-        ImportCollection imports = CollectImports(parameters, entryPoint, outputParameter);
+        ImportCollection imports = CollectImports(
+            parameters,
+            entryPoint,
+            outputParameter,
+            $"{declaringNamespace}.Apis"
+        );
 
         MethodMember result = new()
         {
@@ -252,7 +257,8 @@ public sealed class MethodExtractor
     private static ImportCollection CollectImports(
         List<ParameterMember> parameters,
         string entryPoint,
-        ParameterMember? outputParameter
+        ParameterMember? outputParameter,
+        string ownApisFqn
     )
     {
         var imports = new ImportCollection();
@@ -275,11 +281,22 @@ public sealed class MethodExtractor
             imports.AddTypes(fqns);
         }
 
-        // Import [FreeWith] parameter functions
+        // Import [FreeWith] parameter functions. Skip self-imports: a function in this same Apis
+        // module is already in scope and referenced by its bare name.
         foreach (ParameterMember param in parameters.Where(p => p.FreeWith != null))
         {
             FreeFuncRef fw = param.FreeWith!;
-            imports.AddFunction(fw.ApisFQN, fw.Name);
+            if (fw.ApisFQN != ownApisFqn)
+                imports.AddFunction(fw.ApisFQN, fw.Name);
+        }
+
+        // Import context-specific [RAIIFree] functions for owned handle returns/out-params; the
+        // emitter references them via `Handle.OwnedWith(<freeFunc>)`. Same self-import skip.
+        foreach (ParameterMember param in parameters.Where(p => p.RAIIFree != null))
+        {
+            FreeFuncRef raii = param.RAIIFree!;
+            if (raii.ApisFQN != ownApisFqn)
+                imports.AddFunction(raii.ApisFQN, raii.Name);
         }
 
         return imports;

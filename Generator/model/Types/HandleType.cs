@@ -20,6 +20,14 @@ public sealed class HandleType : StructType
     public FreeFuncRef? FreeFunc { get; init; }
 
     /// <summary>
+    /// True when some function returns or outputs this handle owned with a context-specific
+    /// <c>[RAIIFree]</c> that differs from <see cref="FreeFunc"/>, so the emitter must generate an
+    /// <c>OwnedWith(freeFunc)</c> factory. Set in Transform by <c>OwnedHandleResolver</c> (it needs
+    /// every handle's resolved default free function, so it can't be computed during extraction).
+    /// </summary>
+    public bool NeedsOwnedWith { get; set; }
+
+    /// <summary>
     /// Optional AHK expression for a restored <c>__value</c> getter, where <c>$field</c> resolves
     /// to <c>this.&lt;member&gt;</c>. Null = no getter (default; preserves type identity). Set in
     /// Transform from a <c>value-accessor</c> override.
