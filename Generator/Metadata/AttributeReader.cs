@@ -63,6 +63,13 @@ public sealed record MethodAttrs(
 );
 
 /// <summary>
+/// Delegate-specific attributes decoded from [UnmanagedFunctionPointer]. Note that it includes a CharSet
+/// but the delegates that have charsets don't use it, they just use the [Unicode] / [Ansi] attributes.
+/// </summary>
+/// <param name="CallingConvention">Calling convention as declared on the delegate type.</param>
+public sealed record DelegateAttrs(CallingConvention CallingConvention);
+
+/// <summary>
 /// Cached attribute decoding utilities. Decodes attributes in a single pass
 /// and returns result records for reuse.
 /// </summary>
@@ -305,6 +312,26 @@ public static class AttributeReader
             return null;
 
         return new FreeFuncRef(funcName, typeNamespace, $"{typeNamespace}.Apis");
+    }
+
+    public static CallingConvention DecodeDelegateCallingConvention(IReadOnlyList<CAInfo> attrs)
+    {
+        var fnPtrAttr = attrs.Single(a => a.Name is "UnmanagedFunctionPointerAttribute");
+        var raw = (System.Runtime.InteropServices.CallingConvention)
+            (uint)(
+                fnPtrAttr.Attr.FixedArguments.First().Value
+                ?? throw new NullReferenceException("[UnmanagedFunctionPointer.CallingConvention]")
+            );
+
+        return raw switch
+        {
+            System.Runtime.InteropServices.CallingConvention.Winapi => CallingConvention.WinApi,
+            System.Runtime.InteropServices.CallingConvention.StdCall => CallingConvention.StdCall,
+            System.Runtime.InteropServices.CallingConvention.Cdecl => CallingConvention.CDecl,
+            System.Runtime.InteropServices.CallingConvention.FastCall => CallingConvention.FastCall,
+            System.Runtime.InteropServices.CallingConvention.ThisCall => CallingConvention.ThisCall,
+            _ => throw new NotImplementedException(raw.ToString()),
+        };
     }
 
     /// <summary>

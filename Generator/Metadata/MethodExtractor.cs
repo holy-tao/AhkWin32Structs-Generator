@@ -5,7 +5,6 @@ using System.Reflection.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
 using Microsoft.Extensions.Logging;
-using Microsoft.VisualBasic;
 using Microsoft.Windows.SDK.Win32Docs;
 
 /// <summary>
@@ -28,6 +27,16 @@ public readonly record struct MethodExtractionResult(MethodMember? Method, Metho
     public static MethodExtractionResult Success(MethodMember m) => new(m, null);
 
     public static MethodExtractionResult Skipped(MethodSkipReason reason) => new(null, reason);
+
+    /// <summary>
+    /// Assert that extraction succeeded and retrieve the extracted method.
+    /// </summary>
+    /// <returns></returns>
+    /// <exception cref="InvalidOperationException">If method extraction actually failed.</exception>
+    public MethodMember Ok() =>
+        SkipReason is null
+            ? Method!
+            : throw new InvalidOperationException($"Method extraction was skipped for {SkipReason!}");
 }
 
 /// <summary>

@@ -1,7 +1,5 @@
 namespace AhkWin32.Generator.Metadata;
 
-using System.Collections;
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Metadata;
@@ -76,21 +74,21 @@ public sealed class TypeExtractor
             asmWatch.Stop();
 
             _logger.LogInformation(
-                "Extracted {StructCount} structs, {HandleCount} handles, {TypedefCount} typedefs, {EnumCount} enums, {ComCount} COM, {ApiCount} APIs from {AssemblyName} in {Elapsed:F1}s",
+                "Extracted {StructCount} structs, {HandleCount} handles, {TypedefCount} typedefs, {EnumCount} enums, {ComCount} COM, {ApiCount} APIs, {DelegateCount} Delegates from {AssemblyName} in {Elapsed:F1}s",
                 counts.Structs,
                 counts.Handles,
                 counts.NativeTypedefs,
                 counts.Enums,
                 counts.ComInterfaces,
                 counts.ApiTypes,
+                counts.DelegateTypes,
                 assemblyName,
                 asmWatch.Elapsed.TotalSeconds
             );
             _logger.LogInformation(
-                "  Skipped: {Arch} arch-filtered, {Nested} nested, {Delegate} delegates, {Other} other, {MethodArch} arch-filtered methods, {Errors} errors",
+                "  Skipped: {Arch} arch-filtered, {Nested} nested, {Other} other, {MethodArch} arch-filtered methods, {Errors} errors",
                 counts.SkippedArch,
                 counts.SkippedNested,
-                counts.SkippedDelegate,
                 counts.SkippedOther,
                 counts.SkippedMethodsArch,
                 counts.Errors
@@ -133,9 +131,9 @@ public sealed class TypeExtractor
         int Enums,
         int ComInterfaces,
         int ApiTypes,
+        int DelegateTypes,
         int SkippedArch,
         int SkippedNested,
-        int SkippedDelegate,
         int SkippedOther,
         int SkippedMethodsArch,
         int Errors
@@ -154,12 +152,12 @@ public sealed class TypeExtractor
         int structCount = 0,
             handleCount = 0,
             typedefCount = 0,
-            enumCount = 0;
-        int comCount = 0,
-            apiCount = 0;
+            enumCount = 0,
+            comCount = 0,
+            apiCount = 0,
+            delegateCount = 0;
         int archSkipCount = 0,
             nestedSkipCount = 0,
-            delegateSkipCount = 0,
             otherSkipCount = 0;
         int archMethodSkipCount = 0;
         int errorCount = 0;
@@ -183,9 +181,6 @@ public sealed class TypeExtractor
                     {
                         case SkipReason.Nested:
                             Interlocked.Increment(ref nestedSkipCount);
-                            break;
-                        case SkipReason.Delegate:
-                            Interlocked.Increment(ref delegateSkipCount);
                             break;
                         default:
                             Interlocked.Increment(ref otherSkipCount);
@@ -221,46 +216,32 @@ public sealed class TypeExtractor
                         return;
                     }
 
-                    Win32Type? extracted;
                     int methodArchSkips = 0;
-                    switch (kind.Value)
+                    Win32Type? extracted = kind.Value switch
                     {
-                        case TypeKind.Handle:
-                            extracted = ExtractHandle(reader, typeDef, assemblyName, version, attrs);
-                            break;
-                        case TypeKind.NativeTypedef:
-                            extracted = ExtractNativeTypedef(reader, typeDef, assemblyName, version, attrs);
-                            break;
-                        case TypeKind.Struct:
-                            extracted = ExtractStruct(reader, typeDef, assemblyName, version, attrs);
-                            break;
-                        case TypeKind.Enum:
-                            extracted = ExtractEnum(reader, typeDef, assemblyName, version, attrs);
-                            break;
-                        case TypeKind.ComInterface:
-                            extracted = _comExtractor.ExtractComInterface(
-                                reader,
-                                typeDef,
-                                assemblyName,
-                                version,
-                                attrs,
-                                out methodArchSkips
-                            );
-                            break;
-                        case TypeKind.ApiType:
-                            extracted = ExtractApiType(
-                                reader,
-                                typeDef,
-                                assemblyName,
-                                version,
-                                attrs,
-                                out methodArchSkips
-                            );
-                            break;
-                        default:
-                            extracted = null;
-                            break;
-                    }
+                        TypeKind.Handle => ExtractHandle(reader, typeDef, assemblyName, version, attrs),
+                        TypeKind.NativeTypedef => ExtractNativeTypedef(reader, typeDef, assemblyName, version, attrs),
+                        TypeKind.Struct => ExtractStruct(reader, typeDef, assemblyName, version, attrs),
+                        TypeKind.Enum => ExtractEnum(reader, typeDef, assemblyName, version, attrs),
+                        TypeKind.ComInterface => _comExtractor.ExtractComInterface(
+                            reader,
+                            typeDef,
+                            assemblyName,
+                            version,
+                            attrs,
+                            out methodArchSkips
+                        ),
+                        TypeKind.ApiType => ExtractApiType(
+                            reader,
+                            typeDef,
+                            assemblyName,
+                            version,
+                            attrs,
+                            out methodArchSkips
+                        ),
+                        TypeKind.Delegate => ExtractDelegate(reader, typeDef, assemblyName, version, attrs),
+                        _ => null,
+                    };
                     if (methodArchSkips > 0)
                         Interlocked.Add(ref archMethodSkipCount, methodArchSkips);
 
@@ -288,6 +269,9 @@ public sealed class TypeExtractor
                             case ApiType:
                                 Interlocked.Increment(ref apiCount);
                                 break;
+                            case DelegateType:
+                                Interlocked.Increment(ref delegateCount);
+                                break;
                         }
                     }
                 }
@@ -305,9 +289,9 @@ public sealed class TypeExtractor
             enumCount,
             comCount,
             apiCount,
+            delegateCount,
             archSkipCount,
             nestedSkipCount,
-            delegateSkipCount,
             otherSkipCount,
             archMethodSkipCount,
             errorCount
@@ -324,13 +308,13 @@ public sealed class TypeExtractor
         Enum,
         ComInterface,
         ApiType,
+        Delegate,
     }
 
     private enum SkipReason
     {
         Module,
         NotTypeReference,
-        Delegate,
         Attribute,
         Nested,
     }
@@ -355,8 +339,6 @@ public sealed class TypeExtractor
         TypeReference baseTypeRef = reader.GetTypeReference((TypeReferenceHandle)typeDef.BaseType);
         string baseTypeName = reader.GetString(baseTypeRef.Name);
 
-        if (baseTypeName == "MulticastDelegate")
-            return SkipReason.Delegate;
         if (baseTypeName == "Attribute")
             return SkipReason.Attribute;
         if (baseTypeName == "<Module>")
@@ -400,7 +382,59 @@ public sealed class TypeExtractor
             "Struct" or "ValueType" when attrs.IsHandle => TypeKind.Handle,
             "Struct" or "ValueType" when attrs.IsNativeTypedef => TypeKind.NativeTypedef,
             "Struct" or "ValueType" => TypeKind.Struct,
+            "MulticastDelegate" => TypeKind.Delegate,
             _ => null,
+        };
+    }
+
+    /// <summary>
+    /// Extract a Multicast Delegate, which is just a type with one method named "Invoke", which
+    /// is what we really care about here.
+    /// </summary>
+    /// <returns></returns>
+    private DelegateType ExtractDelegate(
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        string assemblyName,
+        string version,
+        TypeAttrs attrs
+    )
+    {
+        // TODO assert [UnmanagedFunctionPointer(Winapi | CDecl)] here or in classify
+
+        string typeName = reader.GetString(typeDef.Name);
+        string typeNamespace = reader.GetString(typeDef.Namespace);
+        string fqn = $"{typeNamespace}.{typeName}";
+
+        TypeIdentity identity = BuildIdentity(fqn, attrs);
+
+        ApiDetails? apiDetails = _docs.GetApiDetails(reader, typeDef);
+
+        MethodDefinition invokeDef = typeDef
+            .GetMethods()
+            .Where(m => !m.IsNil)
+            .Select(reader.GetMethodDefinition)
+            .Single(m => reader.StringComparer.Equals(m.Name, "Invoke", true));
+        MethodMember invoke = _methodExtractor.ExtractMethod(reader, invokeDef, typeNamespace).Ok();
+
+        CallingConvention callConv = AttributeReader.DecodeDelegateCallingConvention(attrs.All);
+
+        return new()
+        {
+            Identity = identity,
+            Invoke = invoke,
+            Name = DeconflictName(typeName),
+            CallingConvention = callConv,
+            CanonicalName = typeName,
+            AssemblyName = assemblyName,
+            MetadataVersion = version,
+            Flags = attrs.Flags,
+            Description = apiDetails?.Description,
+            Remarks = apiDetails?.Remarks,
+            HelpLink = apiDetails?.HelpLink,
+            DeprecationMessage = attrs.DeprecationMessage,
+            SupportedOSPlatform = attrs.SupportedOSPlatform,
+            Imports = invoke.Imports,
         };
     }
 
