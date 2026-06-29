@@ -17,12 +17,15 @@ public sealed record TypeAttrs(
     IReadOnlyList<CAInfo> All,
     Architecture? SupportedArchitecture,
     bool IsHandle,
+    bool IsNativeTypedef,
     bool IsFlags,
     bool IsDeprecated,
     string? DeprecationMessage,
     string? StructSizeFieldName,
     string? SupportedOSPlatform,
-    MemberFlags Flags);
+    IReadOnlyList<string> AlsoUsableFor,
+    MemberFlags Flags
+);
 
 /// <summary>
 /// Decoded attributes for a FieldDefinition. Computed once and reused.
@@ -32,7 +35,8 @@ public sealed record FieldAttrs(
     MemberFlags Flags,
     bool IsDeprecated,
     string? DeprecationMessage,
-    IReadOnlyList<BitfieldMember>? Bitfields);
+    IReadOnlyList<BitfieldMember>? Bitfields
+);
 
 /// <summary>
 /// Decoded attributes for a Parameter. Computed once and reused.
@@ -42,7 +46,21 @@ public sealed record ParameterAttrs(
     int SizedBufferBytesParamIndex,
     IReadOnlyList<string>? IgnoreIfReturnValues,
     string? RAIIFreeFuncName,
-    string? FreeWithFuncName);
+    string? FreeWithFuncName
+);
+
+/// <param name="PreserveSig">Whether [PreserveSig] attribute is present.</param>
+/// <param name="PreserveSigValue">The boolean value of [PreserveSig], or true if present with no args.
+/// Null if attribute is not present.</param>
+public sealed record MethodAttrs(
+    bool PreserveSig,
+    bool? PreserveSigValue,
+    bool CanReturnErrorsAsSuccess,
+    bool CanReturnMultipleSuccessValues,
+    string? DeprecationMessage,
+    string? SupportedOSPlatform,
+    Architecture Architecture
+);
 
 /// <summary>
 /// Cached attribute decoding utilities. Decodes attributes in a single pass
@@ -60,8 +78,11 @@ public static class AttributeReader
     /// <param name="fieldCount">Number of fields (used for handle detection)</param>
     /// <param name="logger">Logger for trace-level output</param>
     public static TypeAttrs DecodeTypeAttributes(
-        MetadataReader reader, TypeDefinition typeDef, int fieldCount,
-        ILogger? logger = null)
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        int fieldCount,
+        ILogger? logger = null
+    )
     {
         MemberFlags flags = MemberFlags.None;
         Architecture? supportedArch = null;
@@ -71,6 +92,8 @@ public static class AttributeReader
         string? structSizeFieldName = null;
         string? supportedOSPlatform = null;
         bool hasHandleAttr = false;
+        bool hasNativeTypedefAttr = false;
+        List<string> alsoUsableFor = [];
 
         List<CAInfo> allAttrs = [];
 
@@ -88,9 +111,8 @@ public static class AttributeReader
                 case "ObsoleteAttribute":
                     flags |= MemberFlags.Deprecated;
                     isDeprecated = true;
-                    deprecationMessage = decoded.FixedArguments.Length > 0
-                        ? decoded.FixedArguments[0].Value as string
-                        : null;
+                    deprecationMessage =
+                        decoded.FixedArguments.Length > 0 ? decoded.FixedArguments[0].Value as string : null;
                     break;
 
                 case "ReservedAttribute":
@@ -110,8 +132,11 @@ public static class AttributeReader
                     break;
 
                 case "SupportedArchitectureAttribute":
-                    supportedArch = (Architecture)(uint)(decoded.FixedArguments[0].Value
-                        ?? throw new InvalidOperationException("Null SupportedArchitectureAttribute value"));
+                    supportedArch = (Architecture)
+                        (uint)(
+                            decoded.FixedArguments[0].Value
+                            ?? throw new InvalidOperationException("Null SupportedArchitectureAttribute value")
+                        );
                     break;
 
                 case "StructSizeFieldAttribute":
@@ -122,10 +147,22 @@ public static class AttributeReader
                     supportedOSPlatform = (string?)decoded.FixedArguments[0].Value;
                     break;
 
-                case "RAIIFreeAttribute":
                 case "AlsoUsableForAttribute":
+                    var target = (string?)decoded.FixedArguments[0].Value;
+                    if (target is not null)
+                        alsoUsableFor.Add(target);
+
+                    hasHandleAttr = true;
+                    break;
+
+                case "RAIIFreeAttribute":
                 case "InvalidHandleValueAttribute":
                     hasHandleAttr = true;
+                    break;
+
+                case "MetadataTypedefAttribute":
+                case "NativeTypedefAttribute":
+                    hasNativeTypedefAttr = true;
                     break;
             }
         }
@@ -138,6 +175,7 @@ public static class AttributeReader
             flags |= MemberFlags.Anonymous;
 
         bool isHandle = fieldCount == 1 && hasHandleAttr;
+        bool isNativeTypedef = fieldCount == 1 && hasNativeTypedefAttr && !hasHandleAttr;
 
         if (logger != null)
         {
@@ -145,13 +183,28 @@ public static class AttributeReader
             logger.LogTrace("Decoded {Count} attributes for type {FQN}", allAttrs.Count, fqn);
             if (supportedArch.HasValue)
                 logger.LogTrace("Type {FQN}: SupportedArchitecture={Arch}", fqn, supportedArch.Value);
-            logger.LogTrace("Type {FQN}: IsHandle={IsHandle}, IsFlags={IsFlags}, IsDeprecated={IsDeprecated}",
-                fqn, isHandle, isFlags, isDeprecated);
+            logger.LogTrace(
+                "Type {FQN}: IsHandle={IsHandle}, IsFlags={IsFlags}, IsDeprecated={IsDeprecated}",
+                fqn,
+                isHandle,
+                isFlags,
+                isDeprecated
+            );
         }
 
         return new TypeAttrs(
-            allAttrs, supportedArch, isHandle, isFlags, isDeprecated,
-            deprecationMessage, structSizeFieldName, supportedOSPlatform, flags);
+            allAttrs,
+            supportedArch,
+            isHandle,
+            isNativeTypedef,
+            isFlags,
+            isDeprecated,
+            deprecationMessage,
+            structSizeFieldName,
+            supportedOSPlatform,
+            alsoUsableFor,
+            flags
+        );
     }
 
     /// <summary>
@@ -179,9 +232,8 @@ public static class AttributeReader
                 case "ObsoleteAttribute":
                     flags |= MemberFlags.Deprecated;
                     isDeprecated = true;
-                    deprecationMessage = decoded.FixedArguments.Length > 0
-                        ? decoded.FixedArguments[0].Value as string
-                        : null;
+                    deprecationMessage =
+                        decoded.FixedArguments.Length > 0 ? decoded.FixedArguments[0].Value as string : null;
                     break;
 
                 case "ReservedAttribute":
@@ -191,15 +243,17 @@ public static class AttributeReader
                 case "NativeBitfieldAttribute":
                     flags |= MemberFlags.NativeBitField;
                     bitfields ??= [];
-                    string memberName = (string?)decoded.FixedArguments[0].Value
+                    string memberName =
+                        (string?)decoded.FixedArguments[0].Value
                         ?? throw new InvalidOperationException("Null NativeBitfieldAttribute name");
-                    long bitOffset = (long?)decoded.FixedArguments[1].Value
+                    long bitOffset =
+                        (long?)decoded.FixedArguments[1].Value
                         ?? throw new InvalidOperationException("Null NativeBitfieldAttribute offset");
-                    long length = (long?)decoded.FixedArguments[2].Value
+                    long length =
+                        (long?)decoded.FixedArguments[2].Value
                         ?? throw new InvalidOperationException("Null NativeBitfieldAttribute length");
                     bitfields.Add(new BitfieldMember(memberName, bitOffset, length));
                     break;
-                    
             }
         }
 
@@ -213,8 +267,12 @@ public static class AttributeReader
     {
         return attrs
             .Where(a => a.Name == "InvalidHandleValueAttribute")
-            .Select(a => (long)(a.Attr.FixedArguments[0].Value
-                ?? throw new InvalidOperationException("Null InvalidHandleValueAttribute value")))
+            .Select(a =>
+                (long)(
+                    a.Attr.FixedArguments[0].Value
+                    ?? throw new InvalidOperationException("Null InvalidHandleValueAttribute value")
+                )
+            )
             .ToList();
     }
 
@@ -282,8 +340,9 @@ public static class AttributeReader
                     foreach (var arg in decoded.NamedArguments)
                     {
                         if (arg.Name == "BytesParamIndex")
-                            sizedBufferBytesParamIndex = (short)(arg.Value
-                                ?? throw new InvalidOperationException("Null BytesParamIndex"));
+                            sizedBufferBytesParamIndex = (short)(
+                                arg.Value ?? throw new InvalidOperationException("Null BytesParamIndex")
+                            );
                     }
                     break;
                 }
@@ -304,8 +363,10 @@ public static class AttributeReader
                 {
                     flags |= ParameterFlags.HasIgnoreIfReturn;
                     CustomAttributeValue<string> decoded = attr.DecodeValue(s_caProvider);
-                    string val = (string)(decoded.FixedArguments[0].Value
-                        ?? throw new InvalidOperationException("Null IgnoreIfReturnAttribute value"));
+                    string val = (string)(
+                        decoded.FixedArguments[0].Value
+                        ?? throw new InvalidOperationException("Null IgnoreIfReturnAttribute value")
+                    );
                     ignoreIfReturnValues ??= [];
                     ignoreIfReturnValues.Add(val);
                     break;
@@ -315,8 +376,10 @@ public static class AttributeReader
                 {
                     flags |= ParameterFlags.HasRAIIFree;
                     CustomAttributeValue<string> decoded = attr.DecodeValue(s_caProvider);
-                    raiiFreeFunc = (string)(decoded.FixedArguments[0].Value
-                        ?? throw new InvalidOperationException("Null RAIIFreeAttribute value"));
+                    raiiFreeFunc = (string)(
+                        decoded.FixedArguments[0].Value
+                        ?? throw new InvalidOperationException("Null RAIIFreeAttribute value")
+                    );
                     break;
                 }
 
@@ -324,15 +387,81 @@ public static class AttributeReader
                 {
                     flags |= ParameterFlags.HasFreeWith;
                     CustomAttributeValue<string> decoded = attr.DecodeValue(s_caProvider);
-                    freeWithFunc = (string)(decoded.FixedArguments[0].Value
-                        ?? throw new InvalidOperationException("Null FreeWithAttribute value"));
+                    freeWithFunc = (string)(
+                        decoded.FixedArguments[0].Value
+                        ?? throw new InvalidOperationException("Null FreeWithAttribute value")
+                    );
                     break;
                 }
             }
         }
 
-        return new ParameterAttrs(flags, sizedBufferBytesParamIndex,
-            ignoreIfReturnValues, raiiFreeFunc, freeWithFunc);
+        return new ParameterAttrs(flags, sizedBufferBytesParamIndex, ignoreIfReturnValues, raiiFreeFunc, freeWithFunc);
+    }
+
+    /// <summary>
+    /// Decode method-level custom attributes in a single pass.
+    /// </summary>
+    public static MethodAttrs DecodeMethodAttributes(MetadataReader reader, MethodDefinition methodDef)
+    {
+        bool preserveSig = false;
+        bool? preserveSigValue = null;
+        bool canReturnErrorsAsSuccess = false;
+        bool canReturnMultipleSuccessValues = false;
+        string? deprecationMessage = null;
+        string? supportedOSPlatform = null;
+        Architecture supportedArchitecture = Architecture.All;
+
+        foreach (CustomAttributeHandle attrHandle in methodDef.GetCustomAttributes())
+        {
+            CustomAttribute attr = reader.GetCustomAttribute(attrHandle);
+            (_, string attrName) = GetAttributeTypeName(reader, attr);
+            CustomAttributeValue<string> decoded = attr.DecodeValue(s_caProvider);
+
+            switch (attrName)
+            {
+                case "PreserveSigAttribute":
+                    preserveSig = true;
+                    preserveSigValue =
+                        decoded.FixedArguments.Length <= 0 || (decoded.FixedArguments[0].Value as bool? ?? true);
+                    break;
+
+                case "CanReturnErrorsAsSuccessAttribute":
+                    canReturnErrorsAsSuccess = true;
+                    break;
+
+                case "CanReturnMultipleSuccessValuesAttribute":
+                    canReturnMultipleSuccessValues = true;
+                    break;
+
+                case "ObsoleteAttribute":
+                    deprecationMessage =
+                        decoded.FixedArguments.Length > 0 ? decoded.FixedArguments[0].Value as string : null;
+                    break;
+
+                case "SupportedOSPlatformAttribute":
+                    supportedOSPlatform = (string?)decoded.FixedArguments[0].Value;
+                    break;
+
+                case "SupportedArchitectureAttribute":
+                    supportedArchitecture = (Architecture)
+                        (uint)(
+                            decoded.FixedArguments[0].Value
+                            ?? throw new InvalidOperationException("Null SupportedArchitectureAttribute value")
+                        );
+                    break;
+            }
+        }
+
+        return new MethodAttrs(
+            preserveSig,
+            preserveSigValue,
+            canReturnErrorsAsSuccess,
+            canReturnMultipleSuccessValues,
+            deprecationMessage,
+            supportedOSPlatform,
+            supportedArchitecture
+        );
     }
 
     /// <summary>
@@ -361,8 +490,7 @@ public static class AttributeReader
         CustomAttributeValue<string> decoded = attr.DecodeValue(s_caProvider);
 
         if (decoded.FixedArguments.Length != 11)
-            throw new ArgumentException(
-                $"GuidAttribute has {decoded.FixedArguments.Length} arguments, expected 11");
+            throw new ArgumentException($"GuidAttribute has {decoded.FixedArguments.Length} arguments, expected 11");
 
         return new Guid(
             (int)(uint)decoded.FixedArguments[0].Value!,
@@ -406,7 +534,10 @@ public static class AttributeReader
     /// Find a single attribute by name in a collection.
     /// </summary>
     public static CustomAttribute? FindAttribute(
-        MetadataReader reader, CustomAttributeHandleCollection handles, string targetName)
+        MetadataReader reader,
+        CustomAttributeHandleCollection handles,
+        string targetName
+    )
     {
         foreach (CustomAttributeHandle attrHandle in handles)
         {
@@ -422,7 +553,9 @@ public static class AttributeReader
     /// Get all attribute names from a collection.
     /// </summary>
     public static IEnumerable<string> GetAllAttributeNames(
-        MetadataReader reader, CustomAttributeHandleCollection handles)
+        MetadataReader reader,
+        CustomAttributeHandleCollection handles
+    )
     {
         foreach (CustomAttributeHandle attrHandle in handles)
         {
@@ -435,8 +568,7 @@ public static class AttributeReader
     /// <summary>
     /// Resolve the (Namespace, Name) of a custom attribute's declaring type.
     /// </summary>
-    public static (string Namespace, string Name) GetAttributeTypeName(
-        MetadataReader reader, CustomAttribute attr)
+    public static (string Namespace, string Name) GetAttributeTypeName(MetadataReader reader, CustomAttribute attr)
     {
         switch (attr.Constructor.Kind)
         {
@@ -466,7 +598,6 @@ public static class AttributeReader
             }
         }
 
-        throw new NotSupportedException(
-            $"Unsupported attribute constructor kind: {attr.Constructor.Kind}");
+        throw new NotSupportedException($"Unsupported attribute constructor kind: {attr.Constructor.Kind}");
     }
 }

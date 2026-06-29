@@ -7,7 +7,7 @@ public enum StringEncoding
 {
     None,
     Ansi,
-    Unicode
+    Unicode,
 }
 
 /// <summary>
@@ -20,7 +20,7 @@ public enum CallingConvention
     CDecl,
     ThisCall,
     FastCall,
-    WinApi
+    WinApi,
 }
 
 /// <summary>
@@ -31,7 +31,7 @@ public enum StructLayoutKind
 {
     Sequential,
     Explicit,
-    Auto
+    Auto,
 }
 
 /// <summary>
@@ -41,10 +41,10 @@ public enum StructLayoutKind
 [Flags]
 public enum ParameterDirection
 {
-    None     = 0,
-    In       = 1,
-    Out      = 2,
-    Optional = 4
+    None = 0,
+    In = 1,
+    Out = 2,
+    Optional = 4,
 }
 
 /// <summary>
@@ -54,14 +54,14 @@ public enum ParameterDirection
 [Flags]
 public enum ParameterFlags
 {
-    None              = 0,
-    Reserved          = 1,
-    Constant          = 2,
-    SizedBuffer       = 4,
-    ComOutPtr         = 8,
-    RetVal            = 16,
-    DoNotRelease      = 32,
+    None = 0,
+    Reserved = 1,
+    Constant = 2,
+    SizedBuffer = 4,
+    ComOutPtr = 8,
+    RetVal = 16,
+    DoNotRelease = 32,
     HasIgnoreIfReturn = 64,
-    HasRAIIFree       = 128,
-    HasFreeWith       = 256
+    HasRAIIFree = 128,
+    HasFreeWith = 256,
 }

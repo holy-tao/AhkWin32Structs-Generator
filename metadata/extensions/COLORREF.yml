@@ -1,12 +1,13 @@
 add-to:
   - Windows.Win32.Foundation.COLORREF
-requires: []
-code: |
+
+code:
+  v20: &shared |
     static GetRed(color) => color & 0xFF
     static GetGreen(color) => (color >> 8) & 0xFF
     static GetBlue(color) => (color >> 16) & 0xFF
 
-    static SetRed(color, value) => (color & 0xFFFFFF00) | value 
+    static SetRed(color, value) => (color & 0xFFFFFF00) | value
     static SetGreen(color, value) => (color & 0xFFFF00FF) | (value << 8)
     static SetBlue(color, value) => (color & 0xFF00FFFF) | (value << 16)
 
@@ -17,9 +18,9 @@ code: |
      * @returns {String} the RGB string
      */
     static ToRGBString(color){
-        return Format("0x{1:02X}{2:02X}{3:02X}", 
-            COLORREF.GetRed(color), 
-            COLORREF.GetGreen(color), 
+        return Format("0x{1:02X}{2:02X}{3:02X}",
+            COLORREF.GetRed(color),
+            COLORREF.GetGreen(color),
             COLORREF.GetBlue(color))
     }
 
@@ -43,3 +44,4 @@ code: |
      * @returns {String} the RGB string
      */
     ToRGBString() => COLORREF.ToRGBString(this.value)
+  v21: *shared

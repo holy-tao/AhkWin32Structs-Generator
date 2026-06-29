@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Metadata;
 
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
@@ -28,8 +29,13 @@ public sealed class TypeExtractor
     private readonly ComInterfaceExtractor _comExtractor;
     private readonly int _maxParallelism;
 
-    public TypeExtractor(MetadataLoader loader, DocumentationLoader docs,
-        ILoggerFactory loggerFactory, IReadOnlySet<string> reservedNames, int maxParallelism = 0)
+    public TypeExtractor(
+        MetadataLoader loader,
+        DocumentationLoader docs,
+        ILoggerFactory loggerFactory,
+        IReadOnlySet<string> reservedNames,
+        int maxParallelism = 0
+    )
     {
         _loader = loader;
         _docs = docs;
@@ -38,11 +44,19 @@ public sealed class TypeExtractor
         _maxParallelism = maxParallelism > 0 ? maxParallelism : Environment.ProcessorCount;
         _fieldExtractor = new FieldExtractor(loader, _logger, ExtractStructRecursive);
 
-        var paramExtractor = new ParameterExtractor(loader, loggerFactory.CreateLogger<ParameterExtractor>(), reservedNames, _maxParallelism);
-        _methodExtractor = new MethodExtractor(docs, paramExtractor,
-            loggerFactory.CreateLogger<MethodExtractor>());
-        _comExtractor = new ComInterfaceExtractor(loader, docs, _methodExtractor,
-            loggerFactory.CreateLogger<ComInterfaceExtractor>());
+        var paramExtractor = new ParameterExtractor(
+            loader,
+            loggerFactory.CreateLogger<ParameterExtractor>(),
+            reservedNames,
+            _maxParallelism
+        );
+        _methodExtractor = new MethodExtractor(docs, paramExtractor, loggerFactory.CreateLogger<MethodExtractor>());
+        _comExtractor = new ComInterfaceExtractor(
+            loader,
+            docs,
+            _methodExtractor,
+            loggerFactory.CreateLogger<ComInterfaceExtractor>()
+        );
     }
 
     /// <summary>
@@ -55,32 +69,56 @@ public sealed class TypeExtractor
 
         foreach (var (assemblyName, version, reader) in _loader.GetPrimaryAssemblies())
         {
-            _logger.LogInformation("Extracting types from {AssemblyName} v{Version}...",
-                assemblyName, version);
+            _logger.LogInformation("Extracting types from {AssemblyName} v{Version}...", assemblyName, version);
 
             Stopwatch asmWatch = Stopwatch.StartNew();
             ExtractionCounts counts = ExtractFromAssembly(reader, assemblyName, version, registry);
             asmWatch.Stop();
 
             _logger.LogInformation(
-                "Extracted {StructCount} structs, {HandleCount} handles, {EnumCount} enums, {ComCount} COM, {ApiCount} APIs from {AssemblyName} in {Elapsed:F1}s",
-                counts.Structs, counts.Handles, counts.Enums, counts.ComInterfaces, counts.ApiTypes,
-                assemblyName, asmWatch.Elapsed.TotalSeconds);
+                "Extracted {StructCount} structs, {HandleCount} handles, {TypedefCount} typedefs, {EnumCount} enums, {ComCount} COM, {ApiCount} APIs from {AssemblyName} in {Elapsed:F1}s",
+                counts.Structs,
+                counts.Handles,
+                counts.NativeTypedefs,
+                counts.Enums,
+                counts.ComInterfaces,
+                counts.ApiTypes,
+                assemblyName,
+                asmWatch.Elapsed.TotalSeconds
+            );
             _logger.LogInformation(
-                "  Skipped: {Arch} arch-filtered, {Nested} nested, {Delegate} delegates, {Other} other, {Errors} errors",
-                counts.SkippedArch, counts.SkippedNested, counts.SkippedDelegate, counts.SkippedOther, counts.Errors);
+                "  Skipped: {Arch} arch-filtered, {Nested} nested, {Delegate} delegates, {Other} other, {MethodArch} arch-filtered methods, {Errors} errors",
+                counts.SkippedArch,
+                counts.SkippedNested,
+                counts.SkippedDelegate,
+                counts.SkippedOther,
+                counts.SkippedMethodsArch,
+                counts.Errors
+            );
 
             if (counts.SkippedArch > 0)
             {
                 _logger.LogWarning(
                     "Skipped {Count} types due to unsupported architecture (use --log-level Debug for details)",
-                    counts.SkippedArch);
+                    counts.SkippedArch
+                );
+            }
+
+            if (counts.SkippedMethodsArch > 0)
+            {
+                _logger.LogWarning(
+                    "Skipped {Count} methods due to unsupported architecture (use --log-level Debug for details)",
+                    counts.SkippedMethodsArch
+                );
             }
         }
 
         totalWatch.Stop();
-        _logger.LogInformation("Extraction complete: {TotalTypes} types in TypeRegistry ({Elapsed:F1}s total)",
-            registry.Count, totalWatch.Elapsed.TotalSeconds);
+        _logger.LogInformation(
+            "Extraction complete: {TotalTypes} types in TypeRegistry ({Elapsed:F1}s total)",
+            registry.Count,
+            totalWatch.Elapsed.TotalSeconds
+        );
 
         return registry;
     }
@@ -89,135 +127,226 @@ public sealed class TypeExtractor
     /// Counts from a single assembly extraction pass.
     /// </summary>
     public sealed record ExtractionCounts(
-        int Structs, int Handles, int Enums,
-        int ComInterfaces, int ApiTypes,
-        int SkippedArch, int SkippedNested, int SkippedDelegate, int SkippedOther,
-        int Errors);
+        int Structs,
+        int Handles,
+        int NativeTypedefs,
+        int Enums,
+        int ComInterfaces,
+        int ApiTypes,
+        int SkippedArch,
+        int SkippedNested,
+        int SkippedDelegate,
+        int SkippedOther,
+        int SkippedMethodsArch,
+        int Errors
+    );
 
     /// <summary>
     /// Extract all types from a single assembly's MetadataReader.
     /// </summary>
     private ExtractionCounts ExtractFromAssembly(
-        MetadataReader reader, string assemblyName, string version, TypeRegistry registry)
+        MetadataReader reader,
+        string assemblyName,
+        string version,
+        TypeRegistry registry
+    )
     {
-        int structCount = 0, handleCount = 0, enumCount = 0;
-        int comCount = 0, apiCount = 0;
-        int archSkipCount = 0, nestedSkipCount = 0, delegateSkipCount = 0, otherSkipCount = 0;
+        int structCount = 0,
+            handleCount = 0,
+            typedefCount = 0,
+            enumCount = 0;
+        int comCount = 0,
+            apiCount = 0;
+        int archSkipCount = 0,
+            nestedSkipCount = 0,
+            delegateSkipCount = 0,
+            otherSkipCount = 0;
+        int archMethodSkipCount = 0;
         int errorCount = 0;
 
-        reader.TypeDefinitions.AsParallel().WithDegreeOfParallelism(_maxParallelism).ForAll(hTypeDef =>
-        {
-            TypeDefinition typeDef = reader.GetTypeDefinition(hTypeDef);
-            string typeName = reader.GetString(typeDef.Name);
-            string typeNamespace = reader.GetString(typeDef.Namespace);
-            string fqn = $"{typeNamespace}.{typeName}";
-
-            // Skip non-extractable types
-            SkipReason? skipReason = ShouldSkipType(reader, hTypeDef, typeDef);
-            if (skipReason.HasValue)
+        reader
+            .TypeDefinitions.AsParallel()
+            .WithDegreeOfParallelism(_maxParallelism)
+            .ForAll(hTypeDef =>
             {
-                _logger.LogDebug("Skipping type {FQN}: {Reason}", fqn, skipReason.Value);
-                switch (skipReason.Value)
-                {
-                    case SkipReason.Nested: Interlocked.Increment(ref nestedSkipCount); break;
-                    case SkipReason.Delegate: Interlocked.Increment(ref delegateSkipCount); break;
-                    default: Interlocked.Increment(ref otherSkipCount); break;
-                }
-                return;
-            }
+                TypeDefinition typeDef = reader.GetTypeDefinition(hTypeDef);
+                string typeName = reader.GetString(typeDef.Name);
+                string typeNamespace = reader.GetString(typeDef.Namespace);
+                string fqn = $"{typeNamespace}.{typeName}";
 
-            try
-            {
-                // Decode attributes (single pass)
-                int fieldCount = typeDef.GetFields().Count;
-                TypeAttrs attrs = AttributeReader.DecodeTypeAttributes(reader, typeDef, fieldCount, _logger);
-
-                // Architecture filter
-                if (attrs.SupportedArchitecture.HasValue)
+                // Skip non-extractable types
+                SkipReason? skipReason = ShouldSkipType(reader, hTypeDef, typeDef);
+                if (skipReason.HasValue)
                 {
-                    Architecture arch = attrs.SupportedArchitecture.Value;
-                    if (!arch.HasFlag(Architecture.X64))
+                    _logger.LogDebug("Skipping type {FQN}: {Reason}", fqn, skipReason.Value);
+                    switch (skipReason.Value)
                     {
-                        Interlocked.Increment(ref archSkipCount);
-                        _logger.LogDebug("Skipping type {FQN}: unsupported architecture {Arch}",
-                            fqn, arch);
-                        return;
+                        case SkipReason.Nested:
+                            Interlocked.Increment(ref nestedSkipCount);
+                            break;
+                        case SkipReason.Delegate:
+                            Interlocked.Increment(ref delegateSkipCount);
+                            break;
+                        default:
+                            Interlocked.Increment(ref otherSkipCount);
+                            break;
                     }
-                }
-
-                // Classify and extract
-                TypeKind? kind = ClassifyType(reader, hTypeDef, typeDef, attrs);
-                if (kind == null)
-                {
-                    _logger.LogDebug("Skipping type {FQN}: non-extractable", fqn);
-                    Interlocked.Increment(ref otherSkipCount);
                     return;
                 }
 
-                Win32Type? extracted = kind.Value switch
+                try
                 {
-                    TypeKind.Handle => ExtractHandle(reader, typeDef, assemblyName, version, attrs),
-                    TypeKind.Struct => ExtractStruct(reader, typeDef, assemblyName, version, attrs),
-                    TypeKind.Enum => ExtractEnum(reader, typeDef, assemblyName, version, attrs),
-                    TypeKind.ComInterface => _comExtractor.ExtractComInterface(reader, typeDef, assemblyName, version, attrs),
-                    TypeKind.ApiType => ExtractApiType(reader, typeDef, assemblyName, version, attrs),
-                    _ => null
-                };
+                    // Decode attributes (single pass)
+                    int fieldCount = typeDef.GetFields().Count;
+                    TypeAttrs attrs = AttributeReader.DecodeTypeAttributes(reader, typeDef, fieldCount, _logger);
 
-                if (extracted != null)
-                {
-                    registry.Register(extracted);
-
-                    switch (extracted)
+                    // Architecture filter
+                    if (attrs.SupportedArchitecture.HasValue)
                     {
-                        case HandleType:
-                            Interlocked.Increment(ref handleCount);
+                        Architecture arch = attrs.SupportedArchitecture.Value;
+                        if (!arch.HasFlag(Architecture.X64))
+                        {
+                            Interlocked.Increment(ref archSkipCount);
+                            _logger.LogDebug("Skipping type {FQN}: unsupported architecture {Arch}", fqn, arch);
+                            return;
+                        }
+                    }
+
+                    // Classify and extract
+                    TypeKind? kind = ClassifyType(reader, hTypeDef, typeDef, attrs);
+                    if (kind == null)
+                    {
+                        _logger.LogDebug("Skipping type {FQN}: non-extractable", fqn);
+                        Interlocked.Increment(ref otherSkipCount);
+                        return;
+                    }
+
+                    Win32Type? extracted;
+                    int methodArchSkips = 0;
+                    switch (kind.Value)
+                    {
+                        case TypeKind.Handle:
+                            extracted = ExtractHandle(reader, typeDef, assemblyName, version, attrs);
                             break;
-                        case StructType:
-                            Interlocked.Increment(ref structCount);
+                        case TypeKind.NativeTypedef:
+                            extracted = ExtractNativeTypedef(reader, typeDef, assemblyName, version, attrs);
                             break;
-                        case EnumType:
-                            Interlocked.Increment(ref enumCount);
+                        case TypeKind.Struct:
+                            extracted = ExtractStruct(reader, typeDef, assemblyName, version, attrs);
                             break;
-                        case ComInterfaceType:
-                            Interlocked.Increment(ref comCount);
+                        case TypeKind.Enum:
+                            extracted = ExtractEnum(reader, typeDef, assemblyName, version, attrs);
                             break;
-                        case ApiType:
-                            Interlocked.Increment(ref apiCount);
+                        case TypeKind.ComInterface:
+                            extracted = _comExtractor.ExtractComInterface(
+                                reader,
+                                typeDef,
+                                assemblyName,
+                                version,
+                                attrs,
+                                out methodArchSkips
+                            );
+                            break;
+                        case TypeKind.ApiType:
+                            extracted = ExtractApiType(
+                                reader,
+                                typeDef,
+                                assemblyName,
+                                version,
+                                attrs,
+                                out methodArchSkips
+                            );
+                            break;
+                        default:
+                            extracted = null;
                             break;
                     }
+                    if (methodArchSkips > 0)
+                        Interlocked.Add(ref archMethodSkipCount, methodArchSkips);
+
+                    if (extracted != null)
+                    {
+                        registry.Register(extracted);
+
+                        switch (extracted)
+                        {
+                            case HandleType:
+                                Interlocked.Increment(ref handleCount);
+                                break;
+                            case NativeTypedefType:
+                                Interlocked.Increment(ref typedefCount);
+                                break;
+                            case StructType:
+                                Interlocked.Increment(ref structCount);
+                                break;
+                            case EnumType:
+                                Interlocked.Increment(ref enumCount);
+                                break;
+                            case ComInterfaceType:
+                                Interlocked.Increment(ref comCount);
+                                break;
+                            case ApiType:
+                                Interlocked.Increment(ref apiCount);
+                                break;
+                        }
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                Interlocked.Increment(ref errorCount);
-                _logger.LogError(ex, "Failed to extract {FQN}", fqn);
-            }
-        });
+                catch (Exception ex)
+                {
+                    Interlocked.Increment(ref errorCount);
+                    _logger.LogError(ex, "Failed to extract {FQN}", fqn);
+                }
+            });
 
         return new ExtractionCounts(
-            structCount, handleCount, enumCount,
-            comCount, apiCount,
-            archSkipCount, nestedSkipCount, delegateSkipCount, otherSkipCount,
-            errorCount);
+            structCount,
+            handleCount,
+            typedefCount,
+            enumCount,
+            comCount,
+            apiCount,
+            archSkipCount,
+            nestedSkipCount,
+            delegateSkipCount,
+            otherSkipCount,
+            archMethodSkipCount,
+            errorCount
+        );
     }
 
     // --- Type classification ---
 
-    private enum TypeKind { Struct, Handle, Enum, ComInterface, ApiType }
+    private enum TypeKind
+    {
+        Struct,
+        Handle,
+        NativeTypedef,
+        Enum,
+        ComInterface,
+        ApiType,
+    }
 
-    private enum SkipReason { Module, NotTypeReference, Delegate, Attribute, Nested }
+    private enum SkipReason
+    {
+        Module,
+        NotTypeReference,
+        Delegate,
+        Attribute,
+        Nested,
+    }
 
     /// <summary>
     /// Check if a type should be skipped entirely. Port of Program.ShouldSkipType.
     /// </summary>
     private static SkipReason? ShouldSkipType(
-        MetadataReader reader, TypeDefinitionHandle handle, TypeDefinition typeDef)
+        MetadataReader reader,
+        TypeDefinitionHandle handle,
+        TypeDefinition typeDef
+    )
     {
         if (typeDef.BaseType.IsNil)
         {
-            return reader.StringComparer.Equals(typeDef.Name, "<Module>")
-                ? SkipReason.Module : null;
+            return reader.StringComparer.Equals(typeDef.Name, "<Module>") ? SkipReason.Module : null;
         }
 
         if (typeDef.BaseType.Kind is not HandleKind.TypeReference)
@@ -243,7 +372,11 @@ public sealed class TypeExtractor
     /// Classify a non-skipped type into its extraction kind. Port of Program.ParseType.
     /// </summary>
     private static TypeKind? ClassifyType(
-        MetadataReader reader, TypeDefinitionHandle handle, TypeDefinition typeDef, TypeAttrs attrs)
+        MetadataReader reader,
+        TypeDefinitionHandle handle,
+        TypeDefinition typeDef,
+        TypeAttrs attrs
+    )
     {
         // Interface = COM. There are no other kinds of interfaces in win32metadata
         if ((typeDef.Attributes & TypeAttributes.Interface) != 0)
@@ -265,8 +398,9 @@ public sealed class TypeExtractor
         {
             "Enum" => TypeKind.Enum,
             "Struct" or "ValueType" when attrs.IsHandle => TypeKind.Handle,
+            "Struct" or "ValueType" when attrs.IsNativeTypedef => TypeKind.NativeTypedef,
             "Struct" or "ValueType" => TypeKind.Struct,
-            _ => null
+            _ => null,
         };
     }
 
@@ -276,8 +410,12 @@ public sealed class TypeExtractor
     /// Extract a StructType from a TypeDefinition.
     /// </summary>
     private StructType ExtractStruct(
-        MetadataReader reader, TypeDefinition typeDef,
-        string assemblyName, string version, TypeAttrs attrs)
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        string assemblyName,
+        string version,
+        TypeAttrs attrs
+    )
     {
         string typeName = reader.GetString(typeDef.Name);
         string typeNamespace = reader.GetString(typeDef.Namespace);
@@ -296,14 +434,28 @@ public sealed class TypeExtractor
 
         // Extract fields with layout computation
         StructLayout layout = _fieldExtractor.ExtractFields(
-            reader, typeDef, layoutKind, packingSize, isUnion, isAnsi, fqn, apiFields);
+            reader,
+            typeDef,
+            layoutKind,
+            packingSize,
+            isUnion,
+            isAnsi,
+            fqn,
+            apiFields
+        );
 
-        // Build referenced types list
-        List<string> referencedTypes = CollectStructReferencedTypes(layout.Fields);
+        // Build imports
+        ImportCollection imports = new();
+        imports.AddTypes(CollectStructReferencedTypes(layout.Fields));
 
         // Name deconfliction
         string displayName = DeconflictName(typeName);
 
+        // NOTE: [AlsoUsableFor] is deliberately NOT copied onto plain structs. The
+        // implicit-conversion mechanism is the scalar `__value` setter, which only
+        // single-field value types (HandleType/NativeTypedefType) emit. The lone
+        // struct->struct pair (DEVPROPKEY->PROPERTYKEY) has no `__value` to convert
+        // through, so carrying the attribute here would only produce a dead relationship.
         StructType result = new()
         {
             Identity = identity,
@@ -322,12 +474,16 @@ public sealed class TypeExtractor
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
             SupportedOSPlatform = attrs.SupportedOSPlatform,
-            ReferencedTypes = referencedTypes,
-            IsNested = typeDef.IsNested
+            Imports = imports,
+            IsNested = typeDef.IsNested,
         };
 
-        _logger.LogDebug("Extracted StructType {FQN} ({FieldCount} fields, {Size} bytes)",
-            fqn, layout.Fields.Count, layout.TotalSize);
+        _logger.LogDebug(
+            "Extracted StructType {FQN} ({FieldCount} fields, {Size} bytes)",
+            fqn,
+            layout.Fields.Count,
+            layout.TotalSize
+        );
 
         return result;
     }
@@ -336,8 +492,12 @@ public sealed class TypeExtractor
     /// Extract a HandleType from a TypeDefinition (extends struct extraction).
     /// </summary>
     private HandleType ExtractHandle(
-        MetadataReader reader, TypeDefinition typeDef,
-        string assemblyName, string version, TypeAttrs attrs)
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        string assemblyName,
+        string version,
+        TypeAttrs attrs
+    )
     {
         string typeName = reader.GetString(typeDef.Name);
         string typeNamespace = reader.GetString(typeDef.Namespace);
@@ -354,16 +514,25 @@ public sealed class TypeExtractor
 
         // Extract fields
         StructLayout layout = _fieldExtractor.ExtractFields(
-            reader, typeDef, layoutKind, packingSize, false, isAnsi, fqn, apiDetails?.Fields);
+            reader,
+            typeDef,
+            layoutKind,
+            packingSize,
+            false,
+            isAnsi,
+            fqn,
+            apiDetails?.Fields
+        );
 
         // Handle-specific attributes
         IReadOnlyList<long> invalidValues = AttributeReader.DecodeInvalidHandleValues(attrs.All);
         FreeFuncRef? freeFunc = AttributeReader.DecodeRAIIFreeFunc(attrs.All, typeNamespace);
 
-        // Build referenced types
-        List<string> referencedTypes = CollectStructReferencedTypes(layout.Fields);
+        // Build imports
+        ImportCollection imports = new();
+        imports.AddTypes(CollectStructReferencedTypes(layout.Fields));
         if (freeFunc != null)
-            referencedTypes.Add(freeFunc.ApisFQN);
+            imports.AddFunction(freeFunc.ApisFQN, freeFunc.Name);
 
         string displayName = DeconflictName(typeName);
 
@@ -386,14 +555,87 @@ public sealed class TypeExtractor
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
             SupportedOSPlatform = attrs.SupportedOSPlatform,
-            ReferencedTypes = referencedTypes,
-            IsNested = typeDef.IsNested
+            Imports = imports,
+            IsNested = typeDef.IsNested,
+            AlsoUsableFor = attrs.AlsoUsableFor.Count > 0 ? attrs.AlsoUsableFor : null,
         };
 
-        _logger.LogDebug("Extracted HandleType {FQN} (invalidValues=[{Values}], freeFunc={FuncName})",
-            fqn, string.Join(", ", invalidValues), freeFunc?.Name ?? "null");
+        _logger.LogDebug(
+            "Extracted HandleType {FQN} (invalidValues=[{Values}], freeFunc={FuncName})",
+            fqn,
+            string.Join(", ", invalidValues),
+            freeFunc?.Name ?? "null"
+        );
 
         return result;
+    }
+
+    // --- NativeTypedef extraction ---
+
+    /// <summary>
+    /// Extract a NativeTypedefType from a TypeDefinition. The typedef's underlying
+    /// type is read from its single field's signature.
+    /// </summary>
+    private NativeTypedefType ExtractNativeTypedef(
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        string assemblyName,
+        string version,
+        TypeAttrs attrs
+    )
+    {
+        string typeName = reader.GetString(typeDef.Name);
+        string typeNamespace = reader.GetString(typeDef.Namespace);
+        string fqn = $"{typeNamespace}.{typeName}";
+
+        TypeIdentity identity = BuildIdentity(fqn, attrs);
+
+        // Decode the single field's signature to get the underlying type
+        FieldDefinitionHandle hField = typeDef.GetFields().Single();
+        FieldDefinition fieldDef = reader.GetFieldDefinition(hField);
+        ResolvedType underlying = fieldDef.DecodeSignature(
+            new SignatureDecoder(reader, _loader, _logger, typeDef),
+            new()
+        );
+
+        // Get API documentation
+        ApiDetails? apiDetails = _docs.GetApiDetails(reader, typeDef);
+
+        // Imports for the underlying type, if it references another named type
+        ImportCollection imports = new();
+        imports.AddTypes(CollectTypeReferenceFqns(underlying));
+
+        string displayName = DeconflictName(typeName);
+
+        NativeTypedefType result = new()
+        {
+            Identity = identity,
+            Name = displayName,
+            CanonicalName = typeName,
+            AssemblyName = assemblyName,
+            MetadataVersion = version,
+            Flags = attrs.Flags,
+            Underlying = underlying,
+            Description = apiDetails?.Description,
+            Remarks = apiDetails?.Remarks,
+            HelpLink = apiDetails?.HelpLink,
+            DeprecationMessage = attrs.DeprecationMessage,
+            SupportedOSPlatform = attrs.SupportedOSPlatform,
+            AlsoUsableFor = attrs.AlsoUsableFor.Count > 0 ? attrs.AlsoUsableFor : null,
+            Imports = imports,
+        };
+
+        _logger.LogDebug("Extracted NativeTypedefType {FQN} (underlying={Underlying})", fqn, underlying.DisplayName);
+
+        return result;
+    }
+
+    /// <summary>Collect FQN references from a single ResolvedType (for typedef imports).</summary>
+    private static List<string> CollectTypeReferenceFqns(ResolvedType type)
+    {
+        List<string> refs = [];
+        CollectTypeReferences(type, refs);
+        return refs;
     }
 
     // --- Enum extraction ---
@@ -403,8 +645,12 @@ public sealed class TypeExtractor
     /// Port of AhkEnum constructor + AhkConstant for constant value decoding.
     /// </summary>
     private EnumType ExtractEnum(
-        MetadataReader reader, TypeDefinition typeDef,
-        string assemblyName, string version, TypeAttrs attrs)
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        string assemblyName,
+        string version,
+        TypeAttrs attrs
+    )
     {
         string typeName = reader.GetString(typeDef.Name);
         string typeNamespace = reader.GetString(typeDef.Namespace);
@@ -416,15 +662,18 @@ public sealed class TypeExtractor
         ApiDetails? apiDetails = _docs.GetApiDetails(reader, typeDef);
 
         // Get underlying type
-        string underlyingTypeName = SignatureDecoder.GetEnumUnderlyingType(reader,
-            FindTypeDefHandle(reader, typeDef));
+        string underlyingTypeName = SignatureDecoder.GetEnumUnderlyingType(reader, FindTypeDefHandle(reader, typeDef));
 
         // Extract constants
-       List<ConstantMember> constants = [.. typeDef.GetFields()
-            .Select(reader.GetFieldDefinition)
-            .Where(fieldDef => !reader.StringComparer.Equals(fieldDef.Name, "value__", true))
-            .Select(fieldDef => ExtractConstant(reader, fieldDef, reader.GetString(fieldDef.Name), apiDetails))
-            .OfType<ConstantMember>()];
+        List<ConstantMember> constants =
+        [
+            .. typeDef
+                .GetFields()
+                .Select(reader.GetFieldDefinition)
+                .Where(fieldDef => !reader.StringComparer.Equals(fieldDef.Name, "value__", true))
+                .Select(fieldDef => ExtractConstant(reader, fieldDef, reader.GetString(fieldDef.Name), apiDetails))
+                .OfType<ConstantMember>(),
+        ];
 
         string displayName = DeconflictName(typeName);
 
@@ -443,11 +692,15 @@ public sealed class TypeExtractor
             Remarks = apiDetails?.Remarks,
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
-            SupportedOSPlatform = attrs.SupportedOSPlatform
+            SupportedOSPlatform = attrs.SupportedOSPlatform,
         };
 
-        _logger.LogDebug("Extracted EnumType {FQN} ({ConstantCount} constants, flags={IsFlags})",
-            fqn, constants.Count, attrs.IsFlags);
+        _logger.LogDebug(
+            "Extracted EnumType {FQN} ({ConstantCount} constants, flags={IsFlags})",
+            fqn,
+            constants.Count,
+            attrs.IsFlags
+        );
 
         return result;
     }
@@ -459,8 +712,13 @@ public sealed class TypeExtractor
     /// Port of AhkApiType constructor.
     /// </summary>
     private ApiType ExtractApiType(
-        MetadataReader reader, TypeDefinition typeDef,
-        string assemblyName, string version, TypeAttrs attrs)
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        string assemblyName,
+        string version,
+        TypeAttrs attrs,
+        out int archMethodSkips
+    )
     {
         string typeName = reader.GetString(typeDef.Name);
         string typeNamespace = reader.GetString(typeDef.Namespace);
@@ -472,23 +730,38 @@ public sealed class TypeExtractor
         ApiDetails? apiDetails = _docs.GetApiDetails(reader, typeDef);
 
         // Extract constants (same as enum constants — reuse existing logic)
-        List<ConstantMember> constants = [.. typeDef.GetFields()
-            .Select(reader.GetFieldDefinition)
-            .Where(fieldDef => !reader.StringComparer.Equals(fieldDef.Name, "value__", true))
-            .Select(fieldDef => ExtractConstant(reader, fieldDef, reader.GetString(fieldDef.Name), apiDetails))
-            .OfType<ConstantMember>()];
+        List<ConstantMember> constants =
+        [
+            .. typeDef
+                .GetFields()
+                .Select(reader.GetFieldDefinition)
+                .Where(fieldDef => !reader.StringComparer.Equals(fieldDef.Name, "value__", true))
+                .Select(fieldDef => ExtractConstant(reader, fieldDef, reader.GetString(fieldDef.Name), apiDetails))
+                .OfType<ConstantMember>(),
+        ];
 
-        // Extract methods, deduplicating by name (matching legacy AhkApiType behavior)
-        List<MethodMember> methods = [.. typeDef.GetMethods()
-            .Select(reader.GetMethodDefinition)
-            .DistinctBy(methodDef => reader.GetString(methodDef.Name))
-            .Select(methodDef => _methodExtractor.ExtractMethod(reader, methodDef, typeNamespace))
-            .OfType<MethodMember>()];
-            
-        // Collect referenced types from both constants and methods
-        List<string> referencedTypes =[
-            .. constants.SelectMany(c => c.ReferencedTypes), 
-            .. methods.SelectMany(m => m.ReferencedTypes)];
+        // Extract methods, deduplicating by name (matching legacy AhkApiType behavior).
+        // Track arch-filtered skips so the caller can surface a count to the user.
+        List<MethodMember> methods = [];
+        archMethodSkips = 0;
+        foreach (
+            MethodDefinition methodDef in typeDef
+                .GetMethods()
+                .Select(reader.GetMethodDefinition)
+                .DistinctBy(methodDef => reader.GetString(methodDef.Name))
+        )
+        {
+            MethodExtractionResult methodResult = _methodExtractor.ExtractMethod(reader, methodDef, typeNamespace);
+            if (methodResult.Method != null)
+                methods.Add(methodResult.Method);
+            else if (methodResult.SkipReason == MethodSkipReason.ArchFiltered)
+                archMethodSkips++;
+        }
+
+        // Collect imports from both constants and methods
+        ImportCollection imports = new();
+        imports.MergeFrom(constants.Select(c => c.Imports));
+        imports.MergeFrom(methods.Select(m => m.Imports));
 
         string displayName = DeconflictName(typeName);
 
@@ -507,11 +780,15 @@ public sealed class TypeExtractor
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
             SupportedOSPlatform = attrs.SupportedOSPlatform,
-            ReferencedTypes = referencedTypes.Distinct().ToList()
+            Imports = imports,
         };
 
-        _logger.LogDebug("Extracted ApiType {FQN} ({ConstantCount} constants, {MethodCount} methods)",
-            fqn, constants.Count, methods.Count);
+        _logger.LogDebug(
+            "Extracted ApiType {FQN} ({ConstantCount} constants, {MethodCount} methods)",
+            fqn,
+            constants.Count,
+            methods.Count
+        );
 
         return result;
     }
@@ -521,8 +798,11 @@ public sealed class TypeExtractor
     /// Handles GUID, primitive, handle, and struct constants.
     /// </summary>
     private ConstantMember? ExtractConstant(
-        MetadataReader reader, FieldDefinition fieldDef, string fieldName,
-        ApiDetails? apiDetails)
+        MetadataReader reader,
+        FieldDefinition fieldDef,
+        string fieldName,
+        ApiDetails? apiDetails
+    )
     {
         FieldAttrs fieldAttrs = AttributeReader.DecodeFieldAttributes(reader, fieldDef);
         string? description = null;
@@ -534,13 +814,13 @@ public sealed class TypeExtractor
         {
             return new ConstantMember
             {
-                Name = fieldName,
+                Name = DeconflictName(fieldName),
                 Value = new GuidConstantValue(guid.Value),
                 Type = new PrimitiveType("Guid"),
                 Description = description,
                 IsDeprecated = fieldAttrs.IsDeprecated,
                 DeprecationMessage = fieldAttrs.DeprecationMessage,
-                NeedsGuid = true
+                NeedsGuid = true,
             };
         }
 
@@ -567,12 +847,12 @@ public sealed class TypeExtractor
 
         return new ConstantMember
         {
-            Name = fieldName,
+            Name = DeconflictName(fieldName),
             Value = new PrimitiveConstantValue(formattedValue, ahkTypeName),
             Type = new PrimitiveType(constant.TypeCode.ToString()),
             Description = description,
             IsDeprecated = fieldAttrs.IsDeprecated,
-            DeprecationMessage = fieldAttrs.DeprecationMessage
+            DeprecationMessage = fieldAttrs.DeprecationMessage,
         };
     }
 
@@ -580,20 +860,25 @@ public sealed class TypeExtractor
     /// Extract a struct-typed constant (handle constant or struct with [ConstantAttribute]).
     /// </summary>
     private ConstantMember? ExtractStructConstant(
-        MetadataReader reader, FieldDefinition fieldDef, string fieldName,
-        ResolvedType fieldType, FieldAttrs fieldAttrs, string? description)
+        MetadataReader reader,
+        FieldDefinition fieldDef,
+        string fieldName,
+        ResolvedType fieldType,
+        FieldAttrs fieldAttrs,
+        string? description
+    )
     {
         string structFqn = fieldType switch
         {
             StructRef s => s.FQN,
             HandleRef h => h.FQN,
-            _ => throw new InvalidOperationException()
+            _ => throw new InvalidOperationException(),
         };
         string structName = fieldType switch
         {
             StructRef s => s.Name,
             HandleRef h => h.Name,
-            _ => throw new InvalidOperationException()
+            _ => throw new InvalidOperationException(),
         };
         bool isHandle = fieldType is HandleRef;
 
@@ -614,55 +899,70 @@ public sealed class TypeExtractor
             return new ConstantMember
             {
                 Name = fieldName,
-                Value = new StructConstantValue(structName, structFqn, IsHandle: true,
-                    HandleValue: handleValue, FieldInits: null),
+                Value = new StructConstantValue(
+                    structName,
+                    structFqn,
+                    IsHandle: true,
+                    HandleValue: handleValue,
+                    FieldInits: null
+                ),
                 Type = fieldType,
                 Description = description,
                 IsDeprecated = fieldAttrs.IsDeprecated,
                 DeprecationMessage = fieldAttrs.DeprecationMessage,
-                ReferencedTypes = [structFqn]
+                Imports = MakeTypeImports(structFqn),
             };
         }
 
         // Non-handle struct constant — decode [ConstantAttribute]
         CustomAttribute? constAttr = AttributeReader.FindAttribute(
-            reader, fieldDef.GetCustomAttributes(), "ConstantAttribute");
+            reader,
+            fieldDef.GetCustomAttributes(),
+            "ConstantAttribute"
+        );
 
         if (constAttr is null)
         {
-            _logger.LogWarning("Struct constant {Name} ({StructFQN}) has no [ConstantAttribute], skipping",
-                fieldName, structFqn);
+            _logger.LogWarning(
+                "Struct constant {Name} ({StructFQN}) has no [ConstantAttribute], skipping",
+                fieldName,
+                structFqn
+            );
             return null;
         }
 
         CustomAttributeValue<string> decoded = constAttr.Value.DecodeValue(new CaTypeProvider());
-        string raw = (string)(decoded.FixedArguments[0].Value
-            ?? throw new InvalidOperationException($"Null ConstantAttribute value for '{fieldName}'"));
+        string raw = (string)(
+            decoded.FixedArguments[0].Value
+            ?? throw new InvalidOperationException($"Null ConstantAttribute value for '{fieldName}'")
+        );
 
-        Queue<string> values = new(raw.Split(',')
-            .Select(s => s.TrimStart('{').TrimEnd('}').Trim()));
+        Queue<string> values = new(raw.Split(',').Select(s => s.TrimStart('{').TrimEnd('}').Trim()));
 
         // Resolve the struct's TypeDefinition to walk its fields
-        (MetadataReader structReader, TypeDefinitionHandle structHandle) =
-            ResolveStructType(reader, fieldDef);
+        (MetadataReader structReader, TypeDefinitionHandle structHandle) = ResolveStructType(reader, fieldDef);
 
         TypeDefinition structTypeDef = structReader.GetTypeDefinition(structHandle);
-        List<StructFieldInit> fieldInits = BuildStructFieldInits(structReader, structTypeDef, values, "value");
+        List<StructFieldInit> fieldInits = BuildStructFieldInits(structReader, structTypeDef, values, []); // TODO don't hardcode 'value' as base
 
         bool needsGuid = fieldInits.Any(f => f.Kind == StructFieldInitKind.GuidPointer);
-        List<string> referencedTypes = [structFqn];
 
         return new ConstantMember
         {
             Name = fieldName,
-            Value = new StructConstantValue(structName, structFqn, IsHandle: false,
-                HandleValue: null, FieldInits: fieldInits),
+            Value = new StructConstantValue(
+                structName,
+                structFqn,
+                IsHandle: false,
+                HandleValue: null,
+                FieldInits: fieldInits
+            ),
             Type = fieldType,
             Description = description,
             IsDeprecated = fieldAttrs.IsDeprecated,
             DeprecationMessage = fieldAttrs.DeprecationMessage,
             NeedsGuid = needsGuid,
-            ReferencedTypes = referencedTypes
+            Imports = MakeTypeImports(structFqn),
         };
     }
 
@@ -671,7 +971,9 @@ public sealed class TypeExtractor
     /// Reads the field signature blob: FIELD header, VALUETYPE element type, compressed token.
     /// </summary>
     private (MetadataReader Reader, TypeDefinitionHandle Handle) ResolveStructType(
-        MetadataReader reader, FieldDefinition fieldDef)
+        MetadataReader reader,
+        FieldDefinition fieldDef
+    )
     {
         BlobReader sigReader = reader.GetBlobReader(fieldDef.Signature);
         sigReader.ReadSignatureHeader(); // FIELD (0x06)
@@ -685,7 +987,11 @@ public sealed class TypeExtractor
     /// and consuming values from the [ConstantAttribute] queue.
     /// </summary>
     private List<StructFieldInit> BuildStructFieldInits(
-        MetadataReader reader, TypeDefinition typeDef, Queue<string> values, string pathPrefix)
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        Queue<string> values,
+        IEnumerable<string> pathPrefix
+    )
     {
         List<StructFieldInit> inits = [];
         var sigDecoder = new SignatureDecoder(reader, _loader, _logger, typeDef);
@@ -694,7 +1000,7 @@ public sealed class TypeExtractor
         {
             FieldDefinition fd = reader.GetFieldDefinition(hField);
             string memberName = reader.GetString(fd.Name);
-            string fieldPath = $"{pathPrefix}.{memberName}";
+            string[] fieldPath = [.. pathPrefix, memberName];
             ResolvedType memberType = fd.DecodeSignature(sigDecoder, new SignatureGenericContext());
 
             switch (memberType)
@@ -704,16 +1010,21 @@ public sealed class TypeExtractor
                 {
                     // GUID field or GUID pointer — dequeue 11 values for the GUID
                     Guid guidValue = AttributeReader.DecodeGuidFromQueue(values);
-                    inits.Add(new StructFieldInit(fieldPath, $"{memberName}_guid.ptr",
-                        StructFieldInitKind.GuidPointer, GuidValue: guidValue));
+                    inits.Add(
+                        new StructFieldInit(
+                            fieldPath,
+                            $"{memberName}_guid.ptr",
+                            memberType is StructRef ? StructFieldInitKind.Guid : StructFieldInitKind.GuidPointer,
+                            GuidValue: guidValue
+                        )
+                    );
                     break;
                 }
 
                 case StructRef:
                 {
                     // Nested struct — recurse into Win32 struct fields
-                    (MetadataReader nestedReader, TypeDefinitionHandle nestedHandle) =
-                        ResolveStructRef(reader, fd);
+                    (MetadataReader nestedReader, TypeDefinitionHandle nestedHandle) = ResolveStructRef(reader, fd);
                     TypeDefinition nestedTypeDef = nestedReader.GetTypeDefinition(nestedHandle);
                     inits.AddRange(BuildStructFieldInits(nestedReader, nestedTypeDef, values, fieldPath));
                     break;
@@ -724,8 +1035,14 @@ public sealed class TypeExtractor
                     // Array — dequeue Length times with 1-based indices
                     for (int i = 0; i < arr.Length; i++)
                     {
-                        inits.Add(new StructFieldInit(fieldPath, values.Dequeue(),
-                            StructFieldInitKind.ArrayElement, ArrayIndex: i + 1));
+                        inits.Add(
+                            new StructFieldInit(
+                                fieldPath,
+                                values.Dequeue(),
+                                StructFieldInitKind.ArrayElement,
+                                ArrayIndex: i + 1
+                            )
+                        );
                     }
                     break;
                 }
@@ -733,8 +1050,7 @@ public sealed class TypeExtractor
                 default:
                 {
                     // Primitive or void pointer — dequeue once
-                    inits.Add(new StructFieldInit(fieldPath, values.Dequeue(),
-                        StructFieldInitKind.Direct));
+                    inits.Add(new StructFieldInit(fieldPath, values.Dequeue(), StructFieldInitKind.Direct));
                     break;
                 }
             }
@@ -747,7 +1063,9 @@ public sealed class TypeExtractor
     /// Resolve a nested struct field's TypeDefinition from its field signature.
     /// </summary>
     private (MetadataReader Reader, TypeDefinitionHandle Handle) ResolveStructRef(
-        MetadataReader reader, FieldDefinition fieldDef)
+        MetadataReader reader,
+        FieldDefinition fieldDef
+    )
     {
         BlobReader sigReader = reader.GetBlobReader(fieldDef.Signature);
         sigReader.ReadSignatureHeader(); // FIELD (0x06)
@@ -761,7 +1079,9 @@ public sealed class TypeExtractor
     /// Returns the resolved (MetadataReader, TypeDefinitionHandle) pair.
     /// </summary>
     private (MetadataReader Reader, TypeDefinitionHandle Handle) DecodeTypeDefOrRefHandle(
-        MetadataReader reader, ref BlobReader sigReader)
+        MetadataReader reader,
+        ref BlobReader sigReader
+    )
     {
         int coded = sigReader.ReadCompressedInteger();
         int table = coded & 0x3;
@@ -771,8 +1091,7 @@ public sealed class TypeExtractor
         {
             0 => (reader, MetadataTokens.TypeDefinitionHandle(row)),
             1 => _loader.ResolveTypeReference(reader, MetadataTokens.TypeReferenceHandle(row)),
-            _ => throw new NotSupportedException(
-                $"Unexpected TypeDefOrRef table {table} in struct constant signature")
+            _ => throw new NotSupportedException($"Unexpected TypeDefOrRef table {table} in struct constant signature"),
         };
     }
 
@@ -796,8 +1115,7 @@ public sealed class TypeExtractor
             ConstantTypeCode.Double => blob.ReadDouble(),
             ConstantTypeCode.Char => blob.ReadChar(),
             ConstantTypeCode.String => blob.ReadUTF16(blob.Length),
-            _ => throw new NotSupportedException(
-                $"Unexpected constant type {typeCode} for '{name}'")
+            _ => throw new NotSupportedException($"Unexpected constant type {typeCode} for '{name}'"),
         };
 
         return typeCode switch
@@ -805,19 +1123,20 @@ public sealed class TypeExtractor
             ConstantTypeCode.Byte => $"0x{(byte)value:X2}",
             ConstantTypeCode.SByte => $"0x{(sbyte)value:X2}",
             ConstantTypeCode.String => EscapeAhkStringLiteral($"\"{value}\""),
-            _ => value.ToString() ?? throw new InvalidOperationException($"Null ToString for constant '{name}'")
+            _ => value.ToString() ?? throw new InvalidOperationException($"Null ToString for constant '{name}'"),
         };
     }
 
     /// <summary>
     /// Map ConstantTypeCode to AHK display type name.
     /// </summary>
-    private static string ConstantTypeCodeToAhkType(ConstantTypeCode typeCode) => typeCode switch
-    {
-        ConstantTypeCode.Single or ConstantTypeCode.Double => "Float",
-        ConstantTypeCode.String => "String",
-        _ => $"Integer ({typeCode})"
-    };
+    private static string ConstantTypeCodeToAhkType(ConstantTypeCode typeCode) =>
+        typeCode switch
+        {
+            ConstantTypeCode.Single or ConstantTypeCode.Double => "Float",
+            ConstantTypeCode.String => "String",
+            _ => $"Integer ({typeCode})",
+        };
 
     /// <summary>
     /// Escape a string literal for AHK output.
@@ -833,14 +1152,16 @@ public sealed class TypeExtractor
                 continue;
             }
 
-            sb.Append(c switch
-            {
-                '\n' => "`n",
-                '\t' => "`t",
-                '\r' => "`r",
-                '`' => "``",
-                _ => c
-            });
+            sb.Append(
+                c switch
+                {
+                    '\n' => "`n",
+                    '\t' => "`t",
+                    '\r' => "`r",
+                    '`' => "``",
+                    _ => c,
+                }
+            );
         }
         return sb.ToString();
     }
@@ -867,7 +1188,7 @@ public sealed class TypeExtractor
             TypeAttributes.SequentialLayout => StructLayoutKind.Sequential,
             TypeAttributes.ExplicitLayout => StructLayoutKind.Explicit,
             TypeAttributes.AutoLayout => StructLayoutKind.Auto,
-            _ => StructLayoutKind.Sequential
+            _ => StructLayoutKind.Sequential,
         };
     }
 
@@ -888,14 +1209,22 @@ public sealed class TypeExtractor
     /// </summary>
     private string DeconflictName(string name)
     {
-        string candidate = name.EndsWith("_e__Struct")
-            ? name[..^"_e__Struct".Length]
-            : name;
+        string candidate = SignatureDecoder.StripGeneratedSuffix(name);
 
         if (_reservedNames.Contains(candidate))
             return $"Win32{candidate}";
 
         return candidate;
+    }
+
+    /// <summary>
+    /// Construct a single-type ImportCollection.
+    /// </summary>
+    private static ImportCollection MakeTypeImports(string fqn)
+    {
+        var c = new ImportCollection();
+        c.AddType(fqn);
+        return c;
     }
 
     /// <summary>
@@ -926,7 +1255,7 @@ public sealed class TypeExtractor
     /// <summary>
     /// Recursively collect type FQN references from a ResolvedType.
     /// </summary>
-    private static void CollectTypeReferences(ResolvedType type, List<string> refs)
+    public static void CollectTypeReferences(ResolvedType type, List<string> refs)
     {
         switch (type)
         {
@@ -941,6 +1270,13 @@ public sealed class TypeExtractor
                 break;
             case EnumRef e:
                 refs.Add(e.FQN);
+                break;
+            case NativeTypedefRef n:
+                refs.Add(n.FQN);
+                CollectTypeReferences(n.Underlying, refs);
+                break;
+            case HResultType or NtStatusType:
+                refs.Add($"Windows.Win32.Foundation.{type.DisplayName}");
                 break;
             case PointerType p when p.Pointee != null:
                 CollectTypeReferences(p.Pointee, refs);
@@ -972,7 +1308,14 @@ public sealed class TypeExtractor
         bool isUnion = attrs.Flags.HasFlag(MemberFlags.Union);
 
         StructLayout layout = _fieldExtractor.ExtractFields(
-            reader, typeDef, layoutKind, packingSize, isUnion, isAnsi, fqn);
+            reader,
+            typeDef,
+            layoutKind,
+            packingSize,
+            isUnion,
+            isAnsi,
+            fqn
+        );
 
         string displayName = DeconflictName(typeName);
 
@@ -989,7 +1332,7 @@ public sealed class TypeExtractor
             LayoutKind = layoutKind,
             Members = layout.Fields,
             StructSizeFieldName = attrs.StructSizeFieldName,
-            IsNested = true
+            IsNested = true,
         };
     }
 
@@ -1004,8 +1347,7 @@ public sealed class TypeExtractor
         foreach (TypeDefinitionHandle handle in reader.TypeDefinitions)
         {
             TypeDefinition td = reader.GetTypeDefinition(handle);
-            if (reader.StringComparer.Equals(td.Name, name) &&
-                reader.StringComparer.Equals(td.Namespace, ns))
+            if (reader.StringComparer.Equals(td.Name, name) && reader.StringComparer.Equals(td.Namespace, ns))
             {
                 return handle;
             }

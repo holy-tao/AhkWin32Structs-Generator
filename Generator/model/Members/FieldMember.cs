@@ -51,6 +51,14 @@ public sealed class FieldMember
     /// <summary>Whether this field represents a nested struct (anonymous union or named nested type).</summary>
     public bool IsNested { get; init; }
 
+    /// <summary>
+    /// Set by <see cref="Transform.CyclicPointerBreaker"/> for a pointer-to-struct field that lies
+    /// on an import cycle. Such a field is emitted (under v2.1) as a backing IntPtr plus a dynamic
+    /// accessor that resolves the pointee only at call time, instead of an eager <c>X.Ptr</c> typed
+    /// property — breaking the load-time dependency cycle that would otherwise be fatal.
+    /// </summary>
+    public bool EmitAsLazyPointer { get; set; }
+
     // Convenience
     public bool IsReserved => Flags.HasFlag(MemberFlags.Reserved);
     public bool IsAlignment => Flags.HasFlag(MemberFlags.Alignment);

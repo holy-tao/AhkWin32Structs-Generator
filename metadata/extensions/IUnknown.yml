@@ -1,11 +1,12 @@
 add-to:
   - Windows.Win32.System.Com.IUnknown
-requires: []
-code: |
+
+code:
+  v20: |
     /**
      * Determines whether or not this interface and some other interface refer to the
      * same underlying object by comparing the pointers retrieved from QueryInterface
-     * @param {IUnknown | ComObject} other the interface to compare this one to. If 
+     * @param {IUnknown | ComObject} other the interface to compare this one to. If
      *          other is a native AHK ComObject, its IUnknown pointer is retrieved via
      *          `ComObjQuery`
      * @returns 1 if this and other refer to the same object, 0 if they don't
@@ -18,7 +19,7 @@ code: |
         thisPtrBuf := Buffer(A_PtrSize)
         this.QueryInterface(IUnknown.IID, thisPtrBuf)
         thisPtr := NumGet(thisPtrBuf, "ptr")
-        
+
         otherPtr := 0
 
         if(other is IUnknown){
@@ -37,4 +38,57 @@ code: |
         if(!this.owned){
             this.Release()
         }
+    }
+  v21: |
+    /**
+     * Install the QueryInterface / AddRef / Release callbacks. Each slot honors a
+     * user-supplied override on `implObj` if present, otherwise falls back to the
+     * built-in `__Default*` implementation. The CallbackCreate paramCount is the
+     * COM-ABI count (declared parameters + 1 for the C++ this pointer).
+     */
+    Implement(implObj, flags := "") {
+        super.Implement(implObj, flags)
+
+        qi := GetMethod(implObj, "QueryInterface") ?? ObjBindMethod(this, "_DefaultQueryInterface")
+        this.vtbl.QueryInterface := CallbackCreate(qi, flags, 3)
+    
+        addRef := GetMethod(implObj, "AddRef") ?? ObjBindMethod(this, "_DefaultAddRef")            
+        this.vtbl.AddRef := CallbackCreate(addRef, flags, 1)
+    
+        release := GetMethod(implObj, "Release") ?? ObjBindMethod(this, "_DefaultRelease")
+        this.vtbl.Release := CallbackCreate(release, flags, 1)
+    }
+
+    /**
+     * Free the three IUnknown callback slots, then chain to super.
+     */
+    Dispose() {
+        super.Dispose()
+        CallbackFree(this.vtbl.QueryInterface)
+        CallbackFree(this.vtbl.AddRef)
+        CallbackFree(this.vtbl.Release)
+    }
+
+    /**
+     * Determines whether or not this interface and some other interface refer to the
+     * same underlying object by comparing pointers retrieved from QueryInterface.
+     * @param {IUnknown | ComObject} other the interface to compare this one to
+     */
+    Equals(other) {
+        if (!(other is IUnknown || other is ComObject))
+            throw TypeError("Expected a Win32ComInterface extending IUnknown or a ComObject, but got a(n) " . Type(other))
+
+        thisPtrBuf := Buffer(A_PtrSize)
+        this.QueryInterface(IUnknown.IID, thisPtrBuf)
+        thisPtr := NumGet(thisPtrBuf, "ptr")
+
+        otherPtr := 0
+        if (other is IUnknown) {
+            other.QueryInterface(IUnknown.IID, &otherPtr)
+            otherInterface := IUnknown(otherPtr)  ; auto-released on scope exit
+        } else {
+            otherPtr := ComObjQuery(other, String(IUnknown.IID)).ptr
+        }
+
+        return thisPtr == otherPtr
     }

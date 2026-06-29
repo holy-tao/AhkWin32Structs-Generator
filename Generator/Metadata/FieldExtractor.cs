@@ -10,10 +10,7 @@ using Microsoft.Extensions.Logging;
 /// <summary>
 /// Result of extracting fields from a struct, including computed layout.
 /// </summary>
-public sealed record StructLayout(
-    IReadOnlyList<FieldMember> Fields,
-    int TotalSize,
-    int PackingSize);
+public sealed record StructLayout(IReadOnlyList<FieldMember> Fields, int TotalSize, int PackingSize);
 
 /// <summary>
 /// Extracts fields from a TypeDefinition, decodes their signatures via SignatureDecoder,
@@ -34,7 +31,8 @@ public sealed class FieldExtractor
     public FieldExtractor(
         MetadataLoader loader,
         ILogger logger,
-        Func<MetadataReader, TypeDefinition, bool, StructType?> extractStructCallback)
+        Func<MetadataReader, TypeDefinition, bool, StructType?> extractStructCallback
+    )
     {
         _loader = loader;
         _logger = logger;
@@ -53,7 +51,8 @@ public sealed class FieldExtractor
         bool isUnion,
         bool isAnsi,
         string parentFQN,
-        Dictionary<string, string>? apiFields = null)
+        Dictionary<string, string>? apiFields = null
+    )
     {
         List<FieldMember> members = [];
         int offset = 0;
@@ -75,7 +74,12 @@ public sealed class FieldExtractor
             StructType? embeddedStruct = null;
             bool isNested = false;
             (resolvedType, embeddedStruct, isNested) = ResolveEmbeddedStruct(
-                reader, typeDef, resolvedType, fieldName, isAnsi);
+                reader,
+                typeDef,
+                resolvedType,
+                fieldName,
+                isAnsi
+            );
 
             // Compute field size
             int fieldSize = ComputeFieldSize(resolvedType, embeddedStruct, isAnsi);
@@ -90,9 +94,7 @@ public sealed class FieldExtractor
             offset += padding;
 
             // Set member offset
-            int memberOffset = layoutKind == StructLayoutKind.Explicit
-                ? fieldDef.GetOffset()
-                : offset;
+            int memberOffset = layoutKind == StructLayoutKind.Explicit ? fieldDef.GetOffset() : offset;
 
             // For unions, all fields overlap at offset 0 — don't advance
             if (!isUnion)
@@ -116,23 +118,29 @@ public sealed class FieldExtractor
                 DeprecationMessage = fieldAttrs.DeprecationMessage,
                 EmbeddedStruct = embeddedStruct,
                 Bitfields = fieldAttrs.Bitfields ?? [],
-                IsNested = isNested
+                IsNested = isNested,
             };
 
             members.Add(member);
 
             _logger.LogTrace(
                 "Extracting field {ParentFQN}.{FieldName}: {ResolvedType} at offset {Offset} (size {Size})",
-                parentFQN, fieldName, resolvedType.DisplayName, memberOffset, fieldSize);
+                parentFQN,
+                fieldName,
+                resolvedType.DisplayName,
+                memberOffset,
+                fieldSize
+            );
             _logger.LogTrace(
                 "Layout: alignment={Alignment}, padding={Padding}, logicalSize={LogicalSize}",
-                alignment, padding, logicalFieldSize);
+                alignment,
+                padding,
+                logicalFieldSize
+            );
         }
 
         // Compute total size
-        int totalSize = isUnion
-            ? (members.Count > 0 ? members.Max(m => m.Size) : 0)
-            : offset;
+        int totalSize = isUnion ? (members.Count > 0 ? members.Max(m => m.Size) : 0) : offset;
 
         // Cap packing size to max alignment seen
         packingSize = Math.Min(packingSize, maxAlignment);
@@ -143,7 +151,11 @@ public sealed class FieldExtractor
 
         _logger.LogDebug(
             "Computed layout for {FQN}: {FieldCount} fields, {TotalSize} bytes, packing {PackingSize}",
-            parentFQN, members.Count, totalSize, packingSize);
+            parentFQN,
+            members.Count,
+            totalSize,
+            packingSize
+        );
 
         return new StructLayout(members, totalSize, packingSize);
     }
@@ -153,7 +165,12 @@ public sealed class FieldExtractor
     /// Port of AhkStructMember constructor logic for Struct and Array fields.
     /// </summary>
     private (ResolvedType Type, StructType? Embedded, bool IsNested) ResolveEmbeddedStruct(
-        MetadataReader reader, TypeDefinition parentTypeDef, ResolvedType resolvedType, string fieldName, bool isAnsi)
+        MetadataReader reader,
+        TypeDefinition parentTypeDef,
+        ResolvedType resolvedType,
+        string fieldName,
+        bool isAnsi
+    )
     {
         if (resolvedType is StructRef structRef)
         {
@@ -162,7 +179,13 @@ public sealed class FieldExtractor
 
         if (resolvedType is ArrayType arrayType && arrayType.ElementType is StructRef arrayStructRef)
         {
-            var (_, embedded, isNested) = ResolveStructRefField(reader, parentTypeDef, arrayStructRef, fieldName, isAnsi);
+            var (_, embedded, isNested) = ResolveStructRefField(
+                reader,
+                parentTypeDef,
+                arrayStructRef,
+                fieldName,
+                isAnsi
+            );
             if (embedded != null)
             {
                 // Keep the ArrayType but with the embedded struct for size info
@@ -179,8 +202,21 @@ public sealed class FieldExtractor
     /// Resolve a StructRef field — either build the embedded struct or convert to pointer.
     /// </summary>
     private (ResolvedType Type, StructType? Embedded, bool IsNested) ResolveStructRefField(
-        MetadataReader reader, TypeDefinition parentTypeDef, StructRef structRef, string fieldName, bool isAnsi)
+        MetadataReader reader,
+        TypeDefinition parentTypeDef,
+        StructRef structRef,
+        string fieldName,
+        bool isAnsi
+    )
     {
+        // System.Guid is the one external type we don't treat as opaque — it maps to the
+        // hand-written Guid.ahk fixture at the projection root. It has no TypeDefinition in
+        // the Win32 metadata, so skip the lookup below (which would fail and fall back to a
+        // pointer) and keep the StructRef. Size/alignment are handled in ComputeFieldSize /
+        // ComputeLogicalFieldSize; the emitters render it as the embedded `Guid` type.
+        if (structRef.FQN == "System.Guid")
+            return (structRef, null, false);
+
         // We need to find the actual TypeDefinition to check if it's nested and get its namespace
         // The StructRef.FQN gives us the namespace.name but we need the TypeDefinition for nested check
         // Pass parentTypeDef so nested types (e.g. _Anonymous_e__Struct) are resolved within
@@ -190,8 +226,11 @@ public sealed class FieldExtractor
         if (fieldTypeDef == null)
         {
             // Can't find the type definition — treat as pointer
-            _logger.LogTrace("Converting non-resolvable type {FQN} to pointer for field {FieldName}",
-                structRef.FQN, fieldName);
+            _logger.LogTrace(
+                "Converting non-resolvable type {FQN} to pointer for field {FieldName}",
+                structRef.FQN,
+                fieldName
+            );
             return (new PointerType(null), null, false);
         }
 
@@ -209,13 +248,17 @@ public sealed class FieldExtractor
         StructType? embedded = _extractStructCallback(reader, fieldTypeDef.Value, isAnsi);
         if (embedded == null)
         {
-            _logger.LogTrace("Embedded struct extraction returned null for {FQN}, treating as pointer",
-                structRef.FQN);
+            _logger.LogTrace("Embedded struct extraction returned null for {FQN}, treating as pointer", structRef.FQN);
             return (new PointerType(null), null, false);
         }
 
-        _logger.LogTrace("Embedded struct {FieldName}: {EmbeddedFQN} (size {Size}, packing {PackingSize})",
-            fieldName, structRef.FQN, embedded.Size, embedded.PackingSize);
+        _logger.LogTrace(
+            "Embedded struct {FieldName}: {EmbeddedFQN} (size {Size}, packing {PackingSize})",
+            fieldName,
+            structRef.FQN,
+            embedded.Size,
+            embedded.PackingSize
+        );
 
         return (structRef, embedded, isNested);
     }
@@ -226,7 +269,8 @@ public sealed class FieldExtractor
     private static TypeDefinition? FindTypeDefByFqn(MetadataReader reader, string fqn, TypeDefinition? parent = null)
     {
         int lastDot = fqn.LastIndexOf('.');
-        if (lastDot < 0) return null;
+        if (lastDot < 0)
+            return null;
 
         string ns = fqn[..lastDot];
         string name = fqn[(lastDot + 1)..];
@@ -245,8 +289,7 @@ public sealed class FieldExtractor
         foreach (TypeDefinitionHandle tdHandle in reader.TypeDefinitions)
         {
             TypeDefinition td = reader.GetTypeDefinition(tdHandle);
-            if (reader.StringComparer.Equals(td.Name, name) &&
-                reader.StringComparer.Equals(td.Namespace, ns))
+            if (reader.StringComparer.Equals(td.Name, name) && reader.StringComparer.Equals(td.Namespace, ns))
             {
                 return td;
             }
@@ -263,10 +306,12 @@ public sealed class FieldExtractor
         return type switch
         {
             StructRef when embeddedStruct != null => embeddedStruct.Size,
+            // System.Guid has no embedded StructType (it's the Guid.ahk fixture) — 16 bytes.
+            StructRef { FQN: "System.Guid" } => 16,
             ArrayType a when embeddedStruct != null => a.Length * embeddedStruct.Size,
             ArrayType a => a.Width,
             StringType s => s.Width,
-            _ => type.Width
+            _ => type.Width,
         };
     }
 
@@ -275,24 +320,30 @@ public sealed class FieldExtractor
     /// This determines how the field aligns within the struct.
     /// </summary>
     private static int ComputeLogicalFieldSize(
-        ResolvedType type, StructType? embeddedStruct, int fieldSize, bool isAnsi)
+        ResolvedType type,
+        StructType? embeddedStruct,
+        int fieldSize,
+        bool isAnsi
+    )
     {
         return type switch
         {
             // Array = element width (for struct arrays, use element's packing size)
-            ArrayType { ElementType: StructRef } when embeddedStruct != null
-                => embeddedStruct.PackingSize,
+            ArrayType { ElementType: StructRef } when embeddedStruct != null => embeddedStruct.PackingSize,
             ArrayType a => a.ElementType.Width,
 
             // String = character width
             StringType => isAnsi ? 1 : 2,
 
             // Embedded struct = packing size of the embedded struct
-            StructRef when embeddedStruct != null
-                => embeddedStruct.PackingSize,
+            StructRef when embeddedStruct != null => embeddedStruct.PackingSize,
+
+            // System.Guid aligns to 4 (its largest member is the 4-byte Data1), matching
+            // the real Win32 GUID and the Guid.ahk fixture.
+            StructRef { FQN: "System.Guid" } => 4,
 
             // Everything else = field size
-            _ => fieldSize
+            _ => fieldSize,
         };
     }
 
@@ -301,7 +352,11 @@ public sealed class FieldExtractor
     /// Port of AhkStructMember.GetFlags.
     /// </summary>
     private static MemberFlags ComputeFieldFlags(
-        FieldAttrs attrs, string fieldName, ResolvedType resolvedType, StructType? embeddedStruct)
+        FieldAttrs attrs,
+        string fieldName,
+        ResolvedType resolvedType,
+        StructType? embeddedStruct
+    )
     {
         MemberFlags flags = attrs.Flags; // Already has Deprecated, Reserved, NativeBitField
 
@@ -313,7 +368,7 @@ public sealed class FieldExtractor
         {
             StructRef s => s.Name,
             ArrayType { ElementType: StructRef s } => s.Name,
-            _ => ""
+            _ => "",
         };
 
         if (typeName.EndsWith("_e__Union") || (embeddedStruct?.IsUnion ?? false))

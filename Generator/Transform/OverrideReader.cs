@@ -40,53 +40,71 @@ public sealed class OverrideReader
 
         var watch = Stopwatch.StartNew();
 
-        string[] files = [.. Directory.GetFiles(overrideDirectoryPath)
-            .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".yml" or ".yaml")
-            .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase)];
+        string[] files =
+        [
+            .. Directory
+                .GetFiles(overrideDirectoryPath)
+                .Where(f => Path.GetExtension(f).ToLowerInvariant() is ".yml" or ".yaml")
+                .OrderBy(f => Path.GetFileName(f), StringComparer.OrdinalIgnoreCase),
+        ];
 
-        Parallel.ForEach(files, new ParallelOptions { MaxDegreeOfParallelism = _maxParallelism }, path =>
-        {
-            List<OverrideEntryDto> entries;
-            try
+        Parallel.ForEach(
+            files,
+            new ParallelOptions { MaxDegreeOfParallelism = _maxParallelism },
+            path =>
             {
-                entries = deserializer.Deserialize<List<OverrideEntryDto>>(File.ReadAllText(path));
-            }
-            catch (Exception ex) when (ex is YamlException or IOException)
-            {
-                _logger.LogError(ex, "Failed to deserialize override file \"{File}\"", Path.GetFileName(path));
-                return;
-            }
-
-            if (entries == null)
-            {
-                _logger.LogDebug("Override file {File} is empty", Path.GetFileName(path));
-                return;
-            }
-
-            foreach (OverrideEntryDto entry in entries)
-            {
-                if (string.IsNullOrWhiteSpace(entry.Type))
+                List<OverrideEntryDto> entries;
+                try
                 {
-                    _logger.LogWarning("Override entry in {File} missing 'type' field — skipping", Path.GetFileName(path));
-                    continue;
+                    entries = deserializer.Deserialize<List<OverrideEntryDto>>(File.ReadAllText(path));
+                }
+                catch (Exception ex) when (ex is YamlException or IOException)
+                {
+                    _logger.LogError(ex, "Failed to deserialize override file \"{File}\"", Path.GetFileName(path));
+                    return;
                 }
 
-                TypeOverride parsed = ParseEntry(entry, Path.GetFileName(path));
-
-                if (!overrides.TryAdd(parsed.FQN, parsed))
+                if (entries == null)
                 {
-                    _logger.LogWarning("Duplicate override for type {FQN} in {File} — last wins",
-                        parsed.FQN, Path.GetFileName(path));
-                    overrides[parsed.FQN] = parsed;
+                    _logger.LogDebug("Override file {File} is empty", Path.GetFileName(path));
+                    return;
                 }
-            }
 
-            _logger.LogDebug("Loaded {Count} override(s) from {File}", entries.Count, Path.GetFileName(path));
-        });
+                foreach (OverrideEntryDto entry in entries)
+                {
+                    if (string.IsNullOrWhiteSpace(entry.Type))
+                    {
+                        _logger.LogWarning(
+                            "Override entry in {File} missing 'type' field — skipping",
+                            Path.GetFileName(path)
+                        );
+                        continue;
+                    }
+
+                    TypeOverride parsed = ParseEntry(entry, Path.GetFileName(path));
+
+                    if (!overrides.TryAdd(parsed.FQN, parsed))
+                    {
+                        _logger.LogWarning(
+                            "Duplicate override for type {FQN} in {File} — last wins",
+                            parsed.FQN,
+                            Path.GetFileName(path)
+                        );
+                        overrides[parsed.FQN] = parsed;
+                    }
+                }
+
+                _logger.LogDebug("Loaded {Count} override(s) from {File}", entries.Count, Path.GetFileName(path));
+            }
+        );
 
         watch.Stop();
-        _logger.LogInformation("Loaded {Count} override(s) from {Files} file(s) in {Time:F1}s",
-            overrides.Count, files.Length, watch.Elapsed.TotalSeconds);
+        _logger.LogInformation(
+            "Loaded {Count} override(s) from {Files} file(s) in {Time:F1}s",
+            overrides.Count,
+            files.Length,
+            watch.Elapsed.TotalSeconds
+        );
 
         return new OverrideSet(overrides.ToFrozenDictionary());
     }
@@ -119,14 +137,17 @@ public sealed class OverrideReader
                     foreach (var (paramName, paramDto) in methodDto.Parameters)
                     {
                         ParameterFlags addFlags = ParseParameterFlags(
-                            paramDto.AddAttributes, fileName, entry.Type!, methodName, paramName);
+                            paramDto.AddAttributes,
+                            fileName,
+                            entry.Type!,
+                            methodName,
+                            paramName
+                        );
                         parameters[paramName] = new ParameterOverride(addFlags);
                     }
                 }
 
-                methods[methodName] = new MethodOverride(
-                    methodDto.Skip ?? false,
-                    parameters);
+                methods[methodName] = new MethodOverride(methodDto.Skip ?? false, parameters);
             }
         }
 
@@ -139,13 +160,21 @@ public sealed class OverrideReader
             {
                 if (string.IsNullOrWhiteSpace(addDto.From) || string.IsNullOrWhiteSpace(addDto.Name))
                 {
-                    _logger.LogWarning("add-methods entry in {File} for {Type} missing 'from' or 'name' — skipping",
-                        fileName, entry.Type);
+                    _logger.LogWarning(
+                        "add-methods entry in {File} for {Type} missing 'from' or 'name' — skipping",
+                        fileName,
+                        entry.Type
+                    );
                     continue;
                 }
                 addMethods.Add(new AddMethodRef(addDto.From, addDto.Name));
             }
         }
+
+        // Parse value-accessor
+        ValueAccessorOverride? valueAccessor = null;
+        if (entry.ValueAccessor is { } va && (va.Getter is not null || va.SetterCoerce is not null))
+            valueAccessor = new ValueAccessorOverride(va.Getter, va.SetterCoerce);
 
         return new TypeOverride(
             FQN: entry.Type!,
@@ -153,10 +182,17 @@ public sealed class OverrideReader
             StructSizeField: entry.StructSizeField,
             Fields: fields,
             Methods: methods,
-            AddMethods: addMethods);
+            AddMethods: addMethods,
+            ValueAccessor: valueAccessor
+        );
     }
 
-    private MemberFlags ParseMemberFlags(List<string>? attributeNames, string fileName, string typeFqn, string memberName)
+    private MemberFlags ParseMemberFlags(
+        List<string>? attributeNames,
+        string fileName,
+        string typeFqn,
+        string memberName
+    )
     {
         if (attributeNames is null or { Count: 0 })
             return MemberFlags.None;
@@ -167,14 +203,24 @@ public sealed class OverrideReader
             if (Enum.TryParse<MemberFlags>(name, ignoreCase: true, out var flag))
                 result |= flag;
             else
-                _logger.LogWarning("Unknown MemberFlags attribute '{Name}' for {Type}.{Member} in {File}",
-                    name, typeFqn, memberName, fileName);
+                _logger.LogWarning(
+                    "Unknown MemberFlags attribute '{Name}' for {Type}.{Member} in {File}",
+                    name,
+                    typeFqn,
+                    memberName,
+                    fileName
+                );
         }
         return result;
     }
 
-    private ParameterFlags ParseParameterFlags(List<string>? attributeNames, string fileName,
-        string typeFqn, string methodName, string paramName)
+    private ParameterFlags ParseParameterFlags(
+        List<string>? attributeNames,
+        string fileName,
+        string typeFqn,
+        string methodName,
+        string paramName
+    )
     {
         if (attributeNames is null or { Count: 0 })
             return ParameterFlags.None;
@@ -185,8 +231,14 @@ public sealed class OverrideReader
             if (Enum.TryParse<ParameterFlags>(name, ignoreCase: true, out var flag))
                 result |= flag;
             else
-                _logger.LogWarning("Unknown ParameterFlags attribute '{Name}' for {Type}.{Method}.{Param} in {File}",
-                    name, typeFqn, methodName, paramName, fileName);
+                _logger.LogWarning(
+                    "Unknown ParameterFlags attribute '{Name}' for {Type}.{Method}.{Param} in {File}",
+                    name,
+                    typeFqn,
+                    methodName,
+                    paramName,
+                    fileName
+                );
         }
         return result;
     }
@@ -212,6 +264,18 @@ public sealed class OverrideReader
 
         [YamlMember(Alias = "add-methods", ApplyNamingConventions = false)]
         public List<AddMethodDto>? AddMethods { get; set; }
+
+        [YamlMember(Alias = "value-accessor", ApplyNamingConventions = false)]
+        public ValueAccessorDto? ValueAccessor { get; set; }
+    }
+
+    private class ValueAccessorDto
+    {
+        [YamlMember(Alias = "getter", ApplyNamingConventions = false)]
+        public string? Getter { get; set; }
+
+        [YamlMember(Alias = "setter-coerce", ApplyNamingConventions = false)]
+        public string? SetterCoerce { get; set; }
     }
 
     private class FieldOverrideDto

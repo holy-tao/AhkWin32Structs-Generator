@@ -24,16 +24,23 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
     private readonly TypeDefinition? _resolutionContext;
 
     /// <summary>
-    /// WinRT namespaces that are external to Win32 — treated as pointers.
+    /// List of Win32 namespaces that we will generate
     /// </summary>
-    private static readonly string[] s_excludeNamespaces =
-        ["Windows.UI", "Windows.Foundation", "Windows.Graphics", "Windows.Storage"];
+    private static readonly string[] s_includeNamespaces = ["Windows.Win32", "Windows.Wdk"];
 
     private static readonly string[] s_handleAttrNames =
-        ["RAIIFreeAttribute", "AlsoUsableForAttribute", "InvalidHandleValueAttribute"];
+    [
+        "RAIIFreeAttribute",
+        "AlsoUsableForAttribute",
+        "InvalidHandleValueAttribute",
+    ];
 
-    public SignatureDecoder(MetadataReader reader, MetadataLoader loader, ILogger logger,
-        TypeDefinition? resolutionContext = null)
+    public SignatureDecoder(
+        MetadataReader reader,
+        MetadataLoader loader,
+        ILogger logger,
+        TypeDefinition? resolutionContext = null
+    )
     {
         _reader = reader;
         _loader = loader;
@@ -43,11 +50,10 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
 
     // --- ISignatureTypeProvider implementation ---
 
-    public ResolvedType GetPrimitiveType(PrimitiveTypeCode typeCode)
-        => new PrimitiveType(typeCode.ToString());
+    public ResolvedType GetPrimitiveType(PrimitiveTypeCode typeCode) => new PrimitiveType(typeCode.ToString());
 
-    public ResolvedType GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind)
-        => ClassifyTypeDef(reader, handle);
+    public ResolvedType GetTypeFromDefinition(MetadataReader reader, TypeDefinitionHandle handle, byte rawTypeKind) =>
+        ClassifyTypeDef(reader, handle);
 
     public ResolvedType GetTypeFromReference(MetadataReader reader, TypeReferenceHandle handle, byte rawTypeKind)
     {
@@ -62,8 +68,11 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
                 TypeDefinition nestedTd = _reader.GetTypeDefinition(nestedHandle);
                 if (_reader.StringComparer.Equals(nestedTd.Name, typeName))
                 {
-                    _logger.LogTrace("Resolved nested type {Name} in context {ParentName}",
-                        typeName, _reader.GetString(_resolutionContext.Value.Name));
+                    _logger.LogTrace(
+                        "Resolved nested type {Name} in context {ParentName}",
+                        typeName,
+                        _reader.GetString(_resolutionContext.Value.Name)
+                    );
                     return ClassifyTypeDef(_reader, nestedHandle);
                 }
             }
@@ -74,7 +83,12 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         return ClassifyTypeDef(targetReader, targetHandle);
     }
 
-    public ResolvedType GetTypeFromSpecification(MetadataReader reader, SignatureGenericContext genericContext, TypeSpecificationHandle handle, byte rawTypeKind)
+    public ResolvedType GetTypeFromSpecification(
+        MetadataReader reader,
+        SignatureGenericContext genericContext,
+        TypeSpecificationHandle handle,
+        byte rawTypeKind
+    )
     {
         TypeSpecification ts = reader.GetTypeSpecification(handle);
         return ts.DecodeSignature(this, genericContext);
@@ -88,18 +102,18 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         bool isString = elementType switch
         {
             PrimitiveType p when p.Name.Equals("Char", StringComparison.OrdinalIgnoreCase) => true,
-            NativeTypedefType n when n.Name is "CHAR" or "WCHAR" or "TCHAR" => true,
+            NativeTypedefRef n when n.Name is "CHAR" or "WCHAR" or "TCHAR" => true,
             // SByte that comes from a CHAR typedef — in Win32Metadata, CHAR is NativeTypedef over SByte,
-            // so by the time we see it here it's already a NativeTypedefType, not raw SByte.
-            _ => false
+            // so by the time we see it here it's already a NativeTypedefRef, not raw SByte.
+            _ => false,
         };
 
         if (isString)
         {
             StringEncoding encoding = elementType switch
             {
-                NativeTypedefType n when n.Name is "CHAR" => StringEncoding.Ansi,
-                _ => StringEncoding.Unicode
+                NativeTypedefRef n when n.Name is "CHAR" => StringEncoding.Ansi,
+                _ => StringEncoding.Unicode,
             };
             return new StringType(length, encoding);
         }
@@ -107,29 +121,26 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         return new ArrayType(elementType, length);
     }
 
-    public ResolvedType GetPointerType(ResolvedType elementType)
-        => new PointerType(elementType);
+    public ResolvedType GetPointerType(ResolvedType elementType) => new PointerType(elementType);
 
-    public ResolvedType GetByReferenceType(ResolvedType elementType)
-        => new PointerType(elementType);
+    public ResolvedType GetByReferenceType(ResolvedType elementType) => new PointerType(elementType);
 
-    public ResolvedType GetSZArrayType(ResolvedType elementType)
-        => throw new NotSupportedException("SZARRAY not supported in Win32Metadata");
+    public ResolvedType GetSZArrayType(ResolvedType elementType) =>
+        throw new NotSupportedException("SZARRAY not supported in Win32Metadata");
 
-    public ResolvedType GetGenericInstantiation(ResolvedType genericType, ImmutableArray<ResolvedType> typeArguments)
-        => new PrimitiveType($"{genericType.DisplayName}<{string.Join(",", typeArguments.Select(t => t.DisplayName))}>");
+    public ResolvedType GetGenericInstantiation(ResolvedType genericType, ImmutableArray<ResolvedType> typeArguments) =>
+        new PrimitiveType($"{genericType.DisplayName}<{string.Join(",", typeArguments.Select(t => t.DisplayName))}>");
 
-    public ResolvedType GetGenericMethodParameter(SignatureGenericContext genericContext, int index)
-        => new PrimitiveType($"!!{index}");
+    public ResolvedType GetGenericMethodParameter(SignatureGenericContext genericContext, int index) =>
+        new PrimitiveType($"!!{index}");
 
-    public ResolvedType GetGenericTypeParameter(SignatureGenericContext genericContext, int index)
-        => new PrimitiveType($"!{index}");
+    public ResolvedType GetGenericTypeParameter(SignatureGenericContext genericContext, int index) =>
+        new PrimitiveType($"!{index}");
 
-    public ResolvedType GetModifiedType(ResolvedType modifier, ResolvedType unmodifiedType, bool isRequired)
-        => unmodifiedType;
+    public ResolvedType GetModifiedType(ResolvedType modifier, ResolvedType unmodifiedType, bool isRequired) =>
+        unmodifiedType;
 
-    public ResolvedType GetPinnedType(ResolvedType elementType)
-        => elementType;
+    public ResolvedType GetPinnedType(ResolvedType elementType) => elementType;
 
     public ResolvedType GetFunctionPointerType(MethodSignature<ResolvedType> signature)
     {
@@ -145,9 +156,12 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
     /// Convenience wrapper that creates a SignatureDecoder and invokes DecodeSignature.
     /// </summary>
     public static (ResolvedType ReturnType, ResolvedType[] ParameterTypes) DecodeMethodSignature(
-        MetadataReader reader, MethodDefinition methodDef,
-        MetadataLoader loader, ILogger logger,
-        TypeDefinition? resolutionContext = null)
+        MetadataReader reader,
+        MethodDefinition methodDef,
+        MetadataLoader loader,
+        ILogger logger,
+        TypeDefinition? resolutionContext = null
+    )
     {
         var decoder = new SignatureDecoder(reader, loader, logger, resolutionContext);
 #pragma warning disable CS8620 // Argument nullability — Win32Metadata has no generics
@@ -165,15 +179,23 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
     internal ResolvedType ClassifyTypeDef(MetadataReader reader, TypeDefinitionHandle tdHandle)
     {
         TypeDefinition td = reader.GetTypeDefinition(tdHandle);
-        string typeName = reader.GetString(td.Name);
+        string rawName = reader.GetString(td.Name);
         string typeNamespace = reader.GetString(td.Namespace);
-        string fqn = $"{typeNamespace}.{typeName}";
+        string fqn = $"{typeNamespace}.{rawName}";
+        // *Ref.Name carries the display name - strip the generator-injected
+        // _e__Struct / _e__Union suffixes so it matches DeconflictName on the
+        // referent. FQN stays as the metadata-form for registry lookups.
+        string typeName = StripGeneratedSuffix(rawName);
 
-        // Exclude WinRT namespaces — treat as pointer
-        if (s_excludeNamespaces.Any(typeNamespace.StartsWith))
+        // Exclude non-Win32 / Wdk namespaces - treat these as opaque pointers.
+        // These are mostly WinRT types, but include a handful of System types.
+        if (
+            !string.IsNullOrWhiteSpace(typeNamespace) // Anonymous types don't have namespaces, and should be included
+            && !s_includeNamespaces.Any(typeNamespace.StartsWith)
+            && !typeName.Equals("Guid") // Special case System.Guid
+        )
         {
-            _logger.LogWarning("Treating external type {Namespace}.{TypeName} as pointer",
-                typeNamespace, typeName);
+            _logger.LogWarning("Treating external type '{Namespace}.{TypeName}' as pointer", typeNamespace, typeName);
             return new PointerType(null);
         }
 
@@ -187,8 +209,11 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         if (IsNonHandleNativeTypedef(reader, td))
         {
             ResolvedType resolved = DecodeNativeTypedef(reader, td);
-            _logger.LogDebug("Decoded NativeTypedef {Name} → {UnderlyingType}",
-                typeName, ((NativeTypedefType)resolved).Underlying.DisplayName);
+            _logger.LogTrace(
+                "Decoded NativeTypedef {Name} → {UnderlyingType}",
+                typeName,
+                ((NativeTypedefRef)resolved).Underlying.DisplayName
+            );
             return resolved;
         }
 
@@ -196,38 +221,38 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         if (IsEnum(reader, tdHandle))
         {
             string underlying = GetEnumUnderlyingType(reader, tdHandle);
-            _logger.LogTrace("Resolved {Namespace}.{TypeName} → EnumRef ({FQN})",
-                typeNamespace, typeName, fqn);
+            _logger.LogTrace("Resolved {Namespace}.{TypeName} → EnumRef ({FQN})", typeNamespace, typeName, fqn);
             return new EnumRef(fqn, typeName, new PrimitiveType(underlying));
         }
 
         // Function pointer (via UnmanagedFunctionPointerAttribute)
         if (IsFunctionPointer(reader, td))
         {
-            _logger.LogTrace("Resolved {Namespace}.{TypeName} → FunctionPointerType ({FQN})",
-                typeNamespace, typeName, fqn);
+            _logger.LogTrace(
+                "Resolved {Namespace}.{TypeName} → FunctionPointerType ({FQN})",
+                typeNamespace,
+                typeName,
+                fqn
+            );
             return new FunctionPointerType(typeName, "");
         }
 
         // COM interface
         if (IsComInterface(reader, tdHandle))
         {
-            _logger.LogTrace("Resolved {Namespace}.{TypeName} → ComRef ({FQN})",
-                typeNamespace, typeName, fqn);
+            _logger.LogTrace("Resolved {Namespace}.{TypeName} → ComRef ({FQN})", typeNamespace, typeName, fqn);
             return new ComRef(fqn, typeName);
         }
 
         // Handle (single field + handle attributes)
         if (IsHandle(reader, td))
         {
-            _logger.LogTrace("Resolved {Namespace}.{TypeName} → HandleRef ({FQN})",
-                typeNamespace, typeName, fqn);
+            _logger.LogTrace("Resolved {Namespace}.{TypeName} → HandleRef ({FQN})", typeNamespace, typeName, fqn);
             return new HandleRef(fqn, typeName);
         }
 
         // Default: struct reference
-        _logger.LogTrace("Resolved {Namespace}.{TypeName} → StructRef ({FQN})",
-            typeNamespace, typeName, fqn);
+        _logger.LogTrace("Resolved {Namespace}.{TypeName} → StructRef ({FQN})", typeNamespace, typeName, fqn);
         return new StructRef(fqn, typeName);
     }
 
@@ -243,8 +268,8 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         if (baseHandle.Kind == HandleKind.TypeReference)
         {
             TypeReference tr = reader.GetTypeReference((TypeReferenceHandle)baseHandle);
-            return reader.StringComparer.Equals(tr.Namespace, "System") &&
-                   reader.StringComparer.Equals(tr.Name, "Enum");
+            return reader.StringComparer.Equals(tr.Namespace, "System")
+                && reader.StringComparer.Equals(tr.Name, "Enum");
         }
         return false;
     }
@@ -265,15 +290,15 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
                 blob.ReadByte(); // field signature header
                 return blob.ReadCompressedInteger() switch
                 {
-                    0x04 => "SByte",
-                    0x05 => "Byte",
+                    0x04 => "Int8",
+                    0x05 => "UInt8",
                     0x06 => "Int16",
                     0x07 => "UInt16",
                     0x08 => "Int32",
                     0x09 => "UInt32",
                     0x0A => "Int64",
-                    0x0B => "UInt64",
-                    var code => throw new NotSupportedException($"Unknown enum underlying type code: 0x{code:X2}")
+                    0x0B => "Int64", // Ahk has no explicit UInt64 type
+                    var code => throw new NotSupportedException($"Unknown enum underlying type code: 0x{code:X2}"),
                 };
             }
         }
@@ -301,10 +326,12 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
             string baseName = td.BaseType.Kind switch
             {
                 HandleKind.TypeReference => reader.GetString(
-                    reader.GetTypeReference((TypeReferenceHandle)td.BaseType).Name),
+                    reader.GetTypeReference((TypeReferenceHandle)td.BaseType).Name
+                ),
                 HandleKind.TypeDefinition => reader.GetString(
-                    reader.GetTypeDefinition((TypeDefinitionHandle)td.BaseType).Name),
-                _ => ""
+                    reader.GetTypeDefinition((TypeDefinitionHandle)td.BaseType).Name
+                ),
+                _ => "",
             };
 
             if (baseName is "IUnknown" or "IDispatch")
@@ -325,7 +352,8 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
     /// </summary>
     internal static bool IsFunctionPointer(MetadataReader reader, TypeDefinition td)
     {
-        return AttributeReader.GetAllAttributeNames(reader, td.GetCustomAttributes())
+        return AttributeReader
+            .GetAllAttributeNames(reader, td.GetCustomAttributes())
             .Contains("UnmanagedFunctionPointerAttribute");
     }
 
@@ -340,8 +368,10 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
 
         foreach (string attr in attrs)
         {
-            if (attr == "NativeTypedefAttribute") hasNativeTypedef = true;
-            if (s_handleAttrNames.Contains(attr)) hasHandleAttr = true;
+            if (attr == "NativeTypedefAttribute")
+                hasNativeTypedef = true;
+            if (s_handleAttrNames.Contains(attr))
+                hasHandleAttr = true;
         }
 
         return hasNativeTypedef && !hasHandleAttr && td.GetFields().Count == 1;
@@ -355,18 +385,17 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         if (td.GetFields().Count != 1)
             return false;
 
-        return AttributeReader.GetAllAttributeNames(reader, td.GetCustomAttributes())
-            .Any(s_handleAttrNames.Contains);
+        return AttributeReader.GetAllAttributeNames(reader, td.GetCustomAttributes()).Any(s_handleAttrNames.Contains);
     }
 
     /// <summary>
     /// Decode a NativeTypedef's underlying type by reading its single field.
     /// </summary>
-    private NativeTypedefType DecodeNativeTypedef(MetadataReader reader, TypeDefinition td)
+    private NativeTypedefRef DecodeNativeTypedef(MetadataReader reader, TypeDefinition td)
     {
-        string typeName = reader.GetString(td.Name);
+        string rawName = reader.GetString(td.Name);
         string typeNamespace = reader.GetString(td.Namespace);
-        string fqn = $"{typeNamespace}.{typeName}";
+        string fqn = $"{typeNamespace}.{rawName}";
 
         FieldDefinitionHandle fieldHandle = td.GetFields().First();
         FieldDefinition fieldDef = reader.GetFieldDefinition(fieldHandle);
@@ -375,6 +404,22 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
         var innerDecoder = new SignatureDecoder(reader, _loader, _logger, td);
         ResolvedType underlying = fieldDef.DecodeSignature(innerDecoder, new SignatureGenericContext());
 
-        return new NativeTypedefType(typeName, fqn, underlying);
+        return new NativeTypedefRef(StripGeneratedSuffix(rawName), fqn, underlying);
+    }
+
+    /// <summary>
+    /// Strip Win32 metadata's generated suffixes (_e__Struct / _e__Union) from a
+    /// type name. The stripped form is the display name; the original (with
+    /// suffix) remains in the FQN for registry lookup.
+    /// </summary>
+    internal static string StripGeneratedSuffix(string name)
+    {
+        const string structSuffix = "_e__Struct";
+        const string unionSuffix = "_e__Union";
+        if (name.EndsWith(structSuffix))
+            return name[..^structSuffix.Length];
+        if (name.EndsWith(unionSuffix))
+            return name[..^unionSuffix.Length];
+        return name;
     }
 }

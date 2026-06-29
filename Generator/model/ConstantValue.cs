@@ -54,9 +54,7 @@ public sealed record StructConstantValue(
     IReadOnlyList<StructFieldInit>? FieldInits
 ) : ConstantValue
 {
-    public override string AsAhk => IsHandle
-        ? $"{StructName}({{Value: {HandleValue}}}, false)"
-        : StructName;
+    public override string AsAhk => IsHandle ? $"{StructName}({{Value: {HandleValue}}}, false)" : StructName;
 
     public override string AhkTypeName => StructName;
 }
@@ -65,8 +63,8 @@ public sealed record StructConstantValue(
 /// A single field initialization entry for a struct constant.
 /// </summary>
 public sealed record StructFieldInit(
-    /// <summary>Dot-separated path to the field (e.g., "value.subStruct.field").</summary>
-    string FieldPath,
+    /// <summary>Path to the field (e.g., ["subStruct", "field"]).</summary>
+    IReadOnlyList<string> FieldPath,
     /// <summary>Pre-formatted AHK value string.</summary>
     string Value,
     /// <summary>The kind of initialization.</summary>
@@ -84,8 +82,13 @@ public enum StructFieldInitKind
 {
     /// <summary>Simple assignment: prefix.field := value</summary>
     Direct,
+
     /// <summary>Array element: prefix.field[index] := value</summary>
     ArrayElement,
+
+    /// <summary> A GUID embedded in the struct.</summary>
+    Guid,
+
     /// <summary>GUID pointer: create static guid, assign .ptr</summary>
-    GuidPointer
+    GuidPointer,
 }

@@ -55,12 +55,15 @@ public class MethodMember
         get
         {
             if (!IsVariadic)
-                throw new InvalidOperationException($"Cannot get variadic param name for non-variadic method {Namespace}.{Name}");
+                throw new InvalidOperationException(
+                    $"Cannot get variadic param name for non-variadic method {Namespace}.{Name}"
+                );
 
             var paramNames = new HashSet<string>(
                 Parameters.Skip(1).Select(p => p.Name),
-                StringComparer.OrdinalIgnoreCase);
-            
+                StringComparer.OrdinalIgnoreCase
+            );
+
             string name = "args";
             while (paramNames.Contains(name))
                 name = "_" + name;
@@ -68,6 +71,14 @@ public class MethodMember
             return name;
         }
     }
+
+    /// <summary>
+    /// Returns an IEnumerable of all the method's input parameters
+    /// </summary>
+    public IEnumerable<ParameterMember> InputParameters =>
+        Parameters
+            .Skip(1) // Skip the return type
+            .Where(p => !p.IsReserved && p != OutputParameter);
 
     /// <summary>
     /// All parameters, including the return value at index 0.
@@ -82,6 +93,8 @@ public class MethodMember
     /// Pre-determined during extraction.
     /// </summary>
     public ParameterMember? OutputParameter { get; init; }
+
+    public Architecture SupportedArchitecture { get; init; }
 
     // --- Inline documentation ---
 
@@ -106,8 +119,7 @@ public class MethodMember
     // --- Pre-computed flags ---
 
     /// <summary>Whether the function has a non-void return value.</summary>
-    public bool HasReturnValue => Parameters.Count > 0
-        && Parameters[0].Type is not PrimitiveType { Name: "Void" };
+    public bool HasReturnValue => Parameters.Count > 0 && Parameters[0].Type is not PrimitiveType { Name: "Void" };
 
     /// <summary>
     /// Whether this method's HRESULT return should throw automatically.
@@ -116,7 +128,7 @@ public class MethodMember
     public bool ShouldThrowOnHResult { get; init; }
 
     /// <summary>
-    /// FQNs of types referenced by this method (for #Include generation).
+    /// Types and functions referenced by this method (for #Include / #Import generation).
     /// </summary>
-    public IReadOnlyList<string> ReferencedTypes { get; init; } = [];
+    public ImportCollection Imports { get; init; } = new();
 }

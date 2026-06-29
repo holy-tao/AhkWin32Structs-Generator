@@ -1,0 +1,11 @@
+# Win32 BOOL is a 4-byte integer that is conventionally 0/1 but accepts any nonzero as true.
+# Restore a __value getter and normalize on assignment so the v2.1 wrapper reads and writes like
+# an actual boolean: `b := 5` stores 1, and reading `b` yields 1.
+- type: Windows.Win32.Foundation.BOOL
+  value-accessor:
+    getter: "!!$field"
+    setter-coerce: "!!$value"
+- type: Windows.Win32.Foundation.BOOLEAN
+  value-accessor:
+    getter: "!!$field"
+    setter-coerce: "!!$value"

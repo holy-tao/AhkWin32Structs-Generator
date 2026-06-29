@@ -59,8 +59,11 @@ Applies modifications to the IR before code generation. Transforms run in order:
 
 1. **Overrides** — YAML-driven one-off corrections (skip types, mark parameters as reserved, set struct-size fields, clone methods between API types). See [Overrides](#overrides).
 2. **Extensions** — YAML-driven code injection (add helper methods, properties, or custom constructors to generated types). See [Extensions](#extensions).
+3. **Cyclic Reference Breaking** - the generator builds the load-time struct dependency graph (value-embed = hard edges, pointer-to-struct = soft edges), runs iterative [Tarjan SCC], and marks every pointer field whose pointee sits in the same non-trivial cluster. We use this graph to break cyclic references during emission which would otherwise prevent the interpreter from loading affected modules.
 
-Both are configured via files in the metadata directory and are applied by mutating the `TypeRegistry` in place. This is the integration point for any manual configuration. Note that reserved name deconfliction happens during *extraction*.
+Overrides and Extensions are configured via files in the metadata directory and are applied by mutating the `TypeRegistry` in place. This is the integration point for any manual configuration. Note that reserved name deconfliction happens during *extraction*.
+
+[Tarjan SCC]: https://en.wikipedia.org/wiki/Tarjan%27s_strongly_connected_components_algorithm
 
 #### Emit
 Walks the `TypeRegistry` and generates `.ahk` files. Each type kind has a dedicated emitter (`EnumEmitter`, `StructEmitter`, `HandleEmitter`, `ApiTypeEmitter`, `ComInterfaceEmitter`). Emission is split into two sub-phases for performance: first, all types are emitted to in-memory strings in parallel; then, files are written to disk with parallel I/O. A `version.ini` file is also written with assembly and package version information, in case consumers want it.
@@ -117,11 +120,15 @@ Extensions are defined in [YAML](https://yaml.org/) files. The generator will re
 
 | Name | Type | Description |
 | ---- | ---- | ----------- |
-| `add-to` | sequence | The fully qualified names of all types to which code must be added
-| `requires` | sequence | The fully qualified names of all types which must be included in generated files for the extension to work. This should include all types required by your extension, even if the types it extends already include them, as this may change in the future. The generator will not produce duplicate `#Include` statements. <br><br>To indicate that *nothing* needs to be imported, specify an empty sequence: `[]` or omit the key.
-| `code` | string | The actual code to add to the class. Oftentimes this can be written directly into the relevant file and copy/pasted into extension YAML without modification. This code is added to the end of the files specified in `add-to` without modification. <br><br> See [yaml multiline strings](https://yaml-multiline.info/) for details on the syntax, or just use the pipe (`\|`) and don't worry about it. 
+| `add-to` | sequence | The fully qualified names of all types to which code must be added.
+| `imports` | mapping | FQN-keyed map of types/functions the extension references. A `null` or empty value means "whole-file include" (the same effect as the old `requires:` list). A non-empty list of names means "import those specific functions from this `Apis` container"; in v2.1 this emits `#Import "..." { Name1, Name2 }` merged with whatever imports the type already needed, and in v2.0 it falls back to a whole-file include of the `Apis` file. Omit the key entirely if no extra imports are needed.
+| `code` | mapping | A map with required keys `v20` and `v21`. The value for each is either a string of AHK code or the literal `skip` to opt out for that target version. At least one version must be a real code block. <br><br> When v2.0 and v2.1 share the same body, use a YAML anchor: `v20: &shared \|\n  ...\nv21: *shared`. <br><br> See [yaml multiline strings](https://yaml-multiline.info/) for details on the syntax, or just use the pipe (`\|`) and don't worry about it.
 
 A single extension file can only include one extension definition, and said definition can apply to as many types as you want. Note it is not currently possible to extend existing methods like `__New`, though you can add such methods to types that don't already have them.
+
+##### Why per-version `code:`
+
+In v2.0 a free function from another namespace is reached through its `Apis` class — `Foundation.SysStringLen(this)`. In v2.1 the same function is `#Import`ed by name and called bare — `SysStringLen(this)`. Both emitters run against the same extension definition, so the body has to be supplied per target version. If the two bodies are textually identical (because the extension only touches the type's own members or builtins), the YAML anchor pattern lets you write the body once.
 
 <details>
 
@@ -130,20 +137,21 @@ A single extension file can only include one extension definition, and said defi
 ```yaml
 add-to:
   - Windows.Win32.Foundation.BSTR
-requires:
-  - Windows.Win32.Foundation.Apis
-code: |
+
+imports:
+  Windows.Win32.Foundation.Apis:
+    - SysStringLen
+    - SysStringByteLen
+    - SysAllocString
+    - SysReallocString
+
+code:
+  v20: |
     /**
      * @readonly The length of the allocated string in characters, not including the null terminator
      * @type {Integer}
      */
     length => Foundation.SysStringLen(this)
-
-    /**
-     * @readonly The length of the allocated string in bytes, not including the null terminator
-     * @type {Integer}
-     */
-    byteLength => Foundation.SysStringByteLen(this)
 
     /**
      * Creates a new BSTR from an existing AHK string
@@ -153,29 +161,58 @@ code: |
         return Foundation.SysAllocString(str)
     }
 
-    /**
-     * Changes the contents of the BSTR, resizing it if necessary
-     * @param {String} str the new contents of the BSTR
-     */
-    ReAlloc(str){
-        result := Foundation.SysReallocString(this, str)
-        if(result == 0)
-            throw MemoryError("Not enough memory to reallocate string")
+    ; ... etc.
+  v21: |
+    length => SysStringLen(this)
+
+    static Alloc(str){
+        return SysAllocString(str)
     }
 
-    /**
-     * Gets the value of the BSTR as a native AHK string
-     * @returns {String}
-     */
-    ToString(){
-        return StrGet(this.value, this.length, "UTF-16")
+    ; ... etc.
+```
+
+</details>
+
+<details>
+
+<summary><b>Example: shared body via YAML anchor (no cross-namespace calls)</b></summary>
+
+```yaml
+add-to:
+  - Windows.Win32.Foundation.POINT
+  - Windows.Win32.Foundation.POINTL
+
+code:
+  v20: &shared |
+    Value => NumGet(this, "uint64")
+
+    ToString() {
+        return Format("({1}, {2})", this.x, this.y)
     }
+  v21: *shared
+```
+
+</details>
+
+<details>
+
+<summary><b>Example: opting out of one version</b></summary>
+
+```yaml
+add-to:
+  - Windows.Win32.Some.Type
+
+code:
+  v20: |
+    ; ... v2.0-only helper
+  v21: skip
 ```
 
 </details>
 
 #### Aliases
-The generator suports the following aliases, using the `$Name` convention (like bash or PowerShell - this is because `%%` is valid AHK syntax and would make parsing a nightmare). All aliases are case-sensitive.
+The generator suports the following aliases, using the `$Name` convention (like bash or PowerShell - this is because `%name%` is valid AHK syntax and would make parsing a nightmare). All aliases are case-sensitive.
 
 
 Alias | Scope | Description
@@ -199,6 +236,7 @@ Each file is a YAML list of type-scoped entries. The `type` key is always requir
 | `methods.<name>.skip` | method | `true` to remove a single method from an `Apis` type. |
 | `methods.<name>.parameters.<name>.add-attributes` | parameter | List of `ParameterFlags` to add (e.g., `Reserved`). |
 | `add-methods` | type (Apis) | List of `{from, name}` entries that clone a method from another `Apis` type into this one. Useful when a function logically belongs in multiple namespaces. |
+| `value-accessor` | type (native typedef or handle) | Customizes the generated `__value` accessor. `getter` is an AHK expression that restores a `__value` getter (omit to keep the default no-getter behavior that preserves type identity); `setter-coerce` is an AHK expression applied to a raw incoming value in the setter's else branch. Aliases: `$field` -> `this.<backingField>`, `$value` -> the setter's `value`. The instance-unwrap branch and `[AlsoUsableFor]` checks are emitted unchanged. **v2.1 emission only** (native typedefs are v2.1-only; v2.0 handles are class-based with no `__value`, so the keys are inert there). |
 
 <details>
 
@@ -240,6 +278,39 @@ Each file is a YAML list of type-scoped entries. The `type` key is always requir
 - type: Windows.Win32.UI.WindowsAndMessaging.SOME_STRUCT
   struct-size-field: lStructSize
 ```
+
+</details>
+
+<details>
+
+<summary><b>Example: make BOOL read and write like a boolean</b></summary>
+
+```yaml
+# BOOL is a 4-byte integer; normalize it to 0/1 on read and write.
+- type: Windows.Win32.Foundation.BOOL
+  value-accessor:
+    getter: "!!$field"            # get => !!this.value
+    setter-coerce: "!!$value"     # else branch: this.value := !!value
+```
+
+This emits:
+
+```ahk
+__value {
+    get => !!this.value
+    set {
+        if (value is BOOL)
+            this.value := value.value
+        else
+            this.value := !!value
+    }
+}
+```
+
+A `getter` that changes the read *type* (e.g. a scalar `CHAR` with `Chr($field)` would read back a
+string) also changes what DllCall marshals when the instance is passed by value — so prefer
+`setter-coerce` alone for character types and reserve `getter` for integer-valued types like `BOOL`
+and `VARIANT_BOOL`.
 
 </details>
 

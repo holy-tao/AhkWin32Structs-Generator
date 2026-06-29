@@ -1,15 +1,22 @@
 add-to:
   - Windows.Win32.Foundation.PWSTR
-requires: []
-code: |
+
+code:
+  v20: &shared |
+    /**
+     * Extracts the String pointed at by this `PWSTR` to an AutoHotkey string
+     * @returns {String}
+     */
+    ToString() => StrGet(this.value, "UTF-16")
+
     /**
      * Creates and returns a `Buffer` containing a copy of `str` in UTF-16 encoding which can be passed
-     * as an argument to functins requiring `PWSTR`s.
+     * as an argument to functions requiring `PWSTR`s.
      * @param {String} str the string to encode
      * @param {Integer} buffLen the length of the buffer to encode the string in. If unset, the returned
      *      buffer is exactly the number of bytes required to fit `str`. This can be used if the function
      *      you intend to call will modify the string in-place.
-     * @returns {Buffer} a `Buffer` containing `str` encoded in UTF-16  
+     * @returns {Buffer} a `Buffer` containing `str` encoded in UTF-16
      */
     static Alloc(str, buffLen?) {
         if(!(str is String))
@@ -28,3 +35,4 @@ code: |
         StrPut(str, buf, "UTF-16")
         return buf
     }
+  v21: *shared

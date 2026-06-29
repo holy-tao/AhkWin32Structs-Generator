@@ -1,0 +1,9 @@
+# Scalar CHAR (a single ANSI byte) — let `c := "a"` work by storing the character's ordinal, while
+# still accepting a raw integer. No getter is restored: a scalar CHAR keeps its identity so it
+# marshals as its byte value when passed by value to DllCall (a Chr() getter would marshal a string).
+#
+# This is independent of metadata/extensions/CHAR.yml, which gives CHAR[N] *array* fields their own
+# StrPut/StrGet __value via runtime DefineProp.
+- type: Windows.Win32.Foundation.CHAR
+  value-accessor:
+    setter-coerce: "$value is String ? Ord($value) : $value"

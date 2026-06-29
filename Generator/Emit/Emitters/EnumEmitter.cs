@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model.Types;
 
 /// <summary>
@@ -54,8 +55,8 @@ public sealed class EnumEmitter : ITypeEmitter
 
     private static void EmitImports(AhkWriter w, EnumType enumType)
     {
-        // Enum referenced types come only from extensions
-        foreach (string import in enumType.ReferencedTypes.Distinct())
+        // Enum imports come only from extensions
+        foreach (string import in enumType.Imports.GetIncludeTargets())
         {
             w.Include(ImportResolver.GetIncludePath(enumType.Namespace, import));
         }
@@ -63,14 +64,16 @@ public sealed class EnumEmitter : ITypeEmitter
 
     private static void EmitExtensions(AhkWriter w, EnumType enumType)
     {
-        if (enumType.Extensions.Count == 0) return;
+        if (enumType.Extensions.Count == 0)
+            return;
 
         foreach (var ext in enumType.Extensions)
         {
-            // Replace tokens (only $Class for now)
-            string code = ext.Code.Replace("$Class", enumType.Name);
+            if (!ext.CodeByVersion.TryGetValue(AhkVersion.v20, out string? rawCode))
+                continue;
 
-            // Indent extension code to current level (inside class body)
+            string code = rawCode.Replace("$Class", enumType.Name);
+
             string indentStr = w.CurrentIndent;
             string indented = indentStr + code.Replace("\n", "\n" + indentStr);
             w.RawLine(indented);

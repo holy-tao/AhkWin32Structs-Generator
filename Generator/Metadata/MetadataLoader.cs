@@ -15,7 +15,10 @@ using Microsoft.Extensions.Logging;
 public sealed class MetadataLoader : IDisposable
 {
     private readonly ConcurrentDictionary<string, (PEReader PeReader, MetadataReader Reader)> _primaryAssemblies = [];
-    private readonly ConcurrentDictionary<string, (PEReader PeReader, MetadataReader Reader)> _externalAssemblies = [];
+    private readonly ConcurrentDictionary<
+        string,
+        Lazy<(PEReader PeReader, MetadataReader Reader)>
+    > _externalAssemblies = [];
     private readonly Dictionary<string, string> _packageVersions = [];
     private readonly string _metadataDir;
     private readonly ILogger<MetadataLoader> _logger;
@@ -37,15 +40,18 @@ public sealed class MetadataLoader : IDisposable
 
         LoadPackageVersions();
 
-        var winmdPaths = Directory.EnumerateFiles(_metadataDir)
+        var winmdPaths = Directory
+            .EnumerateFiles(_metadataDir)
             .Where(path => Path.GetExtension(path).Equals(".winmd", StringComparison.OrdinalIgnoreCase));
 
         foreach (string path in winmdPaths)
         {
             string fileName = Path.GetFileNameWithoutExtension(path);
 
-            if (assemblyFilter is { Length: > 0 } &&
-                !assemblyFilter.Any(f => fileName.Equals(f, StringComparison.OrdinalIgnoreCase)))
+            if (
+                assemblyFilter is { Length: > 0 }
+                && !assemblyFilter.Any(f => fileName.Equals(f, StringComparison.OrdinalIgnoreCase))
+            )
             {
                 _logger.LogWarning("Assembly {AssemblyName} skipped by filter", fileName);
                 continue;
@@ -62,13 +68,20 @@ public sealed class MetadataLoader : IDisposable
 
             string packageVersion = ResolvePackageVersion(name);
             int typeCount = reader.TypeDefinitions.Count;
-            _logger.LogInformation("Loaded {AssemblyName} (package {PackageVersion}, {TypeCount} types)",
-                name, packageVersion, typeCount);
+            _logger.LogInformation(
+                "Loaded {AssemblyName} (package {PackageVersion}, {TypeCount} types)",
+                name,
+                packageVersion,
+                typeCount
+            );
         }
 
         watch.Stop();
-        _logger.LogInformation("Loaded {Count} primary assemblies in {Elapsed:F1}s",
-            _primaryAssemblies.Count, watch.Elapsed.TotalSeconds);
+        _logger.LogInformation(
+            "Loaded {Count} primary assemblies in {Elapsed:F1}s",
+            _primaryAssemblies.Count,
+            watch.Elapsed.TotalSeconds
+        );
     }
 
     /// <summary>
@@ -104,8 +117,10 @@ public sealed class MetadataLoader : IDisposable
             ? assemblyName[..^".winmd".Length]
             : assemblyName;
 
-        if (s_assemblyToPackage.TryGetValue(normalized, out string? packageName) &&
-            _packageVersions.TryGetValue(packageName, out string? version))
+        if (
+            s_assemblyToPackage.TryGetValue(normalized, out string? packageName)
+            && _packageVersions.TryGetValue(packageName, out string? version)
+        )
         {
             return version;
         }
@@ -139,7 +154,9 @@ public sealed class MetadataLoader : IDisposable
     /// Returns the matched (MetadataReader, TypeDefinitionHandle) pair.
     /// </summary>
     public (MetadataReader Reader, TypeDefinitionHandle Handle) ResolveTypeReference(
-        MetadataReader sourceReader, TypeReferenceHandle trHandle)
+        MetadataReader sourceReader,
+        TypeReferenceHandle trHandle
+    )
     {
         TypeReference tr = sourceReader.GetTypeReference(trHandle);
         string name = sourceReader.GetString(tr.Name);
@@ -169,12 +186,14 @@ public sealed class MetadataLoader : IDisposable
                 string parentNs = parentReader.GetString(parentTd.Namespace);
                 string parentName = parentReader.GetString(parentTd.Name);
                 throw new TypeLoadException(
-                    $"Could not resolve nested type '{ns}.{name}' under '{parentNs}.{parentName}'");
+                    $"Could not resolve nested type '{ns}.{name}' under '{parentNs}.{parentName}'"
+                );
 
             case HandleKind.AssemblyReference:
                 // Type is in a different assembly, load it if necessary and search there
                 AssemblyReference asmRef = sourceReader.GetAssemblyReference(
-                    (AssemblyReferenceHandle)tr.ResolutionScope);
+                    (AssemblyReferenceHandle)tr.ResolutionScope
+                );
                 string asmName = sourceReader.GetString(asmRef.Name);
                 MetadataReader extReader = ResolveExternalAssembly(asmName);
 
@@ -182,7 +201,8 @@ public sealed class MetadataLoader : IDisposable
 
             default:
                 throw new NotSupportedException(
-                    $"Cannot resolve '{ns}.{name}' — unsupported resolution scope kind '{tr.ResolutionScope.Kind}'");
+                    $"Cannot resolve '{ns}.{name}' — unsupported resolution scope kind '{tr.ResolutionScope.Kind}'"
+                );
         }
     }
 
@@ -191,17 +211,29 @@ public sealed class MetadataLoader : IDisposable
     /// </summary>
     public MetadataReader ResolveExternalAssembly(string assemblyName)
     {
-        if (_externalAssemblies.TryGetValue(assemblyName, out var cached))
-            return cached.Reader;
+        // Check primary assemblies first
+        if (_primaryAssemblies.TryGetValue(assemblyName, out var primary))
+            return primary.Reader;
 
-        // Also check primary assemblies
-        if (_primaryAssemblies.TryGetValue(assemblyName, out cached))
-            return cached.Reader;
+        // Lazy ensures the load delegate runs exactly once per assembly name even
+        // under concurrent access; GetOrAdd's factory may run multiple times but
+        // only one Lazy.Value invocation will actually open the file.
+        var lazy = _externalAssemblies.GetOrAdd(
+            assemblyName,
+            name => new Lazy<(PEReader, MetadataReader)>(
+                () => LoadExternalAssembly(name),
+                LazyThreadSafetyMode.ExecutionAndPublication
+            )
+        );
+        return lazy.Value.Reader;
+    }
 
+    private (PEReader PeReader, MetadataReader Reader) LoadExternalAssembly(string assemblyName)
+    {
         string runtimeDir = RuntimeEnvironment.GetRuntimeDirectory();
-        string sdkRoot = Environment.GetEnvironmentVariable("WindowsSdkDir") ??
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
-                "Windows Kits", "10");
+        string sdkRoot =
+            Environment.GetEnvironmentVariable("WindowsSdkDir")
+            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Windows Kits", "10");
 
         // We search these paths in order. The first assembly that we can load succesfully is returned
         List<string> probePaths =
@@ -257,10 +289,9 @@ public sealed class MetadataLoader : IDisposable
 
             PEReader peReader = new(File.OpenRead(path));
             MetadataReader reader = peReader.GetMetadataReader();
-            _externalAssemblies[assemblyName] = (peReader, reader);
 
-            _logger.LogDebug("Loaded external assembly {AssemblyName} from {Path}", assemblyName, path);
-            return reader;
+            _logger.LogInformation("Loaded external assembly '{AssemblyName}' from '{Path}'", assemblyName, path);
+            return (peReader, reader);
         }
 
         throw new DllNotFoundException($"Failed to load external assembly '{assemblyName}'");
@@ -271,14 +302,16 @@ public sealed class MetadataLoader : IDisposable
     /// following type forwarders (ExportedTypes) if necessary.
     /// </summary>
     private (MetadataReader Reader, TypeDefinitionHandle Handle) FindTypeDefinition(
-        MetadataReader reader, string ns, string name)
+        MetadataReader reader,
+        string ns,
+        string name
+    )
     {
         // Try normal type definitions first
         foreach (TypeDefinitionHandle tdHandle in reader.TypeDefinitions)
         {
             TypeDefinition td = reader.GetTypeDefinition(tdHandle);
-            if (reader.StringComparer.Equals(td.Name, name) &&
-                reader.StringComparer.Equals(td.Namespace, ns))
+            if (reader.StringComparer.Equals(td.Name, name) && reader.StringComparer.Equals(td.Namespace, ns))
             {
                 return (reader, tdHandle);
             }
@@ -288,46 +321,55 @@ public sealed class MetadataLoader : IDisposable
         foreach (ExportedTypeHandle exportedHandle in reader.ExportedTypes)
         {
             ExportedType exported = reader.GetExportedType(exportedHandle);
-            if (reader.StringComparer.Equals(exported.Name, name) &&
-                reader.StringComparer.Equals(exported.Namespace, ns))
+            if (
+                reader.StringComparer.Equals(exported.Name, name)
+                && reader.StringComparer.Equals(exported.Namespace, ns)
+            )
             {
                 return FollowTypeForwarder(reader, exported, ns, name);
             }
         }
 
         string? asmName = reader.GetAssemblyDefinition().GetAssemblyName().Name;
-        throw new TypeLoadException(
-            $"Could not resolve '{ns}.{name}' in assembly '{asmName}'");
+        throw new TypeLoadException($"Could not resolve '{ns}.{name}' in assembly '{asmName}'");
     }
 
     /// <summary>
     /// Follow a type forwarder chain to find the actual TypeDefinition.
     /// </summary>
     private (MetadataReader Reader, TypeDefinitionHandle Handle) FollowTypeForwarder(
-        MetadataReader reader, ExportedType exported, string ns, string name)
+        MetadataReader reader,
+        ExportedType exported,
+        string ns,
+        string name
+    )
     {
         switch (exported.Implementation.Kind)
         {
             case HandleKind.AssemblyReference:
                 AssemblyReference targetAsmRef = reader.GetAssemblyReference(
-                    (AssemblyReferenceHandle)exported.Implementation);
+                    (AssemblyReferenceHandle)exported.Implementation
+                );
                 string targetAsmName = reader.GetString(targetAsmRef.Name);
 
                 _logger.LogTrace(
                     "Following type forwarder for {Namespace}.{Name} -> {TargetAssembly}",
-                    ns, name, targetAsmName);
+                    ns,
+                    name,
+                    targetAsmName
+                );
 
                 MetadataReader targetReader = ResolveExternalAssembly(targetAsmName);
                 return FindTypeDefinition(targetReader, ns, name);
 
             case HandleKind.ExportedType:
-                ExportedType parentExported = reader.GetExportedType(
-                    (ExportedTypeHandle)exported.Implementation);
+                ExportedType parentExported = reader.GetExportedType((ExportedTypeHandle)exported.Implementation);
                 return FollowTypeForwarder(reader, parentExported, ns, name);
 
             default:
                 throw new InvalidOperationException(
-                    $"Invalid type forwarder target for '{ns}.{name}': {exported.Implementation.Kind}");
+                    $"Invalid type forwarder target for '{ns}.{name}': {exported.Implementation.Kind}"
+                );
         }
     }
 
@@ -336,8 +378,11 @@ public sealed class MetadataLoader : IDisposable
         foreach (var (_, (peReader, _)) in _primaryAssemblies)
             peReader.Dispose();
 
-        foreach (var (_, (peReader, _)) in _externalAssemblies)
-            peReader.Dispose();
+        foreach (var (_, lazy) in _externalAssemblies)
+        {
+            if (lazy.IsValueCreated)
+                lazy.Value.PeReader.Dispose();
+        }
 
         _primaryAssemblies.Clear();
         _externalAssemblies.Clear();

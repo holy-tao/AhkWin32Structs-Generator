@@ -64,7 +64,7 @@ public sealed class ApiTypeEmitter : ITypeEmitter
 
     private static void EmitImports(AhkWriter w, ApiType apiType)
     {
-        foreach (string import in apiType.ReferencedTypes.Distinct())
+        foreach (string import in apiType.Imports.GetIncludeTargets())
         {
             w.Include(ImportResolver.GetIncludePath(apiType.Namespace, import));
         }

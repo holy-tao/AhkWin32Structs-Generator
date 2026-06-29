@@ -29,8 +29,8 @@ public sealed class ConstantMember
     public bool NeedsGuid { get; init; }
 
     /// <summary>
-    /// FQNs of types referenced by this constant (e.g., struct types for struct constants).
-    /// Used for #Include generation.
+    /// Types and functions referenced by this constant (e.g., struct types for struct constants).
+    /// Used for #Include / #Import generation.
     /// </summary>
-    public IReadOnlyList<string> ReferencedTypes { get; init; } = [];
+    public ImportCollection Imports { get; init; } = new();
 }

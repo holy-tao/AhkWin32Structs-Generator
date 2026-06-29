@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AhkWin32Structs", "Generator\AhkWin32Structs.csproj", "{ED90BAEA-FFE5-42D7-8F45-9012FD8E7A0A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AhkWin32Structs.Tests", "Generator.Tests\AhkWin32Structs.Tests.csproj", "{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,18 @@ Global
 		{ED90BAEA-FFE5-42D7-8F45-9012FD8E7A0A}.Release|x64.Build.0 = Release|Any CPU
 		{ED90BAEA-FFE5-42D7-8F45-9012FD8E7A0A}.Release|x86.ActiveCfg = Release|Any CPU
 		{ED90BAEA-FFE5-42D7-8F45-9012FD8E7A0A}.Release|x86.Build.0 = Release|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Debug|x64.Build.0 = Debug|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Debug|x86.Build.0 = Debug|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Release|x64.ActiveCfg = Release|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Release|x64.Build.0 = Release|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Release|x86.ActiveCfg = Release|Any CPU
+		{B7E2A1C4-5D3F-4E8A-9C6B-1F0A2D3E4B5C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

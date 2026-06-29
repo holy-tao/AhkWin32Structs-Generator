@@ -1,13 +1,14 @@
 namespace AhkWin32.Generator.Emit;
 
 using System.Text;
+using AhkWin32.Generator.Metadata;
 
 /// <summary>
 /// Indentation-aware text writer for generating AutoHotkey v2 source files.
 /// Wraps a StringBuilder with indent tracking and convenience methods for
 /// common AHK constructs (classes, properties, static fields, etc.).
 /// </summary>
-public sealed class AhkWriter
+public sealed class AhkWriter(AhkVersion version = AhkVersion.v20)
 {
     private readonly StringBuilder _sb = new(4096);
     private int _indentLevel;
@@ -23,6 +24,58 @@ public sealed class AhkWriter
     /// <summary>Write a #Include directive.</summary>
     public void Include(string path) => _sb.AppendLine($"#Include {path}");
 
+    /// <summary>
+    /// Write an #Import directive using a path-qualified name - https://www.autohotkey.com/docs/alpha/lib/_Import.htm.
+    /// Requires v2.1-alpha.21+
+    /// </summary>
+    public void Import(string path, IEnumerable<string> names)
+    {
+        _sb.Append($"#Import \"{path}\"");
+        if (names.Any())
+        {
+            _sb.Append($" {{ {string.Join(", ", names)} }}");
+        }
+        _sb.AppendLine();
+    }
+
+    public void Import(string path) => Import(path, []);
+
+    /// <summary>
+    /// Write an #Import directive using a path-qualified name and an alias
+    /// </summary>
+    public void ImportAs(string path, string alias, IEnumerable<string> names)
+    {
+        _sb.Append($"#Import \"{path}\", as {alias}");
+        if (names.Any())
+        {
+            _sb.Append($" {{ {string.Join(", ", names)} }}");
+        }
+        _sb.AppendLine();
+    }
+
+    public void ImportAs(string path, string alias) => ImportAs(path, alias, []);
+
+    /// <summary>
+    /// Write an #Import export directive using a path-qualified name - https://www.autohotkey.com/docs/alpha/lib/_Import.htm.
+    /// Requires v2.1-alpha.24+ if using a wildcard import, otherwise v2.1-alpha.21+
+    /// </summary>
+    public void ReExport(string path, IEnumerable<string> names)
+    {
+        _sb.Append($"#Import export \"{path}\"");
+        if (names.Any())
+        {
+            _sb.Append($" {{{string.Join(", ", names)}}}");
+        }
+        _sb.AppendLine();
+    }
+
+    public void ReExport(string path) => ReExport(path, []);
+
+    /// <summary>
+    /// Write a #Module statement.
+    /// </summary>
+    public void Module(string name) => _sb.AppendLine($"#Module {name}");
+
     // --- Structure ---
 
     /// <summary>Write an empty line.</summary>
@@ -32,16 +85,74 @@ public sealed class AhkWriter
     /// Open a class block. Returns an IDisposable that writes the closing brace on Dispose.
     /// Format: "class NAME extends BASE {" or "class NAME {" (always space before brace).
     /// Supports nesting — indent level is always relative.
+    ///
+    /// If writer is for v2.1, the class is exported as the default export. This means there can only
+    /// be one class per module / file.
     /// </summary>
     public IndentScope Class(string name, string? extends = null)
     {
-        string header = extends != null
-            ? $"class {name} extends {extends}"
-            : $"class {name}";
+        string header = extends != null ? $"class {name} extends {extends}" : $"class {name}";
+
+        if (version is AhkVersion.v21)
+            header = $"export default {header}";
 
         _sb.AppendLine($"{Indent}{header} {{");
         _indentLevel++;
         return new IndentScope(this);
+    }
+
+    /// <summary>
+    /// Open a struct block (v2.1 native struct). Returns an IDisposable that writes
+    /// the closing brace on Dispose. Format: "struct NAME {" or "struct NAME extends BASE {".
+    /// `struct` defaults to extending Struct, so an explicit extends is only needed when
+    /// inheriting from another struct subclass.
+    /// </summary>
+    public IndentScope Struct(string name, string? extends = null)
+    {
+        string header = extends != null ? $"struct {name} extends {extends}" : $"struct {name}";
+
+        if (version is AhkVersion.v21 && _indentLevel == 0)
+            header = $"export default {header}";
+
+        _sb.AppendLine($"{Indent}{header} {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
+    /// Open a top-level function.
+    /// </summary>
+    public IndentScope Function(string name, string args = "")
+    {
+        _sb.AppendLine(
+            version switch
+            {
+                AhkVersion.v20 => $"{Indent}{name}({args}) {{",
+                AhkVersion.v21 => $"{Indent}export {name}({args}) {{",
+                _ => throw new NotImplementedException($"Unsupported AHK version {version.ToFriendlyString()}"),
+            }
+        );
+
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
+    /// Write a top-level variable, like [export global] foo := "bar". If version supports it, variable is exported.
+    ///
+    /// Does *not* open a new indentation level. Exports require v2.1-alpha.21+
+    /// </summary>
+    /// <exception cref="NotImplementedException"></exception>
+    public void Variable(string name, string value)
+    {
+        _sb.AppendLine(
+            version switch
+            {
+                AhkVersion.v20 => $"{Indent}{name} := {value}",
+                AhkVersion.v21 => $"{Indent}export global {name} := {value}",
+                _ => throw new NotImplementedException($"Unsupported AHK version {version.ToFriendlyString()}"),
+            }
+        );
     }
 
     /// <summary>
@@ -96,11 +207,55 @@ public sealed class AhkWriter
         return new IndentScope(this);
     }
 
+    /// <summary>
+    /// Open a setter block: "set {".
+    /// </summary>
+    public IndentScope SetBlock()
+    {
+        _sb.AppendLine($"{Indent}set {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
+    /// Open an if statement - these always use braces: "if (condition) {"
+    /// </summary>
+    /// <param name="condition">AHK code for the condition to evaluate</param>
+    /// <returns></returns>
+    public IndentScope If(string condition)
+    {
+        _sb.AppendLine($"{Indent}if ({condition}) {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
+    /// Open an else statement: "else {"
+    /// </summary>
+    /// <returns></returns>
+    public IndentScope Else()
+    {
+        _sb.AppendLine($"{Indent}else {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
+    /// <summary>
+    /// Open an else-if statement: "else if (condition) {"
+    /// </summary>
+    /// <param name="condition">Condition(s) to evaluate</param>
+    /// <returns></returns>
+    public IndentScope ElseIf(string condition)
+    {
+        _sb.AppendLine($"{Indent}else if (${condition}) {{");
+        _indentLevel++;
+        return new IndentScope(this);
+    }
+
     // --- Content ---
 
     /// <summary>Write a static fat-arrow field: "static NAME => expr".</summary>
-    public void StaticField(string name, string expr)
-        => _sb.AppendLine($"{Indent}static {name} => {expr}");
+    public void StaticField(string name, string expr) => _sb.AppendLine($"{Indent}static {name} => {expr}");
 
     /// <summary>Write a line at the current indent level.</summary>
     public void Line(string code) => _sb.AppendLine($"{Indent}{code}");

@@ -20,8 +20,11 @@ public sealed class ComInterfaceExtractor
     private readonly ILogger<ComInterfaceExtractor> _logger;
 
     public ComInterfaceExtractor(
-        MetadataLoader loader, DocumentationLoader docs,
-        MethodExtractor methodExtractor, ILogger<ComInterfaceExtractor> logger)
+        MetadataLoader loader,
+        DocumentationLoader docs,
+        MethodExtractor methodExtractor,
+        ILogger<ComInterfaceExtractor> logger
+    )
     {
         _loader = loader;
         _docs = docs;
@@ -33,8 +36,13 @@ public sealed class ComInterfaceExtractor
     /// Extract a ComInterfaceType from a TypeDefinition.
     /// </summary>
     public ComInterfaceType? ExtractComInterface(
-        MetadataReader reader, TypeDefinition typeDef,
-        string assemblyName, string version, TypeAttrs attrs)
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        string assemblyName,
+        string version,
+        TypeAttrs attrs,
+        out int methodArchSkips
+    )
     {
         string typeName = reader.GetString(typeDef.Name);
         string typeNamespace = reader.GetString(typeDef.Namespace);
@@ -42,20 +50,37 @@ public sealed class ComInterfaceExtractor
 
         try
         {
-            return ExtractComInterfaceCore(reader, typeDef, typeName, typeNamespace, fqn,
-                assemblyName, version, attrs);
+            return ExtractComInterfaceCore(
+                reader,
+                typeDef,
+                typeName,
+                typeNamespace,
+                fqn,
+                assemblyName,
+                version,
+                attrs,
+                out methodArchSkips
+            );
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to extract COM interface {FQN}", fqn);
+            methodArchSkips = 0;
             return null;
         }
     }
 
     private ComInterfaceType ExtractComInterfaceCore(
-        MetadataReader reader, TypeDefinition typeDef,
-        string typeName, string typeNamespace, string fqn,
-        string assemblyName, string version, TypeAttrs attrs)
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        string typeName,
+        string typeNamespace,
+        string fqn,
+        string assemblyName,
+        string version,
+        TypeAttrs attrs,
+        out int methodArchSkips
+    )
     {
         // Extract IID
         Guid? iid = AttributeReader.DecodeGuid(reader, typeDef);
@@ -74,7 +99,13 @@ public sealed class ComInterfaceExtractor
 
         // Extract methods
         List<ComMethodMember> methods = ExtractComMethods(
-            reader, typeDef, typeNamespace, vTableOffset, apiDetails);
+            reader,
+            typeDef,
+            typeNamespace,
+            vTableOffset,
+            apiDetails,
+            out methodArchSkips
+        );
 
         // Group properties from special-name get_/put_ methods
         List<ComPropertyMember> properties = GroupProperties(methods, apiDetails);
@@ -83,8 +114,8 @@ public sealed class ComInterfaceExtractor
         TypeIdentity identity = new(fqn, attrs.SupportedArchitecture ?? Architecture.All);
         string displayName = typeName;
 
-        // Collect referenced types
-        List<string> referencedTypes = CollectReferencedTypes(methods, baseFQN);
+        // Collect imports
+        ImportCollection imports = CollectImports(methods, baseFQN);
 
         ComInterfaceType result = new()
         {
@@ -106,12 +137,16 @@ public sealed class ComInterfaceExtractor
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = attrs.DeprecationMessage,
             SupportedOSPlatform = attrs.SupportedOSPlatform,
-            ReferencedTypes = referencedTypes
+            Imports = imports,
         };
 
         _logger.LogDebug(
             "Extracted ComInterfaceType {FQN} ({MethodCount} methods, {PropCount} properties, vtableOffset={Offset})",
-            fqn, methods.Count, properties.Count, vTableOffset);
+            fqn,
+            methods.Count,
+            properties.Count,
+            vTableOffset
+        );
 
         return result;
     }
@@ -126,11 +161,14 @@ public sealed class ComInterfaceExtractor
 
         foreach (TypeDefinitionHandle hTd in reader.TypeDefinitions)
         {
-            if (hTd.IsNil) continue;
+            if (hTd.IsNil)
+                continue;
 
             TypeDefinition td = reader.GetTypeDefinition(hTd);
-            if (reader.StringComparer.Equals(td.Namespace, typeNamespace) &&
-                reader.StringComparer.Equals(td.Name, coclassName))
+            if (
+                reader.StringComparer.Equals(td.Namespace, typeNamespace)
+                && reader.StringComparer.Equals(td.Name, coclassName)
+            )
             {
                 return AttributeReader.DecodeGuid(reader, td);
             }
@@ -145,10 +183,16 @@ public sealed class ComInterfaceExtractor
     /// Port of AhkComInterface.GetBaseTypeDef.
     /// </summary>
     private (string? FQN, string? Name) ResolveBaseInterface(
-        MetadataReader reader, TypeDefinition typeDef,
-        string typeNamespace, string typeName)
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        string typeNamespace,
+        string typeName
+    )
     {
-        List<(MetadataReader Reader, TypeDefinition TypeDef)> impls = GetResolvedInterfaceImplementations(reader, typeDef);
+        List<(MetadataReader Reader, TypeDefinition TypeDef)> impls = GetResolvedInterfaceImplementations(
+            reader,
+            typeDef
+        );
 
         if (impls.Count == 0)
             return (null, null);
@@ -157,8 +201,11 @@ public sealed class ComInterfaceExtractor
         {
             _logger.LogWarning(
                 "Interface {Namespace}.{Name} implements {Count} interfaces, expected 0 or 1: [{Names}]",
-                typeNamespace, typeName, impls.Count,
-                string.Join(", ", impls.Select(i => i.Reader.GetString(i.TypeDef.Name))));
+                typeNamespace,
+                typeName,
+                impls.Count,
+                string.Join(", ", impls.Select(i => i.Reader.GetString(i.TypeDef.Name)))
+            );
         }
 
         var (baseReader, baseTd) = impls[0];
@@ -175,7 +222,9 @@ public sealed class ComInterfaceExtractor
     /// Port of AhkComInterface.GetResolvedInterfaceImplementations.
     /// </summary>
     private List<(MetadataReader Reader, TypeDefinition TypeDef)> GetResolvedInterfaceImplementations(
-        MetadataReader reader, TypeDefinition forType)
+        MetadataReader reader,
+        TypeDefinition forType
+    )
     {
         List<(MetadataReader, TypeDefinition)> results = [];
 
@@ -187,8 +236,7 @@ public sealed class ComInterfaceExtractor
             {
                 case HandleKind.TypeReference:
                 {
-                    var (targetReader, targetHandle) = _loader.ResolveTypeReference(
-                        reader, (TypeReferenceHandle)iface);
+                    var (targetReader, targetHandle) = _loader.ResolveTypeReference(reader, (TypeReferenceHandle)iface);
                     results.Add((targetReader, targetReader.GetTypeDefinition(targetHandle)));
                     break;
                 }
@@ -229,12 +277,17 @@ public sealed class ComInterfaceExtractor
     /// Extract COM methods from a type's method definitions.
     /// </summary>
     private List<ComMethodMember> ExtractComMethods(
-        MetadataReader reader, TypeDefinition typeDef,
-        string typeNamespace, int vTableOffset,
-        ApiDetails? apiDetails)
+        MetadataReader reader,
+        TypeDefinition typeDef,
+        string typeNamespace,
+        int vTableOffset,
+        ApiDetails? apiDetails,
+        out int archSkips
+    )
     {
         List<ComMethodMember> methods = [];
         int methodIndex = 0;
+        archSkips = 0;
 
         foreach (MethodDefinitionHandle hMethod in typeDef.GetMethods())
         {
@@ -245,15 +298,23 @@ public sealed class ComInterfaceExtractor
             try
             {
                 ComMethodMember? comMethod = ExtractComMethod(
-                    reader, methodDef, methodName, typeNamespace, vTableIndex, methods);
+                    reader,
+                    methodDef,
+                    methodName,
+                    typeNamespace,
+                    vTableIndex,
+                    methods,
+                    out bool methodArchSkipped
+                );
 
                 if (comMethod != null)
                     methods.Add(comMethod);
+                else if (methodArchSkipped)
+                    archSkips++;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to extract COM method {Namespace}.{Method}",
-                    typeNamespace, methodName);
+                _logger.LogError(ex, "Failed to extract COM method {Namespace}.{Method}", typeNamespace, methodName);
             }
 
             methodIndex++;
@@ -266,29 +327,36 @@ public sealed class ComInterfaceExtractor
     /// Extract a single COM method into a ComMethodMember.
     /// </summary>
     private ComMethodMember? ExtractComMethod(
-        MetadataReader reader, MethodDefinition methodDef,
-        string methodName, string typeNamespace, int vTableIndex,
-        List<ComMethodMember> previousMethods)
+        MetadataReader reader,
+        MethodDefinition methodDef,
+        string methodName,
+        string typeNamespace,
+        int vTableIndex,
+        List<ComMethodMember> previousMethods,
+        out bool archSkipped
+    )
     {
         // Use MethodExtractor for base method data
-        MethodMember? baseMember = _methodExtractor.ExtractMethod(
-            reader, methodDef, typeNamespace);
+        MethodExtractionResult baseResult = _methodExtractor.ExtractMethod(reader, methodDef, typeNamespace);
+        archSkipped = baseResult.SkipReason == MethodSkipReason.ArchFiltered;
+        MethodMember? baseMember = baseResult.Method;
 
         if (baseMember == null)
             return null;
 
         // Check for string (BSTR) parameters
-        bool hasStringParam = baseMember.Parameters
-            .Skip(1) // skip return type
-            .Any(p => p.Type is NativeTypedefType { Name: "BSTR" }
-                    || p.Type is PointerType { Pointee: NativeTypedefType { Name: "BSTR" } });
+        bool hasStringParam = baseMember
+            .Parameters.Skip(1) // skip return type
+            .Any(p => p.TypeDefName is "BSTR");
 
         // Check for special name (get_/put_ for property backing)
         bool isSpecialName = methodDef.Attributes.HasFlag(MethodAttributes.SpecialName);
 
         // Compute COM-specific output parameter (different logic from DllImport)
         ParameterMember? outputParameter = GetComOutputParameter(
-            baseMember.Parameters, baseMember.CanReturnErrorsAsSuccess);
+            baseMember.Parameters,
+            baseMember.CanReturnErrorsAsSuccess
+        );
 
         // Compute deduplicated name (append counter for overloaded methods)
         int overloadCount = previousMethods.Count(m => m.Name == methodName && m.VTableIndex < vTableIndex);
@@ -316,12 +384,12 @@ public sealed class ComInterfaceExtractor
             DeprecationMessage = baseMember.DeprecationMessage,
             ReturnValueDoc = baseMember.ReturnValueDoc,
             SupportedOSPlatform = baseMember.SupportedOSPlatform,
-            ReferencedTypes = baseMember.ReferencedTypes,
+            Imports = baseMember.Imports,
             // ComMethodMember-specific properties
             VTableIndex = vTableIndex,
             HasStringParam = hasStringParam,
             IsSpecialName = isSpecialName,
-            DeduplicatedName = deduplicatedName
+            DeduplicatedName = deduplicatedName,
         };
     }
 
@@ -331,7 +399,9 @@ public sealed class ComInterfaceExtractor
     /// Port of AhkComMethod.GetOutputParameter.
     /// </summary>
     private static ParameterMember? GetComOutputParameter(
-        IReadOnlyList<ParameterMember> parameters, bool canReturnErrorsAsSuccess)
+        IReadOnlyList<ParameterMember> parameters,
+        bool canReturnErrorsAsSuccess
+    )
     {
         if (parameters.Count == 0 || parameters[0].Type is not HResultType)
             return null;
@@ -357,8 +427,7 @@ public sealed class ComInterfaceExtractor
     /// Group special-name get_/put_ methods into ComPropertyMember instances.
     /// Port of AhkComInterface property collection logic.
     /// </summary>
-    private static List<ComPropertyMember> GroupProperties(
-        List<ComMethodMember> methods, ApiDetails? apiDetails)
+    private static List<ComPropertyMember> GroupProperties(List<ComMethodMember> methods, ApiDetails? apiDetails)
     {
         List<ComPropertyMember> properties = [];
 
@@ -368,46 +437,49 @@ public sealed class ComInterfaceExtractor
             if (properties.Any(p => p.Name == normalizedName))
                 continue;
 
-            ComMethodMember? getter = methods.FirstOrDefault(
-                m => m.IsSpecialName && m.DeduplicatedName == "get_" + normalizedName);
-            ComMethodMember? setter = methods.FirstOrDefault(
-                m => m.IsSpecialName && m.DeduplicatedName == "put_" + normalizedName);
+            ComMethodMember? getter = methods.FirstOrDefault(m =>
+                m.IsSpecialName && m.DeduplicatedName == "get_" + normalizedName
+            );
+            ComMethodMember? setter = methods.FirstOrDefault(m =>
+                m.IsSpecialName && m.DeduplicatedName == "put_" + normalizedName
+            );
 
             string? description = null;
             apiDetails?.Fields.TryGetValue(normalizedName, out description);
 
-            properties.Add(new ComPropertyMember
-            {
-                Name = normalizedName,
-                Getter = getter,
-                Setter = setter,
-                Description = description
-            });
+            properties.Add(
+                new ComPropertyMember
+                {
+                    Name = normalizedName,
+                    Getter = getter,
+                    Setter = setter,
+                    Description = description,
+                }
+            );
         }
 
         return properties;
     }
 
     /// <summary>
-    /// Collect referenced types for a COM interface.
+    /// Collect imports for a COM interface.
     /// </summary>
-    private static List<string> CollectReferencedTypes(
-        List<ComMethodMember> methods, string? baseInterfaceFQN)
+    private static ImportCollection CollectImports(List<ComMethodMember> methods, string? baseInterfaceFQN)
     {
-        List<string> refs = [];
+        var imports = new ImportCollection();
 
         // Base interface
         if (baseInterfaceFQN != null)
-            refs.Add(baseInterfaceFQN);
+            imports.AddType(baseInterfaceFQN);
 
-        // BSTR import
-        if (methods.Any(m => m.HasStringParam))
-            refs.Add("Windows.Win32.Foundation.BSTR");
-
-        // Per-method referenced types
+        // Per-method imports
         foreach (ComMethodMember method in methods)
         {
-            refs.AddRange(method.ReferencedTypes);
+            imports.MergeFrom(method.Imports);
+
+            // BSTR import
+            if (method.HasStringParam)
+                imports.AddType("Windows.Win32.Foundation.BSTR");
 
             // COM output parameter types (computed separately from base method extraction)
             if (method.OutputParameter is { } outParam)
@@ -417,13 +489,13 @@ public sealed class ComInterfaceExtractor
                     PointerType { Pointee: StructRef s } => s.FQN,
                     PointerType { Pointee: ComRef c } => c.FQN,
                     PointerType { Pointee: HandleRef h } => h.FQN,
-                    _ => null
+                    _ => null,
                 };
                 if (outFqn != null)
-                    refs.Add(outFqn);
+                    imports.AddType(outFqn);
             }
         }
 
-        return refs.Distinct().ToList();
+        return imports;
     }
 }

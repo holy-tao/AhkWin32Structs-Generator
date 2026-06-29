@@ -1,8 +1,8 @@
 namespace AhkWin32.Generator.Metadata;
 
+using System.Collections.Frozen;
 using System.Diagnostics;
 using System.Reflection.Metadata;
-using Gma.DataStructures.StringSearch;
 using MessagePack;
 using Microsoft.Extensions.Logging;
 using Microsoft.Windows.SDK.Win32Docs;
@@ -15,7 +15,7 @@ public sealed class DocumentationLoader
 {
     private static readonly CaTypeProvider s_attrProvider = new();
 
-    private readonly PatriciaTrie<ApiDetails> _apiDocs = new();
+    private FrozenDictionary<string, ApiDetails> _apiDocs = FrozenDictionary<string, ApiDetails>.Empty;
     private readonly ILogger<DocumentationLoader> _logger;
 
     public DocumentationLoader(ILogger<DocumentationLoader> logger)
@@ -32,16 +32,16 @@ public sealed class DocumentationLoader
         Stopwatch watch = Stopwatch.StartNew();
 
         using FileStream stream = File.OpenRead(filepath);
-        int count = 0;
-        foreach (var pair in MessagePackSerializer.Deserialize<Dictionary<string, ApiDetails>>(stream))
-        {
-            _apiDocs.Add(pair.Key, pair.Value);
-            count++;
-        }
+        _apiDocs = MessagePackSerializer
+            .Deserialize<Dictionary<string, ApiDetails>>(stream)
+            .ToFrozenDictionary(StringComparer.Ordinal);
 
         watch.Stop();
-        _logger.LogInformation("Loaded {Count} ApiDetails records in {Elapsed}ms",
-            count, watch.ElapsedMilliseconds);
+        _logger.LogInformation(
+            "Loaded {Count} ApiDetails records in {Elapsed}ms",
+            _apiDocs.Count,
+            watch.ElapsedMilliseconds
+        );
     }
 
     /// <summary>
@@ -51,7 +51,10 @@ public sealed class DocumentationLoader
     public ApiDetails? GetApiDetails(MetadataReader reader, TypeDefinition typeDef)
     {
         CustomAttribute? docAttr = AttributeReader.FindAttribute(
-            reader, typeDef.GetCustomAttributes(), "DocumentationAttribute");
+            reader,
+            typeDef.GetCustomAttributes(),
+            "DocumentationAttribute"
+        );
 
         string fqn = $"{reader.GetString(typeDef.Namespace)}.{reader.GetString(typeDef.Name)}";
 
@@ -69,7 +72,10 @@ public sealed class DocumentationLoader
     {
         string methodName = reader.GetString(def.Name);
         CustomAttribute? docAttr = AttributeReader.FindAttribute(
-            reader, def.GetCustomAttributes(), "DocumentationAttribute");
+            reader,
+            def.GetCustomAttributes(),
+            "DocumentationAttribute"
+        );
         ApiDetails? details = null;
 
         // Check parent type for qualified lookup
@@ -97,18 +103,18 @@ public sealed class DocumentationLoader
     /// </summary>
     private ApiDetails? GetApiDetails(string forName, CustomAttribute? documentationAttr)
     {
-        IEnumerable<ApiDetails> matches = _apiDocs.Retrieve(forName);
-        if (!matches.Any())
+        if (!_apiDocs.TryGetValue(forName, out ApiDetails? details))
+        {
             return null;
-
-        ApiDetails details = matches.First();
+        }
 
         // Fall back to [Documentation] attribute if HelpLink is null
         if (details.HelpLink == null && documentationAttr != null)
         {
             var decoded = documentationAttr.Value.DecodeValue(s_attrProvider);
-            string uriString = (string)(decoded.FixedArguments[0].Value
-                ?? throw new NullReferenceException("Null DocumentationAttribute URI"));
+            string uriString = (string)(
+                decoded.FixedArguments[0].Value ?? throw new NullReferenceException("Null DocumentationAttribute URI")
+            );
             details.HelpLink = new Uri(uriString);
         }
 

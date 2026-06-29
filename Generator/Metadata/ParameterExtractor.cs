@@ -23,8 +23,12 @@ public sealed class ParameterExtractor
     /// </summary>
     private readonly FrozenSet<string> _reservedNames;
 
-    public ParameterExtractor(MetadataLoader loader, ILogger<ParameterExtractor> logger,
-        IReadOnlySet<string> builtinReservedNames, int maxParallelism = 0)
+    public ParameterExtractor(
+        MetadataLoader loader,
+        ILogger<ParameterExtractor> logger,
+        IReadOnlySet<string> builtinReservedNames,
+        int maxParallelism = 0
+    )
     {
         _loader = loader;
         _logger = logger;
@@ -32,11 +36,12 @@ public sealed class ParameterExtractor
         int dop = maxParallelism > 0 ? maxParallelism : Environment.ProcessorCount;
 
         // Pre-populate type names from all primary assemblies
-        _reservedNames = _loader.GetPrimaryAssemblies()
-            .SelectMany(tup => tup.Reader.TypeDefinitions
-                .AsParallel()
-                .WithDegreeOfParallelism(dop)
-                .Select(td => tup.Reader.GetString(tup.Reader.GetTypeDefinition(td).Name))
+        _reservedNames = _loader
+            .GetPrimaryAssemblies()
+            .SelectMany(tup =>
+                tup.Reader.TypeDefinitions.AsParallel()
+                    .WithDegreeOfParallelism(dop)
+                    .Select(td => tup.Reader.GetString(tup.Reader.GetTypeDefinition(td).Name))
             )
             .Concat(builtinReservedNames)
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -49,12 +54,20 @@ public sealed class ParameterExtractor
     /// Parameter[0] is always the return type. Parameters[1..n] are actual parameters.
     /// </summary>
     public List<ParameterMember> ExtractParameters(
-        MetadataReader reader, MethodDefinition methodDef,
-        ApiDetails? apiDetails, TypeDefinition? resolutionContext = null)
+        MetadataReader reader,
+        MethodDefinition methodDef,
+        ApiDetails? apiDetails,
+        TypeDefinition? resolutionContext = null
+    )
     {
         // Decode method signature to get return type + parameter types
         var (returnType, parameterTypes) = SignatureDecoder.DecodeMethodSignature(
-            reader, methodDef, _loader, _logger, resolutionContext);
+            reader,
+            methodDef,
+            _loader,
+            _logger,
+            resolutionContext
+        );
 
         // Build lookup of SequenceNumber → Parameter metadata
         Dictionary<int, Parameter> paramInfos = [];
@@ -74,15 +87,17 @@ public sealed class ParameterExtractor
         else
         {
             // No explicit return parameter metadata — create a minimal one
-            result.Add(new ParameterMember
-            {
-                Name = "result",
-                Type = returnType,
-                SequenceNumber = 0,
-                Direction = ParameterDirection.None,
-                Attributes = ParameterFlags.None,
-                SizedBufferBytesParamIndex = -1
-            });
+            result.Add(
+                new ParameterMember
+                {
+                    Name = "result",
+                    Type = returnType,
+                    SequenceNumber = 0,
+                    Direction = ParameterDirection.None,
+                    Attributes = ParameterFlags.None,
+                    SizedBufferBytesParamIndex = -1,
+                }
+            );
         }
 
         // Parameters[1..n]: actual method parameters
@@ -95,7 +110,8 @@ public sealed class ParameterExtractor
             ResolvedType paramType = parameterTypes[i];
             if (!param.Name.IsNil)
             {
-                bool hasMemorySize = AttributeReader.GetAllAttributeNames(reader, param.GetCustomAttributes())
+                bool hasMemorySize = AttributeReader
+                    .GetAllAttributeNames(reader, param.GetCustomAttributes())
                     .Any(n => n == "MemorySizeAttribute");
                 if (hasMemorySize)
                     paramType = new PrimitiveType("ptr");
@@ -108,8 +124,12 @@ public sealed class ParameterExtractor
     }
 
     private ParameterMember BuildParameterMember(
-        MetadataReader reader, Parameter param, ResolvedType type,
-        int sequenceNumber, ApiDetails? apiDetails)
+        MetadataReader reader,
+        Parameter param,
+        ResolvedType type,
+        int sequenceNumber,
+        ApiDetails? apiDetails
+    )
     {
         // Get parameter name with deconfliction
         string name = GetParameterName(reader, param, sequenceNumber);
@@ -149,7 +169,7 @@ public sealed class ParameterExtractor
             RAIIFree = raiiFree,
             FreeWith = freeWith,
             SizedBufferBytesParamIndex = attrs.SizedBufferBytesParamIndex,
-            Description = description
+            Description = description,
         };
     }
 
@@ -200,7 +220,9 @@ public sealed class ParameterExtractor
                 {
                     _logger.LogDebug(
                         "FreeFuncRef {FuncName} has {ParamCount} parameter rows, expected 1 or 2 — skipping",
-                        funcName, paramCount);
+                        funcName,
+                        paramCount
+                    );
                     return null;
                 }
 

@@ -1,0 +1,32 @@
+add-to:
+  - Windows.Win32.Foundation.WCHAR
+
+code:
+  # WCHAR only exists in v2.1 runs (registered as a synthetic NativeTypedef). In v2.0,
+  # Unicode fixed char arrays are handled directly via StringType (StrGet/StrPut).
+  v20: skip
+  # Give WCHAR[N] fields v2.0-style string ergonomics: assigning a String writes it with
+  # StrPut, and String()/ToString() reads it back with StrGet, while indexed element
+  # access (chars[i]) still works.
+  #
+  # Each `WCHAR[N]` is a distinct, length-specific subclass of the shared `Struct.Array`
+  # (there is no per-element-type base to attach to), so the hooks are installed on each
+  # array class as it is first created, by overriding `__Item` (the property that builds
+  # `WCHAR[N]`). Installing on the shared `Struct.Array` instead would clobber every other
+  # struct array (including CHAR's, which needs UTF-8).
+  v21: |
+    static __Item[Length] {
+        get {
+            cls := super[Length]
+            if (!ObjHasOwnProp(cls.Prototype, "__StringArrayHooked")) {
+                DefineProp(cls.Prototype, "__value", {
+                    set: (this, value) => StrPut(value, this.Ptr, this.Length, "UTF-16")
+                })
+                DefineProp(cls.Prototype, "ToString", {
+                    Call: (this) => StrGet(this.Ptr, this.Length, "UTF-16")
+                })
+                DefineProp(cls.Prototype, "__StringArrayHooked", { value: true })
+            }
+            return cls
+        }
+    }

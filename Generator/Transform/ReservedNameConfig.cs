@@ -16,7 +16,7 @@ public static class ReservedNameConfig
     {
         IDeserializer deserializer = new DeserializerBuilder().Build();
         List<string> names = deserializer.Deserialize<List<string>>(File.ReadAllText(configPath));
-        
+
         return new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
     }
 }

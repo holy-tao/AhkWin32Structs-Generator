@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit;
 
+using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
 using AhkWin32.Generator.Model.Types;
@@ -12,7 +13,8 @@ public static class DocCommentWriter
     /// <summary>
     /// Doc string for the variadic argument for variadic args
     /// </summary>
-    private const string VAR_ARGS_DOC = "Additional arguments as alternating DllCall type/value pairs (e.g., \"int\", 42, \"str\", \"hello\")";
+    private const string VAR_ARGS_DOC =
+        "Additional arguments as alternating DllCall type/value pairs (e.g., \"int\", 42, \"str\", \"hello\")";
 
     /// <summary>
     /// Write a type-level JSDoc comment.
@@ -49,7 +51,7 @@ public static class DocCommentWriter
 
         if (type.IsDeprecated)
         {
-            string deprecatedTag =  !string.IsNullOrWhiteSpace(type.DeprecationMessage)
+            string deprecatedTag = !string.IsNullOrWhiteSpace(type.DeprecationMessage)
                 ? $" * @deprecated {type.DeprecationMessage}"
                 : " * @deprecated";
             w.Line(deprecatedTag);
@@ -71,7 +73,7 @@ public static class DocCommentWriter
 
         if (constant.IsDeprecated)
         {
-            string deprecatedTag =  !string.IsNullOrWhiteSpace(constant.DeprecationMessage)
+            string deprecatedTag = !string.IsNullOrWhiteSpace(constant.DeprecationMessage)
                 ? $" * @deprecated {constant.DeprecationMessage}"
                 : " * @deprecated";
             w.Line(deprecatedTag);
@@ -85,8 +87,17 @@ public static class DocCommentWriter
     /// Write a field-level JSDoc comment.
     /// Port of AhkStructMember.MaybeAppendDocumentation.
     /// </summary>
-    public static void WriteFieldDoc(AhkWriter w, FieldMember field)
+    public static void WriteFieldDoc(AhkWriter w, FieldMember field, AhkVersion version = AhkVersion.v20)
     {
+        // Don't add the /** */ if we wouldn't emit anything between them
+        if (
+            string.IsNullOrWhiteSpace(field.Description)
+            && !field.IsBitField
+            && !field.IsDeprecated
+            && version is AhkVersion.v21
+        )
+            return;
+
         w.Line("/**");
 
         if (!string.IsNullOrWhiteSpace(field.Description))
@@ -107,10 +118,13 @@ public static class DocCommentWriter
             w.Line(deprecatedTag);
         }
 
-        string typeName = field.EmbeddedStruct is not null
-            ? field.EmbeddedStruct.Name
-            : field.Type.DisplayName;
-        w.Line($" * @type {{{typeName}}}");
+        // No type doc for v2.1 struct fields since they carry type info in their
+        // type specifiers
+        if (version is AhkVersion.v20)
+        {
+            string typeName = field.EmbeddedStruct is not null ? field.EmbeddedStruct.Name : field.Type.DisplayName;
+            w.Line($" * @type {{{typeName}}}");
+        }
         w.Line(" */");
     }
 
@@ -125,9 +139,7 @@ public static class DocCommentWriter
         if (!string.IsNullOrWhiteSpace(description))
             w.Line($" * {EscapeDocs(description, new string(' ', w.CurrentIndentLevel * 4))}");
 
-        string typeName = parent.EmbeddedStruct is not null
-            ? parent.EmbeddedStruct.Name
-            : parent.Type.DisplayName;
+        string typeName = parent.EmbeddedStruct is not null ? parent.EmbeddedStruct.Name : parent.Type.DisplayName;
         w.Line($" * @type {{{typeName}}}");
         w.Line(" */");
     }
@@ -206,9 +218,7 @@ public static class DocCommentWriter
         {
             if (method.OutputParameter is { } outParam)
             {
-                string? returnTypeName = outParam.IsPtr
-                    ? outParam.Pointee?.DisplayName
-                    : outParam.Type.DisplayName;
+                string? returnTypeName = outParam.IsPtr ? outParam.Pointee?.DisplayName : outParam.Type.DisplayName;
                 string returnDoc = !string.IsNullOrWhiteSpace(outParam.Description)
                     ? EscapeDocs(outParam.Description, indent) ?? ""
                     : "";
@@ -216,7 +226,9 @@ public static class DocCommentWriter
             }
             else
             {
-                w.Line($" * @returns {{{method.Parameters[0].Type.DisplayName}}} {EscapeDocs(method.ReturnValueDoc, indent)}");
+                w.Line(
+                    $" * @returns {{{method.Parameters[0].Type.DisplayName}}} {EscapeDocs(method.ReturnValueDoc, indent)}"
+                );
             }
         }
         else
@@ -248,9 +260,6 @@ public static class DocCommentWriter
     /// </summary>
     public static string? EscapeDocs(string? docString, string? indent = " ")
     {
-        return docString?
-            .Replace("/*", "//")
-            .Replace("*/", "")
-            .Replace("\n", $"\n{indent} * ");
+        return docString?.Replace("/*", "//").Replace("*/", "").Replace("\n", $"\n{indent} * ");
     }
 }

@@ -1,0 +1,8 @@
+# Scalar WCHAR (a single UTF-16 code unit) — let `c := "a"` work by storing the character's ordinal,
+# while still accepting a raw integer. No getter is restored (see CHAR.yml for the rationale).
+#
+# This is independent of metadata/extensions/WCHAR.yml, which gives WCHAR[N] *array* fields their own
+# StrPut/StrGet __value via runtime DefineProp.
+- type: Windows.Win32.Foundation.WCHAR
+  value-accessor:
+    setter-coerce: "$value is String ? Ord($value) : $value"

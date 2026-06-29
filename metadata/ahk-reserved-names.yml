@@ -20,6 +20,8 @@
 - do
 - while
 - unset
+- "true"
+- "false"
 # Built-In class names: https://www.autohotkey.com/docs/v2/ObjList.htm
 - Any
 - Object

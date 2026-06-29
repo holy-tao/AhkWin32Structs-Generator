@@ -1,0 +1,6 @@
+# OLE VARIANT_BOOL is a 2-byte integer where TRUE is -1 (0xFFFF) and FALSE is 0. It's more
+# useful to read as a primitive, since we can compare to Foundation.VARIANT_TRUE / VARIANT_FALSE
+# directly. Just insert a getter.
+- type: Windows.Win32.Foundation.VARIANT_BOOL
+  value-accessor:
+    getter: "$field"

@@ -43,15 +43,24 @@ public sealed class ExtensionApplier
             {
                 type.Extensions.AddRange(extensions);
                 foreach (var ext in extensions)
-                    type.ReferencedTypes.AddRange(ext.Requirements);
+                foreach (var (importFqn, names) in ext.Imports)
+                {
+                    if (names.Count == 0)
+                        type.Imports.AddType(importFqn);
+                    else
+                        type.Imports.AddFunctions(importFqn, names);
+                }
             }
 
             matchedTypes++;
             totalExtensions += extensions.Count;
         }
 
-        _logger.LogInformation("Applied {ExtCount} extension(s) to {TypeCount} type(s){Unmatched}",
-            totalExtensions, matchedTypes,
-            unmatchedFqns > 0 ? $" ({unmatchedFqns} unmatched FQN(s))" : "");
+        _logger.LogInformation(
+            "Applied {ExtCount} extension(s) to {TypeCount} type(s){Unmatched}",
+            totalExtensions,
+            matchedTypes,
+            unmatchedFqns > 0 ? $" ({unmatchedFqns} unmatched FQN(s))" : ""
+        );
     }
 }

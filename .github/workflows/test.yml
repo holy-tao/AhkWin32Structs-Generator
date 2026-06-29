@@ -1,0 +1,22 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      # Intentionally no `submodules: true` — the AhkWin32projection submodule is managed
+      # separately (SSH) by the generation workflows and is not needed to build/test the generator.
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Run unit tests
+        run: dotnet test Generator.Tests/AhkWin32Structs.Tests.csproj -c Release
