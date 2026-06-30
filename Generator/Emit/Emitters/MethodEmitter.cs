@@ -79,7 +79,7 @@ public static class MethodEmitter
         if (method.IsOrdinal)
             EmitOrdinalLoading(w, method, unqualifyApis, names);
 
-        EmitOutputParamMarshalling(w, method, registry, names);
+        EmitOutputParamMarshalling(w, method, registry, unqualifyApis, names);
 
         if (method.IsVariadic)
             EmitVariadicMarshalling(w, method, registry, unqualifyApis, names);
@@ -222,6 +222,7 @@ public static class MethodEmitter
         AhkWriter w,
         MethodMember method,
         TypeRegistry registry,
+        bool unqualifyApis,
         ModuleNameResolver? names = null
     )
     {
@@ -233,19 +234,56 @@ public static class MethodEmitter
             // SizedBufferBytesParamIndex is 0-based from metadata; add 1 for Parameters[] (index 0 = return)
             string sizeParamName = method.Parameters[outParam.SizedBufferBytesParamIndex + 1].Name;
             w.Line($"{outParam.Name} := Buffer({sizeParamName}, 0)");
+            return;
         }
-        else if (outParam.IsPtrToStruct || outParam.IsPtrToHandle)
+
+        if (!outParam.IsPtrToStruct && !outParam.IsPtrToHandle)
+            return;
+
+        string pointeeName = GetPointeeName(outParam.Type, names);
+
+        // An owned [Out] handle is constructed so it auto-frees once returned; the API fills its
+        // value (via the instance's `.Ptr`) during the call. Ownership is carried differently by
+        // version: v2.1 boxes it as a `.Owned`/`.OwnedWith(...)` subclass, while v2.0 uses the
+        // Win32Handle owned flag plus a DefineProp'd Free for a context-specific RAIIFree.
+        if (outParam.Type is PointerType { Pointee: HandleRef ph } && IsOwnedHandle(outParam, ph.FQN, registry))
         {
-            string pointeeName = GetPointeeName(outParam.Type, names);
-            // An owned [Out] handle is boxed as its `.Owned`/`.OwnedWith(...)` subclass so __Delete
-            // frees it. The API writes the handle value into this instance's storage via its `.Ptr`.
-            string ctor =
-                outParam.Type is PointerType { Pointee: HandleRef ph }
-                && OwnedHandleClass(pointeeName, outParam, ph.FQN, registry, names) is { } owned
-                    ? owned
-                    : pointeeName;
-            w.Line($"{outParam.Name} := {ctor}()");
+            if (unqualifyApis)
+            {
+                string ctor = OwnedHandleClass(pointeeName, outParam, ph.FQN, registry, names)!;
+                w.Line($"{outParam.Name} := {ctor}()");
+            }
+            else
+            {
+                EmitV20OwnedOutHandle(w, outParam, pointeeName, ph.FQN, registry);
+            }
+            return;
         }
+
+        w.Line($"{outParam.Name} := {pointeeName}()");
+    }
+
+    /// <summary>
+    /// v2.0 owned [Out] handle: construct the Win32Handle with the script-owned flag (so __Delete
+    /// frees it), then DefineProp a context-specific <c>Free</c> when the call site overrides the
+    /// handle type's default RAIIFree. The handle value starts at 0 and is filled by the API call.
+    /// </summary>
+    private static void EmitV20OwnedOutHandle(
+        AhkWriter w,
+        ParameterMember outParam,
+        string handleName,
+        string handleFqn,
+        TypeRegistry registry
+    )
+    {
+        string fieldName = GetHandleFieldName(registry, handleFqn);
+        string scriptOwned = outParam.ScriptOwned ? "True" : "False";
+        w.Line($"{outParam.Name} := {handleName}({{{fieldName}: 0}}, {scriptOwned})");
+
+        if (outParam.RAIIFree is { } raiiFree)
+            w.Line(
+                $"{outParam.Name}.DefineProp(\"Free\", {{ Call: (self) => {raiiFree.DeclarerName}.{raiiFree.Name}(self.{fieldName}) }})"
+            );
     }
 
     // --- Variadic marshalling ---
@@ -365,6 +403,15 @@ public static class MethodEmitter
     /// </summary>
     private static FreeFuncRef? DivergentRAIIFree(ParameterMember param, HandleType ht) =>
         ht.FreeFunc is not null && param.RAIIFree is { } raii && raii != ht.FreeFunc ? raii : null;
+
+    /// <summary>
+    /// Whether a returned/output handle param is owned by the script (not <c>[DoNotRelease]</c>) and
+    /// its handle type has a free function - i.e. it should auto-free. The boxing differs by version.
+    /// </summary>
+    private static bool IsOwnedHandle(ParameterMember param, string handleFqn, TypeRegistry registry) =>
+        param.ScriptOwned
+        && registry.Resolve(handleFqn, Architecture.All) is HandleType ht
+        && ht.FreeFunc is not null;
 
     /// <summary>
     /// The v2.1 type-class reference used to convert a return value, alias-resolved for the local
@@ -765,7 +812,7 @@ public static class MethodEmitter
                 w.BlankLine();
             }
 
-            EmitOutputParamMarshalling(w, method, registry);
+            EmitOutputParamMarshalling(w, method, registry, unqualifyApis);
             w.Line(BuildComCallExpression(method, registry, unqualifyApis));
 
             EmitErrorCheck(w, method, registry, unqualifyApis);
