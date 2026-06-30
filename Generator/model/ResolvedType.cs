@@ -50,7 +50,7 @@ public sealed record PrimitiveType(string Name) : ResolvedType
             "uint64" => "uint",
             "int16" => "short",
             "uint16" => "ushort",
-            "byte" or "sbyte" or "char" => "char",
+            "byte" or "sbyte" or "char" or "int8" or "uint8" or "uchar" => "char",
             "uintptr" or "intptr" or "void" or "ptr" or "typehandle" => "ptr",
             _ => "ptr", // pointer-sized NativeTypedef
         };
@@ -66,8 +66,8 @@ public sealed record PrimitiveType(string Name) : ResolvedType
             "uint64" => "Int64", // Ahk doesn't support u64s
             "int16" => "Int16",
             "uint16" => "UInt16",
-            "byte" or "sbyte" or "char" => "Int8",
-            "uchar" => "UInt8",
+            "byte" or "sbyte" or "char" or "int8" => "Int8",
+            "uchar" or "uint8" => "UInt8",
             "uintptr" or "intptr" or "void" or "ptr" or "typehandle" => "IntPtr",
 
             // Should not use pointer-sized NativeTypedefs, we should use the typedefs themselves
@@ -80,7 +80,7 @@ public sealed record PrimitiveType(string Name) : ResolvedType
             "single" or "boolean" or "int32" or "uint32" => 4,
             "double" or "int64" or "uint64" or "intptr" or "uintptr" or "void" or "ptr" => 8,
             "int16" or "uint16" or "char" => 2,
-            "byte" or "sbyte" => 1,
+            "byte" or "sbyte" or "int8" or "uint8" or "uchar" => 1,
             _ => 8,
         };
 }
