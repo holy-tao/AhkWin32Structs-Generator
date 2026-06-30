@@ -604,7 +604,12 @@ public static class MethodEmitter
                     break;
                 case NativeTypedefRef:
                 case PointerType pt when pt.Pointee is NativeTypedefRef:
-                    paramName = $"{paramName}.value";
+                    // v2.1 boxes typed-pointer (`.Ptr`) outputs into a typedef object whose
+                    // `.value` holds the raw pointer. v2.0 var-ref outputs are plain integers
+                    // (EmitOutputParamMarshalling only boxes ptr-to-struct/handle), so pass them
+                    // through directly - `.value` on an Integer throws PropertyError.
+                    if (unqualifyApis)
+                        paramName = $"{paramName}.value";
                     break;
             }
 
