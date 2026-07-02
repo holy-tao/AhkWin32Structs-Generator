@@ -406,7 +406,7 @@ public static class MethodEmitter
             sb.Append("result := ");
 
         // Entry point, if not overridden
-        entry ??= method.IsOrdinal ? "procAddr" : $"\"{method.DllName}\\{method.EntryPoint}\"";
+        entry ??= method.IsOrdinal ? "procAddr.value" : $"\"{method.DllName}\\{method.EntryPoint}\"";
 
         sb.Append($"DllCall({entry}");
 
