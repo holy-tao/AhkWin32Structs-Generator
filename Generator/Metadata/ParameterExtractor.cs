@@ -155,7 +155,12 @@ public sealed class ParameterExtractor
         if (apiDetails != null && sequenceNumber > 0)
         {
             string originalName = !param.Name.IsNil ? reader.GetString(param.Name) : name;
-            apiDetails.Parameters.TryGetValue(originalName, out description);
+            // Fall back to the win32metadata positional key ("unnamedParam1"-based) when the
+            // parameter has no real name to join on - e.g. delegate Invoke params, which the
+            // metadata names param0/param1 while the docs key them unnamedParam1/unnamedParam2.
+            _ =
+                apiDetails.Parameters.TryGetValue(originalName, out description)
+                || apiDetails.Parameters.TryGetValue($"unnamedParam{sequenceNumber}", out description);
         }
 
         return new ParameterMember

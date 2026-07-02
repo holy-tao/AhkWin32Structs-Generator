@@ -415,7 +415,7 @@ public sealed class TypeExtractor
             .Where(m => !m.IsNil)
             .Select(reader.GetMethodDefinition)
             .Single(m => reader.StringComparer.Equals(m.Name, "Invoke", true));
-        MethodMember invoke = _methodExtractor.ExtractMethod(reader, invokeDef, typeNamespace).Ok();
+        MethodMember invoke = _methodExtractor.ExtractMethod(reader, invokeDef, typeNamespace, apiDetails).Ok();
 
         CallingConvention callConv = AttributeReader.DecodeDelegateCallingConvention(attrs.All);
 
