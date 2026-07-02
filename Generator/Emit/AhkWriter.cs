@@ -12,9 +12,10 @@ public sealed class AhkWriter(AhkVersion version = AhkVersion.v20)
 {
     private readonly StringBuilder _sb = new(4096);
     private int _indentLevel;
+    private int _commentLevel;
     private const int IndentSize = 4;
 
-    private string Indent => new(' ', _indentLevel * IndentSize);
+    private string Indent => $"{new(' ', _indentLevel * IndentSize)}{(_commentLevel > 0 ? " * " : "")}";
 
     // --- Directives (always at column 0) ---
 
@@ -283,6 +284,30 @@ public sealed class AhkWriter(AhkVersion version = AhkVersion.v20)
     /// <summary>Get the current indent string (for external use).</summary>
     public string CurrentIndent => Indent;
 
+    // --- Comments ---
+
+    /// <summary>
+    /// A block comment like /* ... */
+    /// </summary>
+    /// <returns></returns>
+    public BlockCommentScope BlockComment()
+    {
+        Line("/*");
+        _commentLevel++;
+        return new BlockCommentScope(this);
+    }
+
+    /// <summary>
+    /// A JSDoc comment like /** ... */
+    /// </summary>
+    /// <returns></returns>
+    public BlockCommentScope JSDocComment()
+    {
+        Line("/**");
+        _commentLevel++;
+        return new BlockCommentScope(this);
+    }
+
     // --- Scope helper ---
 
     /// <summary>
@@ -298,6 +323,22 @@ public sealed class AhkWriter(AhkVersion version = AhkVersion.v20)
         {
             _writer._indentLevel--;
             _writer._sb.AppendLine($"{_writer.Indent}}}");
+        }
+    }
+
+    /// <summary>
+    /// IDisposable for opening and closing block comments
+    /// </summary>
+    public readonly struct BlockCommentScope : IDisposable
+    {
+        private readonly AhkWriter _writer;
+
+        internal BlockCommentScope(AhkWriter writer) => _writer = writer;
+
+        public void Dispose()
+        {
+            _writer._commentLevel--;
+            _writer.Line(" */");
         }
     }
 }

@@ -5,7 +5,6 @@ using System.Reflection.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
 using Microsoft.Extensions.Logging;
-using Microsoft.VisualBasic;
 using Microsoft.Windows.SDK.Win32Docs;
 
 /// <summary>
@@ -28,6 +27,16 @@ public readonly record struct MethodExtractionResult(MethodMember? Method, Metho
     public static MethodExtractionResult Success(MethodMember m) => new(m, null);
 
     public static MethodExtractionResult Skipped(MethodSkipReason reason) => new(null, reason);
+
+    /// <summary>
+    /// Assert that extraction succeeded and retrieve the extracted method.
+    /// </summary>
+    /// <returns></returns>
+    /// <exception cref="InvalidOperationException">If method extraction actually failed.</exception>
+    public MethodMember Ok() =>
+        SkipReason is null
+            ? Method!
+            : throw new InvalidOperationException($"Method extraction was skipped for {SkipReason!}");
 }
 
 /// <summary>
@@ -53,10 +62,18 @@ public sealed class MethodExtractor
     /// successful extraction, architecture-filtered skips, and errors so callers can
     /// report skip counts the same way TypeExtractor does for type-level filters.
     /// </summary>
+    /// <param name="paramReturnDocs">
+    /// Documentation to use for the method's parameters and return value when the method itself
+    /// carries none. Delegates pass their enclosing type's docs here: the callback's parameter and
+    /// return descriptions live on the delegate <em>type</em>, while its nameless <c>Invoke</c>
+    /// method has no doc entry of its own. Does not populate the method's Description/Remarks/HelpLink
+    /// - those already appear on the type's own doc comment.
+    /// </param>
     public MethodExtractionResult ExtractMethod(
         MetadataReader reader,
         MethodDefinition methodDef,
-        string declaringNamespace
+        string declaringNamespace,
+        ApiDetails? paramReturnDocs = null
     )
     {
         string methodName = reader.GetString(methodDef.Name);
@@ -79,7 +96,7 @@ public sealed class MethodExtractor
             }
 
             return MethodExtractionResult.Success(
-                ExtractMethodCore(reader, methodDef, methodName, declaringNamespace, methodAttrs)
+                ExtractMethodCore(reader, methodDef, methodName, declaringNamespace, methodAttrs, paramReturnDocs)
             );
         }
         catch (Exception ex)
@@ -94,7 +111,8 @@ public sealed class MethodExtractor
         MethodDefinition methodDef,
         string methodName,
         string declaringNamespace,
-        MethodAttrs methodAttrs
+        MethodAttrs methodAttrs,
+        ApiDetails? paramReturnDocs
     )
     {
         // Detect variadic methods (__arglist) via signature calling convention
@@ -133,8 +151,12 @@ public sealed class MethodExtractor
         // Load documentation
         ApiDetails? apiDetails = _docs.GetApiDetails(reader, methodDef);
 
+        // Parameter/return docs fall back to the caller-supplied set (used by delegates, whose
+        // callback param/return descriptions live on the enclosing type, not the Invoke method).
+        ApiDetails? paramDocs = apiDetails ?? paramReturnDocs;
+
         // Extract parameters
-        List<ParameterMember> parameters = _paramExtractor.ExtractParameters(reader, methodDef, apiDetails);
+        List<ParameterMember> parameters = _paramExtractor.ExtractParameters(reader, methodDef, paramDocs);
 
         // Compute output parameter
         ParameterMember? outputParameter = GetOutputParameter(
@@ -179,7 +201,7 @@ public sealed class MethodExtractor
             Remarks = apiDetails?.Remarks,
             HelpLink = apiDetails?.HelpLink,
             DeprecationMessage = methodAttrs.DeprecationMessage,
-            ReturnValueDoc = apiDetails?.ReturnValue,
+            ReturnValueDoc = paramDocs?.ReturnValue,
             SupportedOSPlatform = methodAttrs.SupportedOSPlatform,
             Imports = imports,
             SupportedArchitecture = methodAttrs.Architecture,
