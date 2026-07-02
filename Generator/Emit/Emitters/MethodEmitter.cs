@@ -395,7 +395,8 @@ public static class MethodEmitter
         MethodMember method,
         TypeRegistry registry,
         bool unqualifyApis = false,
-        ModuleNameResolver? names = null
+        ModuleNameResolver? names = null,
+        string? entry = null
     )
     {
         var sb = new System.Text.StringBuilder();
@@ -403,8 +404,8 @@ public static class MethodEmitter
         if (method.HasReturnValue)
             sb.Append("result := ");
 
-        // Entry point
-        string entry = method.IsOrdinal ? "procAddr" : $"\"{method.DllName}\\{method.EntryPoint}\"";
+        // Entry point, if not overridden
+        entry ??= method.IsOrdinal ? "procAddr" : $"\"{method.DllName}\\{method.EntryPoint}\"";
 
         sb.Append($"DllCall({entry}");
 
@@ -690,7 +691,7 @@ public static class MethodEmitter
     /// (<paramref name="unqualifyApis"/> = true) named types render as unquoted class
     /// references (HWND, RECT.Ptr, BOOL, ...) so DllCall uses the type class directly.
     /// </summary>
-    private static string GetParamDllCallTypeToken(
+    public static string GetParamDllCallTypeToken(
         ResolvedType type,
         bool unqualifyApis,
         ModuleNameResolver? names = null
@@ -710,7 +711,8 @@ public static class MethodEmitter
             PointerType { Pointee: HandleRef h } => $"{TypeRef(names, h.FQN, h.Name)}.Ptr",
             PointerType { Pointee: ComRef c } => $"{TypeRef(names, c.FQN, c.Name)}.Ptr",
             PointerType { Pointee: NativeTypedefRef n } => $"{TypeRef(names, n.FQN, n.Name)}.Ptr",
-            // Fallback: pointer-to-primitive (typed star), void*, function ptr, enum, HRESULT, etc.
+            PrimitiveType p => p.TypeSpecifier,
+            // Fallback: pointer-to-primitive (typed star), void*, function ptr, HRESULT, etc.
             _ => $"\"{GetParamDllCallType(type)}\"",
         };
     }
@@ -807,5 +809,33 @@ public static class MethodEmitter
 
         sb.Append(')');
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Emit a delegate's <c>Invoke</c> method - this is an instance method always named "Call" whose entry
+    /// point is the delegate's function pointer, not a method name.
+    /// </summary>
+    public static void EmitDelegateInvokeMethod(AhkWriter w, MethodMember method, TypeRegistry registry)
+    {
+        DocCommentWriter.WriteMethodDoc(w, method);
+        string argList = BuildArgumentList(method);
+
+        using var _ = w.InstanceMethod("Call", argList);
+
+        EmitReservedParams(w, method);
+        EmitParameterConversions(w, method, false, true);
+        EmitParameterMarshalling(w, method);
+
+        if (method.SetsLastError)
+        {
+            w.Line("A_LastError := 0");
+            w.BlankLine();
+        }
+
+        EmitOutputParamMarshalling(w, method, registry);
+        w.Line(BuildDllCallExpression(method, registry, true, null, entry: "this.value"));
+
+        EmitErrorCheck(w, method, registry, true);
+        EmitReturnStatement(w, method, registry, true);
     }
 }

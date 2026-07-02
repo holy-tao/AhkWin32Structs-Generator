@@ -227,6 +227,7 @@ public class Program
                 .. emitters,
                 new ApiConstantsEmitter21(registry, loggerFactory.CreateLogger<ApiConstantsEmitter21>()),
                 new NativeTypedefEmitter21(),
+                new DelegateEmitter(registry),
             ];
         var pipeline = new TypeEmissionPipeline(
             emitters,
