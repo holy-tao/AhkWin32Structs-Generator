@@ -1309,6 +1309,9 @@ public sealed class TypeExtractor
                 refs.Add(n.FQN);
                 CollectTypeReferences(n.Underlying, refs);
                 break;
+            case FunctionPointerType { FQN: { } fnPtrFqn }:
+                refs.Add(fnPtrFqn);
+                break;
             case HResultType or NtStatusType:
                 refs.Add($"Windows.Win32.Foundation.{type.DisplayName}");
                 break;

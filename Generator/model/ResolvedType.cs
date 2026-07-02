@@ -225,14 +225,17 @@ public sealed record NtStatusType() : ResolvedType
 }
 
 /// <summary>
-/// A function pointer type (delegates, callbacks).
-/// Treated as a pointer in code generation.
+/// A function pointer type (delegates, callbacks). Treated as a pointer-sized value in code
+/// generation. When it refers to a named delegate type (<see cref="FQN"/> is set), the emitted
+/// delegate struct is a pointer-sized wrapper, so the type specifier is the delegate's name and
+/// the referencing type imports the delegate file. Inline <c>delegate*</c> signatures have no
+/// emitted type (<see cref="FQN"/> is null) and fall back to a raw <c>IntPtr</c>.
 /// </summary>
-public sealed record FunctionPointerType(string Name, string Signature) : ResolvedType
+public sealed record FunctionPointerType(string Name, string Signature, string? FQN = null) : ResolvedType
 {
     public override string DisplayName => $"Pointer<{Name}>";
     public override string DllCallType => "ptr";
-    public override string TypeSpecifier => "IntPtr"; // TODO we can have function pointer types now!
+    public override string TypeSpecifier => FQN is null ? "IntPtr" : Name;
     public override int Width => 8;
 }
 
