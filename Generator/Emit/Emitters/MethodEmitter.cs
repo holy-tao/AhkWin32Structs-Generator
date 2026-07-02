@@ -502,7 +502,7 @@ public static class MethodEmitter
         // NTSTATUS: special case — no SetsLastError interaction
         if (method.Parameters[0].Type is NtStatusType)
         {
-            w.Line("NTSTATUS.ThrowIfError(result)");
+            w.Line("NTSTATUS.ThrowIfError(result.value)");
             return;
         }
 
