@@ -86,7 +86,10 @@ public sealed class DelegateEmitter(TypeRegistry typeRegistry) : ITypeEmitter
         }
 
         w.BlankLine();
-        // One-line delete for now, save a few bytes
-        w.Line($"__Delete() => CallbackFree(this.value)");
+        using (w.InstanceMethod("__Delete", ""))
+        {
+            using (w.If("this.value")) { }
+            w.Line($"CallbackFree(this.value)");
+        }
     }
 }
