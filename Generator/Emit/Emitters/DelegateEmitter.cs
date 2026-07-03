@@ -88,8 +88,8 @@ public sealed class DelegateEmitter(TypeRegistry typeRegistry) : ITypeEmitter
         w.BlankLine();
         using (w.InstanceMethod("__Delete", ""))
         {
-            using (w.If("this.value")) { }
-            w.Line($"CallbackFree(this.value)");
+            using (w.If("this.value"))
+                w.Line($"CallbackFree(this.value)");
         }
     }
 }
