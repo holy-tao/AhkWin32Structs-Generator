@@ -131,13 +131,13 @@ public sealed class ComInterfaceEmitter21(TypeRegistry registry) : ITypeEmitter
     private static void EmitQuery(AhkWriter w, ComInterfaceType comType)
     {
         w.BlankLine();
-        using (w.InstanceMethod("Query", "iid"))
+        using (w.InstanceMethod("_Query", "iid"))
         {
             using (w.If($"{comType.Name}.IID.Equals(iid)"))
             {
                 w.Line("return true");
             }
-            w.Line("return super.Query(iid)");
+            w.Line("return super._Query(iid)");
         }
     }
 
