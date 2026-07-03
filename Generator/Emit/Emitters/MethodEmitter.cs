@@ -409,9 +409,7 @@ public static class MethodEmitter
     /// its handle type has a free function - i.e. it should auto-free. The boxing differs by version.
     /// </summary>
     private static bool IsOwnedHandle(ParameterMember param, string handleFqn, TypeRegistry registry) =>
-        param.ScriptOwned
-        && registry.Resolve(handleFqn, Architecture.All) is HandleType ht
-        && ht.FreeFunc is not null;
+        param.ScriptOwned && registry.Resolve(handleFqn, Architecture.All) is HandleType ht && ht.FreeFunc is not null;
 
     /// <summary>
     /// The v2.1 type-class reference used to convert a return value, alias-resolved for the local
@@ -884,7 +882,7 @@ public static class MethodEmitter
             w.BlankLine();
         }
 
-        EmitOutputParamMarshalling(w, method, registry);
+        EmitOutputParamMarshalling(w, method, registry, true);
         w.Line(BuildDllCallExpression(method, registry, true, null, entry: "this.value"));
 
         EmitErrorCheck(w, method, registry, true);

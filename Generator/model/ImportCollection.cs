@@ -19,7 +19,11 @@ public sealed class ImportCollection
 
     public bool HasType(string fqn) => _types.Contains(fqn);
 
-    public IEnumerable<string> GetTypes() => _types;
+    /// <summary>
+    /// Type FQNs to import, in a stable ordinal order. The backing store is an unordered
+    /// concurrent set, so ordering here is what keeps emission deterministic across runs.
+    /// </summary>
+    public IEnumerable<string> GetTypes() => _types.OrderBy(fqn => fqn, StringComparer.Ordinal);
 
     public bool AddFunction(string apisFqn, string fnName)
     {
@@ -29,12 +33,12 @@ public sealed class ImportCollection
 
     public int AddFunctions(string apisFqn, IEnumerable<string> fns) => fns.Count(fn => AddFunction(apisFqn, fn));
 
-    public IEnumerable<string> GetFunctionNamespaces() => _functions.Keys;
+    public IEnumerable<string> GetFunctionNamespaces() => _functions.Keys.OrderBy(fqn => fqn, StringComparer.Ordinal);
 
     public IEnumerable<string> GetFunctionsForNamespace(string apisFqn)
     {
         if (_functions.TryGetValue(apisFqn, out var fns))
-            return fns;
+            return fns.OrderBy(fn => fn, StringComparer.Ordinal);
 
         throw new KeyNotFoundException($"Import collection contains no functions for namespace {apisFqn}");
     }
@@ -43,7 +47,8 @@ public sealed class ImportCollection
     /// FQNs of every distinct file that needs to be included. For v2 emitters: union of
     /// type FQNs and function-Apis FQNs (one #Include per file).
     /// </summary>
-    public IEnumerable<string> GetIncludeTargets() => _types.Concat(_functions.Keys).Distinct();
+    public IEnumerable<string> GetIncludeTargets() =>
+        _types.Concat(_functions.Keys).Distinct().OrderBy(fqn => fqn, StringComparer.Ordinal);
 
     /// <summary>
     /// Merge another collection's contents into this one.

@@ -391,7 +391,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
             w.Import(path, [ImportResolver.GetImportName(fqn)]);
         }
 
-        foreach (string fqn in extraImports)
+        foreach (string fqn in extraImports.OrderBy(f => f, StringComparer.Ordinal))
         {
             if (fqn == type.FQN || !IsImportable(fqn) || !seen.Add(fqn))
                 continue;
