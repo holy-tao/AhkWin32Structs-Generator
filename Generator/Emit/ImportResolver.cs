@@ -16,12 +16,31 @@ public static class ImportResolver
     }
 
     /// <summary>
-    /// Calculate the relative #Include path from one namespace to a type identified by FQN.
+    /// v2.1 folder-module layout: calculate the relative path from a type's namespace
+    /// directory up to the module root - the first namespace segment's directory (e.g.
+    /// "Windows"), where the hand-written fixtures (Guid, Win32ComInterface, Vector) live.
+    /// One level shallower than <see cref="GetPathToBase"/>, because the first namespace
+    /// segment IS the module-root directory rather than a level to ascend past.
     /// </summary>
-    public static string GetIncludePath(string fromNs, string importFqn)
+    public static string GetPathToModuleRoot(string ns)
+    {
+        int depth = ns.Split('.').Length - 1;
+        return string.Concat(Enumerable.Repeat($"..{Path.DirectorySeparatorChar}", Math.Max(depth, 0)));
+    }
+
+    /// <summary>
+    /// Calculate the relative #Include path from one namespace to a type identified by FQN.
+    /// When <paramref name="moduleRelative"/> is set (v2.1 folder-module emission), the
+    /// hand-written <c>Guid.ahk</c> fixture resolves relative to the module root rather than
+    /// the repository root; regular type paths are unaffected.
+    /// </summary>
+    public static string GetIncludePath(string fromNs, string importFqn, bool moduleRelative = false)
     {
         if (importFqn == "System.Guid")
-            return $"{GetPathToBase(fromNs)}Guid.ahk";
+        {
+            string toRoot = moduleRelative ? GetPathToModuleRoot(fromNs) : GetPathToBase(fromNs);
+            return $"{toRoot}Guid.ahk";
+        }
 
         int lastDot = importFqn.LastIndexOf('.');
         string importNs = importFqn[..lastDot];

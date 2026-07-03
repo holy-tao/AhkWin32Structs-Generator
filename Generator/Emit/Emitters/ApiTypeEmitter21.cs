@@ -81,13 +81,13 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry, ILogger? logger = nu
         {
             if (constantOnlyTypes.Contains(fqn))
                 continue;
-            string path = ImportResolver.GetIncludePath(apiType.Namespace, fqn);
+            string path = ImportResolver.GetIncludePath(apiType.Namespace, fqn, moduleRelative: true);
             w.Import(path, [names.TypeImportToken(fqn)]);
         }
 
         foreach (string apisFqn in apiType.Imports.GetFunctionNamespaces())
         {
-            string path = ImportResolver.GetIncludePath(apiType.Namespace, apisFqn);
+            string path = ImportResolver.GetIncludePath(apiType.Namespace, apisFqn, moduleRelative: true);
             var tokens = apiType
                 .Imports.GetFunctionsForNamespace(apisFqn)
                 .Select(fn => names.FunctionImportToken(apisFqn, fn));

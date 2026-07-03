@@ -146,22 +146,22 @@ public sealed class ComInterfaceEmitter21(TypeRegistry registry) : ITypeEmitter
         w.Require("AutoHotkey v2.1-alpha.30+ 64-bit");
 
         // The COM-runtime fixtures (Win32ComInterface, Win32Struct, Guid) live at the
-        // projection root regardless of namespace; emit explicit imports rather than
-        // routing through the per-FQN ImportResolver paths.
-        string pathToBase = ImportResolver.GetPathToBase(comType.Namespace);
+        // module root (the "Windows" folder-module directory) regardless of namespace;
+        // emit explicit imports rather than routing through the per-FQN ImportResolver paths.
+        string pathToModuleRoot = ImportResolver.GetPathToModuleRoot(comType.Namespace);
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        WriteImport(w, $"{pathToBase}Win32ComInterface.ahk", "Win32ComInterface", seen);
-        WriteImport(w, $"{pathToBase}Guid.ahk", "Guid", seen);
+        WriteImport(w, $"{pathToModuleRoot}Win32ComInterface.ahk", "Win32ComInterface", seen);
+        WriteImport(w, $"{pathToModuleRoot}Guid.ahk", "Guid", seen);
 
         foreach (string fqn in comType.Imports.GetTypes().Where(f => f != comType.FQN))
         {
-            string path = ImportResolver.GetIncludePath(comType.Namespace, fqn);
+            string path = ImportResolver.GetIncludePath(comType.Namespace, fqn, moduleRelative: true);
             WriteImport(w, path, ImportResolver.GetImportName(fqn), seen);
         }
 
         foreach (string apisFqn in comType.Imports.GetFunctionNamespaces())
         {
-            string path = ImportResolver.GetIncludePath(comType.Namespace, apisFqn);
+            string path = ImportResolver.GetIncludePath(comType.Namespace, apisFqn, moduleRelative: true);
             w.Import(path, comType.Imports.GetFunctionsForNamespace(apisFqn));
         }
     }

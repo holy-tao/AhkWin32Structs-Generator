@@ -31,7 +31,7 @@ public sealed class ApiConstantsEmitter21(TypeRegistry registry, ILogger? logger
 
     private void EmitConstantsFile(AhkWriter w, ApiType apiType)
     {
-        string pathToBase = ImportResolver.GetPathToBase(apiType.Namespace);
+        string pathToModuleRoot = ImportResolver.GetPathToModuleRoot(apiType.Namespace);
         bool hasHandleConstant = HasHandleConstant(apiType);
 
         // Build a name resolver so imported type names that collide (case-insensitively) with this
@@ -46,7 +46,7 @@ public sealed class ApiConstantsEmitter21(TypeRegistry registry, ILogger? logger
         w.Require("AutoHotkey >= v2.1-alpha.24+ 64-bit");
 
         if (apiType.NeedsGuid)
-            w.Import($"{pathToBase}Guid.ahk", ["Guid"]);
+            w.Import($"{pathToModuleRoot}Guid.ahk", ["Guid"]);
 
         EmitImports(w, apiType, names);
 
@@ -70,7 +70,7 @@ public sealed class ApiConstantsEmitter21(TypeRegistry registry, ILogger? logger
         {
             if (!seen.Add(fqn))
                 continue;
-            string path = ImportResolver.GetIncludePath(apiType.Namespace, fqn);
+            string path = ImportResolver.GetIncludePath(apiType.Namespace, fqn, moduleRelative: true);
             w.Import(path, [names.TypeImportToken(fqn)]);
         }
     }

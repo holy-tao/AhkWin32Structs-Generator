@@ -70,13 +70,13 @@ public sealed class EnumEmitter21 : ITypeEmitter
     {
         foreach (string fqn in enumType.Imports.GetTypes().Where(fqn => fqn != enumType.FQN))
         {
-            string path = ImportResolver.GetIncludePath(enumType.Namespace, fqn);
+            string path = ImportResolver.GetIncludePath(enumType.Namespace, fqn, moduleRelative: true);
             w.Import(path, [ImportResolver.GetImportName(fqn)]);
         }
 
         foreach (string apisFqn in enumType.Imports.GetFunctionNamespaces())
         {
-            string path = ImportResolver.GetIncludePath(enumType.Namespace, apisFqn);
+            string path = ImportResolver.GetIncludePath(enumType.Namespace, apisFqn, moduleRelative: true);
             w.Import(path, enumType.Imports.GetFunctionsForNamespace(apisFqn));
         }
     }

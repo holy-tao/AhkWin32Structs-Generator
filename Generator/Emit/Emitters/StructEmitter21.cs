@@ -387,7 +387,7 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
         {
             if (!seen.Add(fqn))
                 continue;
-            string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
+            string path = ImportResolver.GetIncludePath(type.Namespace, fqn, moduleRelative: true);
             w.Import(path, [ImportResolver.GetImportName(fqn)]);
         }
 
@@ -395,13 +395,13 @@ public sealed class StructEmitter21(TypeRegistry registry) : ITypeEmitter
         {
             if (fqn == type.FQN || !IsImportable(fqn) || !seen.Add(fqn))
                 continue;
-            string path = ImportResolver.GetIncludePath(type.Namespace, fqn);
+            string path = ImportResolver.GetIncludePath(type.Namespace, fqn, moduleRelative: true);
             w.Import(path, [ImportResolver.GetImportName(fqn)]);
         }
 
         foreach (string apisFqn in type.Imports.GetFunctionNamespaces())
         {
-            string path = ImportResolver.GetIncludePath(type.Namespace, apisFqn);
+            string path = ImportResolver.GetIncludePath(type.Namespace, apisFqn, moduleRelative: true);
             w.Import(path, type.Imports.GetFunctionsForNamespace(apisFqn));
         }
     }

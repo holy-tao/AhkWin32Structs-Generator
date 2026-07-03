@@ -240,6 +240,14 @@ public class Program
             namespaceFilter.Length > 0 ? namespaceFilter : null
         );
 
+        // v2.1 folder-module barrels: write __Init.ahk throughout the Windows module tree so
+        // the projection can be consumed with a single `#Import Windows`. v2.0 has no modules.
+        if (ahkVersion is AhkVersion.v21)
+        {
+            var barrelWriter = new ModuleBarrelWriter(loggerFactory.CreateLogger<ModuleBarrelWriter>());
+            barrelWriter.WriteBarrels(outputPath);
+        }
+
         // Write version.ini
         WriteVersionInfo(loader, metadataPath, outputPath, logger);
 
