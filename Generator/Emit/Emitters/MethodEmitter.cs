@@ -424,6 +424,7 @@ public static class MethodEmitter
             StructRef s => TypeRef(names, s.FQN, s.Name),
             EnumRef e => TypeRef(names, e.FQN, e.Name),
             ComRef c => TypeRef(names, c.FQN, c.Name),
+            FunctionPointerType { FQN: { } fqn } f => TypeRef(names, fqn, f.Name),
             NtStatusType => "NTSTATUS",
             PointerType { Pointee: StructRef s } => $"{TypeRef(names, s.FQN, s.Name)}.Ptr",
             PointerType { Pointee: HandleRef h } => $"{TypeRef(names, h.FQN, h.Name)}.Ptr",
@@ -450,7 +451,7 @@ public static class MethodEmitter
             sb.Append("result := ");
 
         // Entry point, if not overridden
-        entry ??= method.IsOrdinal ? "procAddr" : $"\"{method.DllName}\\{method.EntryPoint}\"";
+        entry ??= method.IsOrdinal ? "procAddr.value" : $"\"{method.DllName}\\{method.EntryPoint}\"";
 
         sb.Append($"DllCall({entry}");
 
@@ -546,7 +547,7 @@ public static class MethodEmitter
         // NTSTATUS: special case — no SetsLastError interaction
         if (method.Parameters[0].Type is NtStatusType)
         {
-            w.Line("NTSTATUS.ThrowIfError(result)");
+            w.Line("NTSTATUS.ThrowIfError(result.value)");
             return;
         }
 
@@ -756,6 +757,7 @@ public static class MethodEmitter
             NativeTypedefRef n => TypeRef(names, n.FQN, n.Name),
             StructRef s => TypeRef(names, s.FQN, s.Name),
             EnumRef e => TypeRef(names, e.FQN, e.Name),
+            FunctionPointerType { FQN: { } fqn } f => TypeRef(names, fqn, f.Name),
             NtStatusType => "NTSTATUS",
             PointerType { Pointee: StructRef s } => $"{TypeRef(names, s.FQN, s.Name)}.Ptr",
             PointerType { Pointee: HandleRef h } => $"{TypeRef(names, h.FQN, h.Name)}.Ptr",

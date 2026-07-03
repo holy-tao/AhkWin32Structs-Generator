@@ -234,7 +234,7 @@ public sealed class SignatureDecoder : ISignatureTypeProvider<ResolvedType, Sign
                 typeName,
                 fqn
             );
-            return new FunctionPointerType(typeName, "");
+            return new FunctionPointerType(typeName, "", fqn);
         }
 
         // COM interface
