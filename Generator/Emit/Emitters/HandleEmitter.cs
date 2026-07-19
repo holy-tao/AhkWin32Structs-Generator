@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
+using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Types;
 
 /// <summary>
@@ -7,8 +8,10 @@ using AhkWin32.Generator.Model.Types;
 /// Port of legacy AhkHandle.ToAhk().
 /// Delegates body emission to StructEmitter shared methods.
 /// </summary>
-public sealed class HandleEmitter : ITypeEmitter
+public sealed class HandleEmitter(TypeRegistry registry) : ITypeEmitter
 {
+    private readonly TypeRegistry _registry = registry;
+
     public bool CanEmit(Win32Type type) => type is HandleType;
 
     public EmitResult Emit(Win32Type type, string outputRoot)
@@ -22,7 +25,7 @@ public sealed class HandleEmitter : ITypeEmitter
         return new EmitResult(w.ToString(), filePath);
     }
 
-    private static void EmitHandle(AhkWriter w, HandleType handleType)
+    private void EmitHandle(AhkWriter w, HandleType handleType)
     {
         string pathToBase = ImportResolver.GetPathToBase(handleType.Namespace);
 
@@ -30,7 +33,7 @@ public sealed class HandleEmitter : ITypeEmitter
         w.Require("AutoHotkey v2.0.0 64-bit");
         w.Include($"{pathToBase}Win32Struct.ahk");
 
-        EmitImports(w, handleType);
+        ImportResolver.EmitIncludes(w, handleType, _registry);
 
         w.Include($"{pathToBase}Win32Handle.ahk");
 
@@ -70,11 +73,4 @@ public sealed class HandleEmitter : ITypeEmitter
         }
     }
 
-    private static void EmitImports(AhkWriter w, Win32Type type)
-    {
-        foreach (string import in type.Imports.GetIncludeTargets())
-        {
-            w.Include(ImportResolver.GetIncludePath(type.Namespace, import));
-        }
-    }
 }

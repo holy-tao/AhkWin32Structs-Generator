@@ -1,14 +1,17 @@
 namespace AhkWin32.Generator.Emit.Emitters;
 
 using AhkWin32.Generator.Metadata;
+using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Types;
 
 /// <summary>
 /// Emits EnumType as a complete .ahk file.
 /// Port of legacy AhkEnum.ToAhk().
 /// </summary>
-public sealed class EnumEmitter : ITypeEmitter
+public sealed class EnumEmitter(TypeRegistry registry) : ITypeEmitter
 {
+    private readonly TypeRegistry _registry = registry;
+
     public bool CanEmit(Win32Type type) => type is EnumType;
 
     public EmitResult Emit(Win32Type type, string outputRoot)
@@ -22,7 +25,7 @@ public sealed class EnumEmitter : ITypeEmitter
         return new EmitResult(w.ToString(), filePath);
     }
 
-    private static void EmitEnum(AhkWriter w, EnumType enumType)
+    private void EmitEnum(AhkWriter w, EnumType enumType)
     {
         // Directives
         string pathToBase = ImportResolver.GetPathToBase(enumType.Namespace);
@@ -30,7 +33,7 @@ public sealed class EnumEmitter : ITypeEmitter
         w.Include($"{pathToBase}Win32Enum.ahk");
 
         // Extension imports
-        EmitImports(w, enumType);
+        ImportResolver.EmitIncludes(w, enumType, _registry);
 
         w.BlankLine();
 
@@ -50,15 +53,6 @@ public sealed class EnumEmitter : ITypeEmitter
 
             // Extensions
             EmitExtensions(w, enumType);
-        }
-    }
-
-    private static void EmitImports(AhkWriter w, EnumType enumType)
-    {
-        // Enum imports come only from extensions
-        foreach (string import in enumType.Imports.GetIncludeTargets())
-        {
-            w.Include(ImportResolver.GetIncludePath(enumType.Namespace, import));
         }
     }
 

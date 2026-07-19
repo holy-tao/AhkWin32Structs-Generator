@@ -40,7 +40,7 @@ public sealed class ApiTypeEmitter : ITypeEmitter
             w.Include($"{pathToBase}Guid.ahk");
 
         // Referenced type imports (from constants, methods, and extensions)
-        EmitImports(w, apiType);
+        ImportResolver.EmitIncludes(w, apiType, _registry);
 
         w.BlankLine();
 
@@ -59,14 +59,6 @@ public sealed class ApiTypeEmitter : ITypeEmitter
 
             // Methods region
             EmitMethods(w, apiType);
-        }
-    }
-
-    private static void EmitImports(AhkWriter w, ApiType apiType)
-    {
-        foreach (string import in apiType.Imports.GetIncludeTargets())
-        {
-            w.Include(ImportResolver.GetIncludePath(apiType.Namespace, import));
         }
     }
 

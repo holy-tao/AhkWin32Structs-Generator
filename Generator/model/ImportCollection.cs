@@ -44,13 +44,6 @@ public sealed class ImportCollection
     }
 
     /// <summary>
-    /// FQNs of every distinct file that needs to be included. For v2 emitters: union of
-    /// type FQNs and function-Apis FQNs (one #Include per file).
-    /// </summary>
-    public IEnumerable<string> GetIncludeTargets() =>
-        _types.Concat(_functions.Keys).Distinct().OrderBy(fqn => fqn, StringComparer.Ordinal);
-
-    /// <summary>
     /// Merge another collection's contents into this one.
     /// </summary>
     public void MergeFrom(ImportCollection other)

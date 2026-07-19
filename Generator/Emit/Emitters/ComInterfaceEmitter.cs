@@ -68,10 +68,7 @@ public sealed class ComInterfaceEmitter(TypeRegistry registry) : ITypeEmitter
         w.Include($"{pathToBase}Win32ComInterface.ahk");
         w.Include($"{pathToBase}Guid.ahk");
 
-        foreach (string fqn in comType.Imports.GetIncludeTargets().Where(f => f != comType.FQN))
-        {
-            w.Include(ImportResolver.GetIncludePath(comType.Namespace, fqn));
-        }
+        ImportResolver.EmitIncludes(w, comType, _registry);
     }
 
     /// <summary>

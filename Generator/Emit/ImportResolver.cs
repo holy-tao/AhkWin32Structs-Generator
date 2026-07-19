@@ -1,11 +1,37 @@
 namespace AhkWin32.Generator.Emit;
 
+using AhkWin32.Generator.Model;
+using AhkWin32.Generator.Model.Types;
+
 /// <summary>
 /// Calculates relative #Include paths between namespaces and types.
 /// Port of path calculation logic from legacy AhkType.
 /// </summary>
 public static class ImportResolver
 {
+    /// <summary>
+    /// Emit the relative <c>#Include</c> directives for a v2.0 type's referenced imports, skipping
+    /// any that wouldn't resolve to a generated file (e.g. delegates).
+    /// </summary>
+    public static void EmitIncludes(AhkWriter w, Win32Type type, TypeRegistry registry)
+    {
+        IEnumerable<string> candidates = type
+            .Imports.GetTypes()
+            .Concat(type.Imports.GetFunctionNamespaces())
+            .Distinct()
+            .OrderBy(fqn => fqn, StringComparer.Ordinal);
+
+        foreach (string fqn in candidates)
+        {
+            if (fqn == type.FQN)
+                continue;
+
+            bool emittable = fqn == "System.Guid" || (registry.Contains(fqn) && !registry.Contains<DelegateType>(fqn));
+            if (emittable)
+                w.Include(GetIncludePath(type.Namespace, fqn));
+        }
+    }
+
     /// <summary>
     /// Calculate the relative path from a type's namespace directory to the output root.
     /// E.g., "Windows.Win32.Foundation" becomes "..\..\..\".
