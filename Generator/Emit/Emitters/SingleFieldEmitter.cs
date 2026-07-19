@@ -23,7 +23,8 @@ internal static class SingleFieldEmitter
             .Imports.GetTypes()
             .Concat((type.ConvertibleFrom ?? []).Select(t => t.FQN))
             .Where(fqn => fqn != type.FQN)
-            .Distinct();
+            .Distinct()
+            .OrderBy(fqn => fqn, StringComparer.Ordinal);
 
         foreach (string fqn in typeFqns)
         {
