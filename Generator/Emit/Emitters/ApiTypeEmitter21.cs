@@ -112,7 +112,7 @@ public sealed class ApiTypeEmitter21(TypeRegistry registry, ILogger? logger = nu
 
         foreach (var method in apiType.Methods)
         {
-            MethodEmitter.EmitDllImportFunction(w, method, _registry, names);
+            MethodEmitter21.EmitDllImportFunction(w, method, _registry, names);
             w.BlankLine();
         }
 

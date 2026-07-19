@@ -72,5 +72,4 @@ public sealed class HandleEmitter(TypeRegistry registry) : ITypeEmitter
             }
         }
     }
-
 }

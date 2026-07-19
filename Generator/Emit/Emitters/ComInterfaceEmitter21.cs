@@ -72,7 +72,7 @@ public sealed class ComInterfaceEmitter21(TypeRegistry registry) : ITypeEmitter
             foreach (var method in comType.Methods)
             {
                 w.BlankLine();
-                MethodEmitter.EmitComMethod(w, method, _registry, AhkVersion.v21);
+                MethodEmitter21.EmitComMethod(w, method, _registry);
             }
 
             EmitQuery(w, comType);

@@ -37,7 +37,7 @@ public sealed class DelegateEmitter(TypeRegistry typeRegistry) : ITypeEmitter
         SingleFieldEmitter.EmitValueSetter(w, delegateType, "value");
         w.BlankLine();
 
-        MethodEmitter.EmitDelegateInvokeMethod(w, delegateType.Invoke, typeRegistry);
+        MethodEmitter21.EmitDelegateInvokeMethod(w, delegateType.Invoke, typeRegistry);
 
         w.BlankLine();
         using (w.JSDocComment())
@@ -56,9 +56,9 @@ public sealed class DelegateEmitter(TypeRegistry typeRegistry) : ITypeEmitter
         using var _ = w.Struct("From", delegateType.Name);
 
         List<string> paramTypes = delegateType
-            .Invoke.InputParameters.Select(p => MethodEmitter.GetParamDllCallTypeToken(p.Type, true))
+            .Invoke.InputParameters.Select(p => MethodEmitter21.GetParamDllCallTypeToken(p.Type))
             .ToList();
-        string returnType = MethodEmitter.GetParamDllCallTypeToken(delegateType.Invoke.Parameters[0].Type, true);
+        string returnType = MethodEmitter21.GetParamDllCallTypeToken(delegateType.Invoke.Parameters[0].Type);
 
         using (w.JSDocComment())
         {
