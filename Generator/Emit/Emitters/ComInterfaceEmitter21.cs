@@ -256,7 +256,7 @@ public sealed class ComInterfaceEmitter21(TypeRegistry registry) : ITypeEmitter
                 int paramCount = method.Parameters.Count;
                 w.Line(
                     $"this.vtbl.{method.DeduplicatedName} := CallbackCreate("
-                        + $"GetMethod(implObj, \"{method.DeduplicatedName}\"), flags, {paramCount})"
+                        + $"ObjBindMethod(implObj, \"{method.DeduplicatedName}\"), flags, {paramCount})"
                 );
             }
         }
