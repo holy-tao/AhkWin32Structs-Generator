@@ -55,7 +55,7 @@ jobs:
       did-update: ${{ steps.summary.outputs.did-update }}
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ssh-key: ${{ secrets.DEPLOY_KEY }}
