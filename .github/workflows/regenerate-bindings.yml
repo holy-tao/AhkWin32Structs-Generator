@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Checkout Generator Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: holy-tao/AhkWin32Structs-Generator
           lfs: true
@@ -40,7 +40,7 @@ jobs:
         run: dotnet build -c Release
 
       - name: Checkout Bindings Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: holy-tao/AhkWin32Projection
           path: bindings
