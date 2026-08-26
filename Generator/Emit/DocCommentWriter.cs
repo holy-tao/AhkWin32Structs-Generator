@@ -46,7 +46,7 @@ public static class DocCommentWriter
         if (type.IsUnicode)
             w.Line(" * @charset Unicode");
 
-        if (type.Arch is not Architecture.All or Architecture.None)
+        if (type.Arch is not (Architecture.All or Architecture.None))
             w.Line($" * @architecture {type.Arch}");
 
         if (type.IsDeprecated)
