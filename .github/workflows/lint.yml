@@ -14,7 +14,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '9.0.x' # Use your project's version
+          dotnet-version: '10.0.x' # Use your project's version
 
       - run: dotnet tool restore
       - run: dotnet csharpier check .
