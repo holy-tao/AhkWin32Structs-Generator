@@ -7,12 +7,30 @@ on:
       metadata-version:
         description: 'The new version of the win32 metadata package'
         value: ${{ jobs.update.outputs.metadata-version }}
+      metadata-old-version:
+        description: 'The previous version of the win32 metadata package'
+        value: ${{ jobs.update.outputs.metadata-old-version }}
+      metadata-did-update:
+        description: 'Whether the win32 metadata package was updated'
+        value: ${{ jobs.update.outputs.metadata-did-update }}
       wdk-metadata-version:
         description: 'The new version of the win32 WDK metadata package'
         value: ${{ jobs.update.outputs.wdk-metadata-version }}
+      wdk-metadata-old-version:
+        description: 'The previous version of the win32 WDK metadata package'
+        value: ${{ jobs.update.outputs.wdk-metadata-old-version }}
+      wdk-metadata-did-update:
+        description: 'Whether the win32 WDK metadata package was updated'
+        value: ${{ jobs.update.outputs.wdk-metadata-did-update }}
       apidocs-version:
         description: 'The new version of the win32 apidocs package'
         value: ${{ jobs.update.outputs.apidocs-version }}
+      apidocs-old-version:
+        description: 'The previous version of the win32 apidocs package'
+        value: ${{ jobs.update.outputs.apidocs-old-version }}
+      apidocs-did-update:
+        description: 'Whether the win32 apidocs package was updated'
+        value: ${{ jobs.update.outputs.apidocs-did-update }}
       did-update:
         description: 'Whether any packages were updated'
         value: ${{ jobs.update.outputs.did-update }}
@@ -26,8 +44,14 @@ jobs:
     runs-on: windows-latest
     outputs:
       metadata-version: ${{ steps.commit-metadata.outputs.version }}
+      metadata-old-version: ${{ steps.commit-metadata.outputs.old-version }}
+      metadata-did-update: ${{ steps.commit-metadata.outputs.did-update }}
       wdk-metadata-version: ${{ steps.commit-wdk.outputs.version }}
+      wdk-metadata-old-version: ${{ steps.commit-wdk.outputs.old-version }}
+      wdk-metadata-did-update: ${{ steps.commit-wdk.outputs.did-update }}
       apidocs-version: ${{ steps.commit-docs.outputs.version }}
+      apidocs-old-version: ${{ steps.commit-docs.outputs.old-version }}
+      apidocs-did-update: ${{ steps.commit-docs.outputs.did-update }}
       did-update: ${{ steps.summary.outputs.did-update }}
     steps:
       - name: Checkout Repository
@@ -53,7 +77,11 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content ./metadata/Microsoft.Windows.SDK.Win32Metadata.version -Raw).Trim()
+          $oldVersion = git show "HEAD:metadata/Microsoft.Windows.SDK.Win32Metadata.version" 2>$null
+          if ($LASTEXITCODE -ne 0 -or -not $oldVersion) { $oldVersion = "none" } else { $oldVersion = $oldVersion.Trim() }
+
           Write-Output "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Output "old-version=$oldVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
           git add ./metadata/*.winmd
           git add ./metadata/*.version
@@ -81,7 +109,11 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content ./metadata/Microsoft.Windows.WDK.Win32Metadata.version -Raw).Trim()
+          $oldVersion = git show "HEAD:metadata/Microsoft.Windows.WDK.Win32Metadata.version" 2>$null
+          if ($LASTEXITCODE -ne 0 -or -not $oldVersion) { $oldVersion = "none" } else { $oldVersion = $oldVersion.Trim() }
+
           Write-Output "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Output "old-version=$oldVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
           git add ./metadata/*.winmd
           git add ./metadata/*.version
@@ -109,7 +141,11 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content ./metadata/Microsoft.Windows.SDK.Win32Docs.version -Raw).Trim()
+          $oldVersion = git show "HEAD:metadata/Microsoft.Windows.SDK.Win32Docs.version" 2>$null
+          if ($LASTEXITCODE -ne 0 -or -not $oldVersion) { $oldVersion = "none" } else { $oldVersion = $oldVersion.Trim() }
+
           Write-Output "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Output "old-version=$oldVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
           git add ./metadata/*.msgpack
           git add ./metadata/*.version

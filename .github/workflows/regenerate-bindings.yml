@@ -62,6 +62,52 @@ jobs:
           path: generator.log
           retention-days: 14
 
+      - name: Compute PR Title and Body
+        id: pr-meta
+        shell: pwsh
+        run: |
+          $components = @()
+
+          if ('${{ needs.update-packages.outputs.metadata-did-update }}' -eq 'true') {
+              $components += [pscustomobject]@{
+                  Name = "Win32 Metadata"
+                  Old = '${{ needs.update-packages.outputs.metadata-old-version }}'
+                  New = '${{ needs.update-packages.outputs.metadata-version }}'
+                  Link = "[**${{ needs.update-packages.outputs.metadata-version }}**](https://github.com/microsoft/win32metadata/releases/tag/v${{ needs.update-packages.outputs.metadata-version }})"
+              }
+          }
+          if ('${{ needs.update-packages.outputs.wdk-metadata-did-update }}' -eq 'true') {
+              $components += [pscustomobject]@{
+                  Name = "WDK Metadata"
+                  Old = '${{ needs.update-packages.outputs.wdk-metadata-old-version }}'
+                  New = '${{ needs.update-packages.outputs.wdk-metadata-version }}'
+                  Link = "[**${{ needs.update-packages.outputs.wdk-metadata-version }}**](https://github.com/microsoft/wdkmetadata/releases/tag/v${{ needs.update-packages.outputs.wdk-metadata-version }})"
+              }
+          }
+          if ('${{ needs.update-packages.outputs.apidocs-did-update }}' -eq 'true') {
+              $components += [pscustomobject]@{
+                  Name = "ApiDocs"
+                  Old = '${{ needs.update-packages.outputs.apidocs-old-version }}'
+                  New = '${{ needs.update-packages.outputs.apidocs-version }}'
+                  Link = "**${{ needs.update-packages.outputs.apidocs-version }}**"
+              }
+          }
+
+          $title = "Update " + (($components | ForEach-Object { "$($_.Name) to $($_.New)" }) -join " and ")
+
+          $body = "Automated update of generated bindings.`n"
+          foreach ($c in $components) {
+              $body += "- $($c.Name): $($c.Link) (was **$($c.Old)**)`n"
+          }
+          $body += "`nTriggered by update-packages workflow."
+
+          Write-Output "title=$title" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+          $delimiter = "BODY_EOF_$(New-Guid)"
+          Write-Output "body<<$delimiter" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Output $body | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Output $delimiter | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       - name: Open Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
@@ -70,12 +116,6 @@ jobs:
           base: main
           branch: feature/update-metadata
           commit-message: "Update Win32 Metadata"
-          title: "Update Win32 Metadata"
+          title: ${{ steps.pr-meta.outputs.title }}
           assignees: holy-tao
-          body: |
-            Automated update of generated Win32 bindings.
-            - SDK Metadata version: [**${{ needs.update-packages.outputs.metadata-version }}**](https://github.com/microsoft/win32metadata/releases/tag/v${{ needs.update-packages.outputs.metadata-version }})
-            - WDK Metadata version: [**${{ needs.update-packages.outputs.wdk-metadata-version }}**](https://github.com/microsoft/wdkmetadata/releases/tag/v${{ needs.update-packages.outputs.wdk-metadata-version }})
-            - ApiDocs version: **${{ needs.update-packages.outputs.apidocs-version }}**
-
-            Triggered by update-packages workflow.
+          body: ${{ steps.pr-meta.outputs.body }}
