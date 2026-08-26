@@ -109,7 +109,7 @@ jobs:
           Write-Output $delimiter | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Open Pull Request
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.WIN32_PAT }}
           path: bindings
