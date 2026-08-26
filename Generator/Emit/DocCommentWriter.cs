@@ -1,5 +1,6 @@
 namespace AhkWin32.Generator.Emit;
 
+using System.Diagnostics.CodeAnalysis;
 using AhkWin32.Generator.Metadata;
 using AhkWin32.Generator.Model;
 using AhkWin32.Generator.Model.Members;
@@ -22,42 +23,39 @@ public static class DocCommentWriter
     /// </summary>
     public static void WriteTypeDoc(AhkWriter w, Win32Type type)
     {
-        w.Line("/**");
+        using var scope = w.JSDocComment();
 
         if (!string.IsNullOrWhiteSpace(type.Description))
         {
-            w.Line($" * {EscapeDocs(type.Description)}");
+            w.Line(EscapeDocs(type.Description));
 
             if (!string.IsNullOrWhiteSpace(type.Remarks))
             {
-                w.Line(" * @remarks");
-                w.Line($" * {EscapeDocs(type.Remarks, "")}");
+                w.Line("@remarks");
+                w.Line(EscapeDocs(type.Remarks, ""));
             }
         }
 
         if (type.HelpLink != null)
-            w.Line($" * @see {type.HelpLink}");
+            w.Line($"@see {type.HelpLink}");
 
-        w.Line($" * @namespace {type.Namespace}");
-        // w.Line($" * @version {type.MetadataVersion}");
+        w.Line($"@namespace {type.Namespace}");
 
         if (type.IsAnsi)
-            w.Line(" * @charset ANSI");
+            w.Line("@charset ANSI");
         if (type.IsUnicode)
-            w.Line(" * @charset Unicode");
+            w.Line("@charset Unicode");
 
         if (type.Arch is not (Architecture.All or Architecture.None))
-            w.Line($" * @architecture {type.Arch}");
+            w.Line($"@architecture {type.Arch}");
 
         if (type.IsDeprecated)
         {
             string deprecatedTag = !string.IsNullOrWhiteSpace(type.DeprecationMessage)
-                ? $" * @deprecated {type.DeprecationMessage}"
-                : " * @deprecated";
+                ? $"@deprecated {type.DeprecationMessage}"
+                : "@deprecated";
             w.Line(deprecatedTag);
         }
-
-        w.Line(" */");
     }
 
     /// <summary>
@@ -66,21 +64,20 @@ public static class DocCommentWriter
     /// </summary>
     public static void WriteConstantDoc(AhkWriter w, ConstantMember constant)
     {
-        w.Line("/**");
+        using var scope = w.JSDocComment();
 
         if (!string.IsNullOrWhiteSpace(constant.Description))
-            w.Line($" * {EscapeDocs(constant.Description, new string(' ', w.CurrentIndentLevel * 4))}");
+            w.Line(EscapeDocs(constant.Description, new string(' ', w.CurrentIndentLevel * 4)));
 
         if (constant.IsDeprecated)
         {
             string deprecatedTag = !string.IsNullOrWhiteSpace(constant.DeprecationMessage)
-                ? $" * @deprecated {constant.DeprecationMessage}"
-                : " * @deprecated";
+                ? $"@deprecated {constant.DeprecationMessage}"
+                : "@deprecated";
             w.Line(deprecatedTag);
         }
 
-        w.Line($" * @type {{{constant.Value.AhkTypeName}}}");
-        w.Line(" */");
+        w.Line($"@type {{{constant.Value.AhkTypeName}}}");
     }
 
     /// <summary>
@@ -98,23 +95,23 @@ public static class DocCommentWriter
         )
             return;
 
-        w.Line("/**");
+        using var scope = w.JSDocComment();
 
         if (!string.IsNullOrWhiteSpace(field.Description))
-            w.Line($" * {EscapeDocs(field.Description, new string(' ', w.CurrentIndentLevel * 4))}");
+            w.Line(EscapeDocs(field.Description, new string(' ', w.CurrentIndentLevel * 4)));
 
         if (field.IsBitField)
         {
-            w.Line(" * This bitfield backs the following members:");
+            w.Line("This bitfield backs the following members:");
             foreach (var bf in field.Bitfields)
-                w.Line($" * - {bf.Name}");
+                w.Line($"- {bf.Name}");
         }
 
         if (field.IsDeprecated)
         {
             string deprecatedTag = !string.IsNullOrWhiteSpace(field.DeprecationMessage)
-                ? $" * @deprecated {field.DeprecationMessage}"
-                : " * @deprecated";
+                ? $"@deprecated {field.DeprecationMessage}"
+                : "@deprecated";
             w.Line(deprecatedTag);
         }
 
@@ -123,9 +120,8 @@ public static class DocCommentWriter
         if (version is AhkVersion.v20)
         {
             string typeName = field.EmbeddedStruct is not null ? field.EmbeddedStruct.Name : field.Type.DisplayName;
-            w.Line($" * @type {{{typeName}}}");
+            w.Line($"@type {{{typeName}}}");
         }
-        w.Line(" */");
     }
 
     /// <summary>
@@ -134,14 +130,13 @@ public static class DocCommentWriter
     /// </summary>
     public static void WriteBitfieldDoc(AhkWriter w, FieldMember parent, BitfieldMember bitfield, string? description)
     {
-        w.Line("/**");
+        using var scope = w.JSDocComment();
 
         if (!string.IsNullOrWhiteSpace(description))
-            w.Line($" * {EscapeDocs(description, new string(' ', w.CurrentIndentLevel * 4))}");
+            w.Line(EscapeDocs(description, new string(' ', w.CurrentIndentLevel * 4)));
 
         string typeName = parent.EmbeddedStruct is not null ? parent.EmbeddedStruct.Name : parent.Type.DisplayName;
-        w.Line($" * @type {{{typeName}}}");
-        w.Line(" */");
+        w.Line($"@type {{{typeName}}}");
     }
 
     /// <summary>
@@ -150,11 +145,11 @@ public static class DocCommentWriter
     /// </summary>
     public static void WritePropertyDoc(AhkWriter w, ComPropertyMember prop)
     {
-        w.Line("/**");
+        using var scope = w.JSDocComment();
 
         if (!string.IsNullOrWhiteSpace(prop.Description))
         {
-            w.Line($" * {EscapeDocs(prop.Description, new string(' ', w.CurrentIndentLevel * 4))}");
+            w.Line(EscapeDocs(prop.Description, new string(' ', w.CurrentIndentLevel * 4)));
         }
 
         // Type is getter's output param type if getter exists, otherwise setter's first non-reserved param type
@@ -174,10 +169,8 @@ public static class DocCommentWriter
 
         if (!string.IsNullOrWhiteSpace(typeName))
         {
-            w.Line($" * @type {{{typeName}}} ");
+            w.Line($"@type {{{typeName}}} ");
         }
-
-        w.Line(" */");
     }
 
     /// <summary>
@@ -188,13 +181,15 @@ public static class DocCommentWriter
     {
         string indent = new(' ', w.CurrentIndentLevel * 4);
 
-        w.Line("/**");
-        w.Line($" * {EscapeDocs(method.Description, indent)}");
+        using var scope = w.JSDocComment();
+
+        if (!string.IsNullOrWhiteSpace(method.Description))
+            w.Line(EscapeDocs(method.Description, indent));
 
         if (!string.IsNullOrWhiteSpace(method.Remarks))
         {
-            w.Line(" * @remarks");
-            w.Line($" * {EscapeDocs(method.Remarks, indent)}");
+            w.Line("@remarks");
+            w.Line(EscapeDocs(method.Remarks, indent));
         }
 
         // @param tags — skip reserved and output parameters
@@ -207,11 +202,11 @@ public static class DocCommentWriter
             string paramDoc = !string.IsNullOrWhiteSpace(param.Description)
                 ? EscapeDocs(param.Description, indent) ?? ""
                 : "";
-            w.Line($" * @param {{{param.Type.DisplayName}}} {param.Name} {paramDoc}");
+            w.Line($"@param {{{param.Type.DisplayName}}} {param.Name} {paramDoc}");
         }
 
         if (method.IsVariadic)
-            w.Line($" * @param {{Any}} {method.VariadicParamName}* {VAR_ARGS_DOC}");
+            w.Line($"@param {{Any}} {method.VariadicParamName}* {VAR_ARGS_DOC}");
 
         // @returns tag
         if (method.HasReturnValue || method.OutputParameter != null)
@@ -222,35 +217,33 @@ public static class DocCommentWriter
                 string returnDoc = !string.IsNullOrWhiteSpace(outParam.Description)
                     ? EscapeDocs(outParam.Description, indent) ?? ""
                     : "";
-                w.Line($" * @returns {{{returnTypeName}}} {returnDoc}");
+                w.Line($"@returns {{{returnTypeName}}} {returnDoc}");
             }
             else
             {
                 w.Line(
-                    $" * @returns {{{method.Parameters[0].Type.DisplayName}}} {EscapeDocs(method.ReturnValueDoc, indent)}"
+                    $"@returns {{{method.Parameters[0].Type.DisplayName}}} {EscapeDocs(method.ReturnValueDoc, indent)}"
                 );
             }
         }
         else
         {
-            w.Line(" * @returns {String} Nothing - always returns an empty string");
+            w.Line("@returns {String} Nothing - always returns an empty string");
         }
 
         if (method.HelpLink != null)
-            w.Line($" * @see {method.HelpLink}");
+            w.Line($"@see {method.HelpLink}");
 
         if (method.CharSet == StringEncoding.Ansi)
-            w.Line(" * @charset ANSI");
+            w.Line("@charset ANSI");
         if (method.CharSet == StringEncoding.Unicode)
-            w.Line(" * @charset Unicode");
+            w.Line("@charset Unicode");
 
         if (!string.IsNullOrWhiteSpace(method.DeprecationMessage))
-            w.Line($" * @deprecated {method.DeprecationMessage}");
+            w.Line($"@deprecated {method.DeprecationMessage}");
 
         if (!string.IsNullOrWhiteSpace(method.SupportedOSPlatform))
-            w.Line($" * @since {method.SupportedOSPlatform}");
-
-        w.Line(" */");
+            w.Line($"@since {method.SupportedOSPlatform}");
     }
 
     /// <summary>
@@ -258,6 +251,7 @@ public static class DocCommentWriter
     /// Replaces block comment markers and converts newlines to continuation lines.
     /// Port of AhkType.EscapeDocs.
     /// </summary>
+    [return: NotNullIfNotNull(nameof(docString))]
     public static string? EscapeDocs(string? docString, string? indent = " ")
     {
         return docString?.Replace("/*", "//").Replace("*/", "").Replace("\n", $"\n{indent} * ");
