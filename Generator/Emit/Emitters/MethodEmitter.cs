@@ -267,7 +267,8 @@ public static class MethodEmitter
             sb.Append("result := ");
 
         // Entry point, if not overridden
-        entry ??= method.IsOrdinal ? "procAddr.value" : $"\"{method.DllName}\\{method.EntryPoint}\"";
+        // v2.0's GetProcAddress returns a raw pointer (unlike v2.1's FARPROC wrapper struct).
+        entry ??= method.IsOrdinal ? "procAddr" : $"\"{method.DllName}\\{method.EntryPoint}\"";
 
         sb.Append($"DllCall({entry}");
 
