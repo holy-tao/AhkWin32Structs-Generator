@@ -47,7 +47,7 @@ public static class MethodEmitter21
 
         MethodEmitter.EmitReservedParams(w, method);
         EmitParameterConversions(w, method);
-        MethodEmitter.EmitParameterMarshalling(w, method);
+        EmitParameterMarshalling(w, method, names);
 
         if (method.SetsLastError)
         {
@@ -75,6 +75,32 @@ public static class MethodEmitter21
 
         EmitErrorCheck(w, method, registry, names);
         EmitReturnStatement(w, method, registry, names);
+    }
+
+    // --- Parameter marshalling (VarRef detection for ptr-to-primitive, 0 detection for optionals) ---
+
+    internal static void EmitParameterMarshalling(AhkWriter w, MethodMember method, ModuleNameResolver? names)
+    {
+        int startLen = w.Length;
+
+        foreach (var param in method.InputParameters)
+        {
+            if (param.IsPtrToPrimitive)
+            {
+                string typedDllCallType = ((PointerType)param.Type).TypedDllCallType;
+                w.Line($"{param.Name}Marshal := {param.Name} is VarRef ? \"{typedDllCallType}\" : IntPtr");
+            }
+
+            if (param.IsOptional)
+            {
+                // Allow optional parameters to be null (0)
+                string typeToken = GetParamDllCallTypeToken(param.Type, names);
+                w.Line($"{param.Name}Marshal := {param.Name} == 0 ? IntPtr : {typeToken}");
+            }
+        }
+
+        if (w.Length > startLen)
+            w.BlankLine();
     }
 
     // --- Parameter conversions (String->StrPtr) ---
@@ -324,7 +350,8 @@ public static class MethodEmitter21
         {
             var param = method.Parameters[i];
 
-            bool useMarshalVar = param.IsPtrToPrimitive && !param.IsReserved && param != method.OutputParameter;
+            bool useMarshalVar =
+                (param.IsPtrToPrimitive || param.IsOptional) && !param.IsReserved && param != method.OutputParameter;
             bool isComOutput = param == method.OutputParameter && param.IsPtrToCom;
 
             string marshalAs;
@@ -513,7 +540,7 @@ public static class MethodEmitter21
         {
             MethodEmitter.EmitReservedParams(w, method);
             EmitParameterConversions(w, method, isComMethod: true);
-            MethodEmitter.EmitParameterMarshalling(w, method);
+            EmitParameterMarshalling(w, method, null);
 
             if (method.SetsLastError)
             {
@@ -573,7 +600,7 @@ public static class MethodEmitter21
 
         MethodEmitter.EmitReservedParams(w, method);
         EmitParameterConversions(w, method);
-        MethodEmitter.EmitParameterMarshalling(w, method);
+        EmitParameterMarshalling(w, method, null);
 
         if (method.SetsLastError)
         {
