@@ -183,7 +183,8 @@ public sealed class OverrideReader
             Fields: fields,
             Methods: methods,
             AddMethods: addMethods,
-            ValueAccessor: valueAccessor
+            ValueAccessor: valueAccessor,
+            EnumPrefix: string.IsNullOrWhiteSpace(entry.EnumPrefix) ? null : entry.EnumPrefix.Trim()
         );
     }
 
@@ -267,6 +268,9 @@ public sealed class OverrideReader
 
         [YamlMember(Alias = "value-accessor", ApplyNamingConventions = false)]
         public ValueAccessorDto? ValueAccessor { get; set; }
+
+        [YamlMember(Alias = "enum-prefix", ApplyNamingConventions = false)]
+        public string? EnumPrefix { get; set; }
     }
 
     private class ValueAccessorDto

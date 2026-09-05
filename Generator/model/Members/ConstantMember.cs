@@ -8,7 +8,18 @@ using AhkWin32.Generator.Model;
 public sealed class ConstantMember
 {
     /// <summary>Name of the constant.</summary>
-    public required string Name { get; init; }
+    /// <remarks>
+    /// Settable because <see cref="Transform.EnumPrefixStripper"/> renames enum constants in place
+    /// during the transform phase. When it does, it records the metadata name in <see cref="NativeName"/>.
+    /// </remarks>
+    public required string Name { get; set; }
+
+    /// <summary>
+    /// The original metadata name, set only when a transform has renamed this constant.
+    /// Null when <see cref="Name"/> is unchanged. Emitted into the doc comment so the
+    /// original C identifier stays greppable against the Microsoft docs.
+    /// </summary>
+    public string? NativeName { get; set; }
 
     /// <summary>The pre-decoded value.</summary>
     public required ConstantValue Value { get; init; }

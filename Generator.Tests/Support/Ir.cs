@@ -107,6 +107,35 @@ internal static class Ir
             SequenceNumber = sequence,
         };
 
+    /// <summary>
+    /// Build an <see cref="EnumType"/> from an FQN and constant names. Values are assigned by
+    /// position — the transforms under test key off names, not values.
+    /// </summary>
+    public static EnumType Enum(string fqn, params string[] constantNames)
+    {
+        string name = TailName(fqn);
+        return new EnumType
+        {
+            Identity = TypeIdentity.Universal(fqn),
+            Name = name,
+            CanonicalName = name,
+            AssemblyName = "Test.Assembly",
+            MetadataVersion = "Test.Assembly v1.0.0",
+            Constants = [.. constantNames.Select((n, i) => Const(n, i))],
+            IsFlags = false,
+            UnderlyingTypeName = "Int32",
+        };
+    }
+
+    /// <summary>A minimal Int32 <see cref="ConstantMember"/>.</summary>
+    public static ConstantMember Const(string name, int value) =>
+        new()
+        {
+            Name = name,
+            Value = new PrimitiveConstantValue(value.ToString(), "Integer (Int32)"),
+            Type = Prim("Int32"),
+        };
+
     public static PrimitiveType Prim(string name) => new(name);
 
     public static PointerType Ptr(ResolvedType? pointee) => new(pointee);

@@ -77,6 +77,11 @@ public static class DocCommentWriter
             w.Line(deprecatedTag);
         }
 
+        // Keep the original C identifier in the file when a transform shortened the name, so the
+        // constant stays greppable against the Microsoft docs.
+        if (constant.NativeName is { Length: > 0 } nativeName)
+            w.Line($"Native name: {nativeName}");
+
         w.Line($"@type {{{constant.Value.AhkTypeName}}}");
     }
 
