@@ -11,25 +11,19 @@ using Microsoft.Extensions.Logging;
 /// ad-hoc, every case requires an explicit branch here as the IR is, by design,
 /// immutable in most cases.
 /// </summary>
-public sealed class OverrideApplier
+public sealed class OverrideApplier(OverrideReader reader, ILogger<OverrideApplier> logger)
 {
-    private readonly OverrideReader _reader;
-    private readonly ILogger<OverrideApplier> _logger;
-
-    public OverrideApplier(OverrideReader reader, ILogger<OverrideApplier> logger)
-    {
-        _reader = reader;
-        _logger = logger;
-    }
+    private readonly OverrideReader _reader = reader;
+    private readonly ILogger<OverrideApplier> _logger = logger;
 
     /// <summary>
     /// Load overrides from the given directory and apply them to the registry.
     /// </summary>
-    public void Apply(TypeRegistry registry, string overrideDirectoryPath)
+    public OverrideSet Apply(TypeRegistry registry, string overrideDirectoryPath)
     {
         OverrideSet overrides = _reader.LoadOverrides(overrideDirectoryPath);
         if (overrides.Count == 0)
-            return;
+            return overrides;
 
         int applied = 0;
         int skipped = 0;
@@ -80,6 +74,8 @@ public sealed class OverrideApplier
             skipped,
             unmatched > 0 ? $", {unmatched} unmatched" : ""
         );
+
+        return overrides;
     }
 
     private void ApplyTypeOverride(Win32Type type, TypeOverride ov)

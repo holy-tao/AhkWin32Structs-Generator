@@ -37,7 +37,13 @@ public sealed record TypeOverride(
     IReadOnlyDictionary<string, FieldOverride>? Fields,
     IReadOnlyDictionary<string, MethodOverride>? Methods,
     IReadOnlyList<AddMethodRef>? AddMethods,
-    ValueAccessorOverride? ValueAccessor
+    ValueAccessorOverride? ValueAccessor,
+    /// <summary>
+    /// Controls <see cref="EnumPrefixStripper"/> for this enum. <c>"keep"</c> disables stripping
+    /// entirely; any other value is a literal prefix to strip instead of the computed one.
+    /// Null leaves the heuristic in charge.
+    /// </summary>
+    string? EnumPrefix = null
 );
 
 /// <summary>

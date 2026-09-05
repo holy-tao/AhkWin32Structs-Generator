@@ -183,7 +183,13 @@ public class Program
             new OverrideReader(loggerFactory.CreateLogger<OverrideReader>(), maxParallelism),
             loggerFactory.CreateLogger<OverrideApplier>()
         );
-        overrideApplier.Apply(registry, Path.Join(metadataPath, "overrides"));
+        OverrideSet overrides = overrideApplier.Apply(registry, Path.Join(metadataPath, "overrides"));
+
+        // Drop the redundant type-name prefix from enum constants (FOO_BAR.FOO_BAR_BAZ -> .BAZ).
+        // Runs after overrides so the enum-prefix escape hatch is loaded, and before extensions so
+        // injected AHK code is written against the final names.
+        var enumPrefixStripper = new EnumPrefixStripper(loggerFactory.CreateLogger<EnumPrefixStripper>());
+        enumPrefixStripper.Apply(registry, overrides);
 
         var extensionApplier = new ExtensionApplier(
             new ExtensionReader(loggerFactory.CreateLogger<ExtensionReader>(), maxParallelism),
