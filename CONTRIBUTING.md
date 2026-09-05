@@ -11,6 +11,7 @@ Contributions are welcome, though I'll admit that I haven't kept this repository
   - [Extensions](#extensions)
   - [Overrides](#overrides)
   - [Reserved Names](#reserved-names)
+  - [Enum Prefix Stripping](#enum-prefix-stripping)
 - [Maintenance](#maintenance)
   - [Updating the Metadata](#updating-the-metadata)
 
@@ -236,7 +237,24 @@ Each file is a YAML list of type-scoped entries. The `type` key is always requir
 | `methods.<name>.skip` | method | `true` to remove a single method from an `Apis` type. |
 | `methods.<name>.parameters.<name>.add-attributes` | parameter | List of `ParameterFlags` to add (e.g., `Reserved`). |
 | `add-methods` | type (Apis) | List of `{from, name}` entries that clone a method from another `Apis` type into this one. Useful when a function logically belongs in multiple namespaces. |
+| `enum-prefix` | type (enum) | Controls [enum prefix stripping](#enum-prefix-stripping) for this enum. `keep` disables it entirely; any other value is a literal prefix to strip from every constant instead of the computed one. |
 | `value-accessor` | type (native typedef or handle) | Customizes the generated `__value` accessor. `getter` is an AHK expression that restores a `__value` getter (omit to keep the default no-getter behavior that preserves type identity); `setter-coerce` is an AHK expression applied to a raw incoming value in the setter's else branch. Aliases: `$field` -> `this.<backingField>`, `$value` -> the setter's `value`. The instance-unwrap branch and `[AlsoUsableFor]` checks are emitted unchanged. **v2.1 emission only** (native typedefs are v2.1-only; v2.0 handles are class-based with no `__value`, so the keys are inert there). |
+
+<details>
+
+<summary><b>Example: opt an enum out of prefix stripping</b></summary>
+
+```yaml
+# The computed prefix reads badly here; keep the original C names.
+- type: Windows.Win32.Graphics.Gdi.STRETCH_BLT_MODE
+  enum-prefix: keep
+
+# Or strip an explicit prefix instead of the computed one.
+- type: Windows.Win32.Some.Namespace.THING_KIND
+  enum-prefix: TK
+```
+
+</details>
 
 <details>
 
@@ -323,6 +341,42 @@ The generator has a list of reserved names that it is impossible or unwise for t
 If a type name conflicts with one of these names, it is prefixed with "Win32" or "Wdk", depending on its namespace - e.g. `String` becomes `Win32String`. If a method parameter conflicts with one of these names, it is prefixed with an underscore.
 
 The generator also adds the names of all loaded types to the reserved parameter name list to prevent method paramters from accidentally shadowing Win32 types. This is common with handles, e.g. parameters like `hwnd` would shadow the generated `HWND` type.
+
+### Enum Prefix Stripping
+
+Most Win32 enums are derived from C `#define` blocks or C enums, so every constant repeats the enum's own name: `WinHttpRequestAutoLogonPolicy.AutoLogonPolicy_Always`. The `EnumPrefixStripper` transform removes that redundancy, giving `WinHttpRequestAutoLogonPolicy.Always`. It runs after overrides and before extensions, and currently renames ~45,800 constants across ~5,700 enums.
+
+The approach is modelled on Swift's Objective-C importer. For each constant, it strips the longest leading run of words that also appears, in order, among the words of the enum's own type name:
+
+- Names are split into words on underscores and camelCase boundaries. All-caps runs stay whole, so `D3DDDIFMT` is one word.
+- The match is a *subsequence* of the type's words, not a contiguous prefix - the type name often carries extra leading context (`WinHttpRequest|Auto|Logon|Policy` vs `Auto|Logon|Policy|Always`).
+- A cut is only made at an underscore or camelCase boundary, never inside an all-caps run. Without this rule, `D3DDDIFORMAT` would match the `D` and `3` in `D3DDDIFMT_UNKNOWN` and emit the garbage name `DDDIFMT_UNKNOWN`.
+
+Stripping is decided **per constant**, so a sentinel that shares nothing with the type name simply keeps its full name while its siblings shorten - `IO_PRIORITY_HINT` yields `.VeryLow`, `.Low`, `.Normal`, `.Critical`, and `.MaxIoPriorityTypes`.
+
+A constant is left alone when it is built entirely from the type's own words (`CRYPT_TIMESTAMP_VERSION.TIMESTAMP_VERSION`) - there is no distinct suffix to keep. Single-constant enums generally fall out of this naturally and need no special case.
+
+Names that begin with a digit are fine: AHK permits property names to start with a digit, so `D3D_FEATURE_LEVEL.11_0` is emitted as-is (verified on v2.0.26 and v2.1-alpha.30).
+
+Note that the transform deliberately does **not** consult [ahk-reserved-names.yml](./metadata/ahk-reserved-names.yml). That list guards type names (which become global classes) and parameter names (which become variables); enum constants become *static properties*, which per the AHK docs are permitted to be reserved words. `static ERROR`, `static LOOP` and `static Object` all parse fine and leave the global classes untouched.
+
+Two conditions abort stripping for an **entire** enum, with a warning naming the FQN - a half-stripped enum is worse than an unstripped one:
+
+- **Collision**: two constants would reduce to the same name (`HALFTONE` and `STRETCH_HALFTONE` in `STRETCH_BLT_MODE`).
+- **Shadowing**: a constant would land on a member of the emitted enum shape - `value`, `__value`, `__New`, `Ptr`, `Size`, `Prototype`, `Base`, `Call`, `Clone`, `__Class`. These are real shadowing hazards; a `static SIZE` genuinely overrides the v2.1 struct's `Size` used for marshalling.
+
+About 35 enums are skipped for these reasons. Use the `enum-prefix` [override](#overrides) to fix any enum whose result reads badly.
+
+Every renamed constant keeps its original C identifier in its doc comment as a `Native name:` line, so the metadata name stays greppable against the Microsoft docs:
+
+```ahk
+/**
+ * Targets features supported by feature level 9.1, including shader model 2.
+ * Native name: D3D_FEATURE_LEVEL_9_1
+ * @type {Integer (Int32)}
+ */
+static 9_1 => 37120
+```
 
 ## Maintenance
 
