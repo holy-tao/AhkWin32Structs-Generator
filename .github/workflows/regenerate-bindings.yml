@@ -50,7 +50,7 @@ jobs:
       - name: Run Generator
         shell: pwsh
         run: |
-          $generatorExe = Join-Path "generator" "Generator/bin/release/net9.0/AhkWin32Structs.exe"
+          $generatorExe = Join-Path "generator" "Generator/bin/release/net10.0/AhkWin32Structs.exe"
           $logLevel = if ($env:RUNNER_DEBUG -eq '1') { 'Debug' } else { 'Information' }
           & $generatorExe $(Join-Path $env:GITHUB_WORKSPACE "generator" "metadata") $(Join-Path $env:GITHUB_WORKSPACE "bindings") --log-file generator.log --log-level $logLevel
 
